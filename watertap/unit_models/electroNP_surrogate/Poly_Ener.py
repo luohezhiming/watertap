@@ -19,12 +19,11 @@ from idaes.core.surrogate.plotting.sm_plotter import (
 from idaes.core.surrogate.metrics import compute_fit_metrics
 
 # Load dataset from a csv file
-# xy_data = pd.read_csv("Mg_DOE_unique_data_restructure_v2.csv", skiprows=1, header=None)
+# xy_data = pd.read_csv("Ener_DOE_unique_data_restructure_v2.csv", skiprows=1, header=None)
 xy_data = pd.read_csv(
-    "Mg_complete_DOE_results_restructure_v2.csv", skiprows=1, header=None
+    "Ener_complete_DOE_results_restructure_v2.csv", skiprows=1, header=None
 )
 
-xy_data = xy_data.dropna()
 input_data = xy_data.iloc[:, :4]
 output_data = xy_data.iloc[:, 4:]
 
@@ -38,16 +37,21 @@ data_training, data_validation = split_training_validation(
     xy_data, 0.8, seed=n_data
 )  # seed=100
 
+# data_training = xy_data
+# data_validation = xy_data_total
+
 # Create PySMO trainer object
-surrogate_trainer = PysmoRBFTrainer(
+surrogate_trainer = PysmoPolyTrainer(
     input_labels=input_labels,
     output_labels=output_labels,
     training_dataframe=data_training,
 )
 
 # Set PySMO options
-surrogate_trainer.config.basis_function = "gaussian"
-surrogate_trainer.config.regularization = True
+surrogate_trainer.config.maximum_polynomial_order = 6
+surrogate_trainer.config.multinomials = True
+surrogate_trainer.config.training_split = 0.8
+# surrogate_trainer.config.number_of_crossvalidations = 10
 
 # Train surrogate (calls PySMO through IDAES Python wrapper)
 rbf_train = surrogate_trainer.train_surrogate()
