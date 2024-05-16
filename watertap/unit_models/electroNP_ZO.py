@@ -93,7 +93,7 @@ class ElectroNPZOdata(SeparatorData):
         # NOTE: the mass fraction of H2O to treated stream is estimated from P recovered in the byproduct (struvite)
         self.frac_mass_H2O_treated = Var(
             self.flowsheet().time,
-            initialize=0.8777,
+            initialize=0.99,
             domain=NonNegativeReals,
             units=pyunits.dimensionless,
             bounds=(0.0, 1),
