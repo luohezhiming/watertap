@@ -1,15 +1,14 @@
-###############################################################################
-# WaterTAP Copyright (c) 2021, The Regents of the University of California,
-# through Lawrence Berkeley National Laboratory, Oak Ridge National
-# Laboratory, National Renewable Energy Laboratory, and National Energy
-# Technology Laboratory (subject to receipt of any required approvals from
-# the U.S. Dept. of Energy). All rights reserved.
+#################################################################################
+# WaterTAP Copyright (c) 2020-2024, The Regents of the University of California,
+# through Lawrence Berkeley National Laboratory, Oak Ridge National Laboratory,
+# National Renewable Energy Laboratory, and National Energy Technology
+# Laboratory (subject to receipt of any required approvals from the U.S. Dept.
+# of Energy). All rights reserved.
 #
 # Please see the files COPYRIGHT.md and LICENSE.md for full copyright and license
 # information, respectively. These files are also available online at the URL
 # "https://github.com/watertap-org/watertap/"
-#
-###############################################################################
+#################################################################################
 """
 Translator block representing the ASM2d/ADM1 interface.
 
@@ -28,12 +27,13 @@ from pyomo.common.config import Bool, ConfigBlock, ConfigValue
 
 # Import IDAES cores
 from idaes.core import declare_process_block_class
+from idaes.core.util.math import smooth_max, smooth_min
 from idaes.models.unit_models.translator import TranslatorData
 from idaes.core.util.config import (
     is_reaction_parameter_block,
 )
 from idaes.core.util.model_statistics import degrees_of_freedom
-from idaes.core.solvers import get_solver
+from watertap.core.solvers import get_solver
 import idaes.logger as idaeslog
 
 from pyomo.environ import (
@@ -67,7 +67,7 @@ class TranslatorDataASM2dADM1(TranslatorData):
     CONFIG.declare(
         "bio_P",
         ConfigValue(
-            default=True,
+            default=False,
             domain=Bool,
             description="Switching function for phosphorus biomass",
             doc="""Switching function for handling the transformation of phosphorus biomass,
@@ -214,6 +214,12 @@ see reaction package for documentation.}""",
             units=pyunits.dimensionless,
             mutable=True,
             doc="P content of inert soluble COD S_I, [kg P/kg COD]",
+        )
+        self.eps_smooth = Param(
+            initialize=1e-4,
+            units=pyunits.kg / pyunits.m**3,
+            mutable=True,
+            doc="Smoothing factor",
         )
 
         @self.Constraint(
@@ -396,18 +402,18 @@ see reaction package for documentation.}""",
 
         @self.Expression(self.flowsheet().time, doc="Monosaccharides mapping")
         def Ssu_mapping(blk, t):
-            return Expr_if(
-                blk.SN_org[t] >= blk.properties_in[t].conc_mass_comp["S_F"],
-                eps * pyunits.kg / pyunits.m**3,
+            return smooth_max(
+                0 * pyunits.kg / pyunits.m**3,
                 blk.properties_in[t].conc_mass_comp["S_F"] - blk.SN_org[t],
+                blk.eps_smooth,
             )
 
         @self.Expression(self.flowsheet().time, doc="Amino acids mapping")
         def Saa_mapping(blk, t):
-            return Expr_if(
-                blk.SN_org[t] >= blk.properties_in[t].conc_mass_comp["S_F"],
-                blk.properties_in[t].conc_mass_comp["S_F"],
+            return smooth_min(
                 blk.SN_org[t],
+                blk.properties_in[t].conc_mass_comp["S_F"],
+                blk.eps_smooth,
             )
 
         @self.Constraint(
@@ -623,12 +629,13 @@ see reaction package for documentation.}""",
 
             @self.Expression(self.flowsheet().time, doc="Carbohydrates mapping")
             def Xch_mapping(blk, t):
-                return Expr_if(
-                    blk.XN_org[t] >= blk.properties_in[t].conc_mass_comp["X_S"],
-                    eps * pyunits.kg / pyunits.m**3,
+                return smooth_max(
+                    0 * pyunits.kg / pyunits.m**3,
                     (blk.properties_in[t].conc_mass_comp["X_S"] - blk.XN_org[t]) * 0.4,
+                    blk.eps_smooth,
                 )
 
+            # TODO: Can this be replaced with smooth_max or smooth_min?
             @self.Expression(self.flowsheet().time, doc="Protein mapping")
             def Xpr_mapping(blk, t):
                 return Expr_if(
@@ -639,10 +646,10 @@ see reaction package for documentation.}""",
 
             @self.Expression(self.flowsheet().time, doc="Lipids mapping")
             def Xli_mapping(blk, t):
-                return Expr_if(
-                    blk.XN_org[t] >= blk.properties_in[t].conc_mass_comp["X_S"],
-                    eps * pyunits.kg / pyunits.m**3,
+                return smooth_max(
+                    0 * pyunits.kg / pyunits.m**3,
                     (blk.properties_in[t].conc_mass_comp["X_S"] - blk.XN_org[t]) * 0.6,
+                    blk.eps_smooth,
                 )
 
             @self.Constraint(
@@ -1021,12 +1028,13 @@ see reaction package for documentation.}""",
 
             @self.Expression(self.flowsheet().time, doc="Carbohydrates mapping")
             def Xch_mapping(blk, t):
-                return Expr_if(
-                    blk.XN_org[t] >= blk.properties_in[t].conc_mass_comp["X_S"],
-                    eps * pyunits.kg / pyunits.m**3,
+                return smooth_max(
+                    0 * pyunits.kg / pyunits.m**3,
                     (blk.properties_in[t].conc_mass_comp["X_S"] - blk.XN_org[t]) * 0.4,
+                    blk.eps_smooth,
                 )
 
+            # TODO: Can this be replaced with smooth_max or smooth_min?
             @self.Expression(self.flowsheet().time, doc="Protein mapping")
             def Xpr_mapping(blk, t):
                 return Expr_if(
@@ -1037,10 +1045,10 @@ see reaction package for documentation.}""",
 
             @self.Expression(self.flowsheet().time, doc="Lipids mapping")
             def Xli_mapping(blk, t):
-                return Expr_if(
-                    blk.XN_org[t] >= blk.properties_in[t].conc_mass_comp["X_S"],
-                    eps * pyunits.kg / pyunits.m**3,
+                return smooth_max(
+                    0 * pyunits.kg / pyunits.m**3,
                     (blk.properties_in[t].conc_mass_comp["X_S"] - blk.XN_org[t]) * 0.6,
+                    blk.eps_smooth,
                 )
 
             @self.Constraint(

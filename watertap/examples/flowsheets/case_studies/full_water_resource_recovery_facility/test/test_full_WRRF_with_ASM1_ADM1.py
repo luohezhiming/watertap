@@ -1,5 +1,5 @@
 #################################################################################
-# WaterTAP Copyright (c) 2020-2023, The Regents of the University of California,
+# WaterTAP Copyright (c) 2020-2024, The Regents of the University of California,
 # through Lawrence Berkeley National Laboratory, Oak Ridge National Laboratory,
 # National Renewable Energy Laboratory, and National Energy Technology
 # Laboratory (subject to receipt of any required approvals from the U.S. Dept.
@@ -131,6 +131,7 @@ class TestFullFlowsheet:
         m = system_frame
         bsm2.display_results(m)
         bsm2.display_costing(m)
+        bsm2.display_performance_metrics(m)
 
     @pytest.mark.requires_idaes_solver
     @pytest.mark.component
@@ -142,12 +143,12 @@ class TestFullFlowsheet:
         assert degrees_of_freedom(system_frame) == 10
 
         # check costing
-        assert value(m.fs.costing.LCOW) == pytest.approx(0.34972758073141264, rel=1e-5)
+        assert value(m.fs.costing.LCOW) == pytest.approx(0.3497531, rel=1e-5)
         assert value(m.fs.costing.total_capital_cost) == pytest.approx(
-            17442292.403007757, rel=1e-5
+            17441736.89749642, rel=1e-5
         )
         assert value(m.fs.costing.total_operating_cost) == pytest.approx(
-            629551.5401543011, rel=1e-5
+            629780.1104274583, rel=1e-5
         )
 
 
@@ -257,10 +258,10 @@ class TestFullFlowsheet_with_equal_reactor_vols:
         assert degrees_of_freedom(system_frame) == 8
 
         # check costing
-        assert value(m.fs.costing.LCOW) == pytest.approx(0.3497275473625334, rel=1e-5)
+        assert value(m.fs.costing.LCOW) == pytest.approx(0.3497531, rel=1e-5)
         assert value(m.fs.costing.total_capital_cost) == pytest.approx(
-            17442295.41949518, rel=1e-5
+            17441740.61915915, rel=1e-5
         )
         assert value(m.fs.costing.total_operating_cost) == pytest.approx(
-            629551.0120138308, rel=1e-5
+            629779.9546967598, rel=1e-5
         )

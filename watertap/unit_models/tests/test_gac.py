@@ -1,5 +1,5 @@
 #################################################################################
-# WaterTAP Copyright (c) 2020-2023, The Regents of the University of California,
+# WaterTAP Copyright (c) 2020-2024, The Regents of the University of California,
 # through Lawrence Berkeley National Laboratory, Oak Ridge National Laboratory,
 # National Renewable Energy Laboratory, and National Energy Technology
 # Laboratory (subject to receipt of any required approvals from the U.S. Dept.
@@ -18,7 +18,7 @@ from idaes.core import (
     FlowsheetBlock,
     UnitModelCostingBlock,
 )
-from idaes.core.solvers import get_solver
+from watertap.core.solvers import get_solver
 from idaes.core.util.exceptions import ConfigurationError
 from watertap.property_models.multicomp_aq_sol_prop_pack import MCASParameterBlock
 from watertap.unit_models.gac import GAC
@@ -306,14 +306,6 @@ class TestGACMultiComponent(UnitTestHarness):
         self.unit_solutions[m.fs.unit.ds] = 1.245e-14
 
         return m
-
-
-# -----------------------------------------------------------------------------
-class TestGACReporting:
-    @pytest.mark.unit
-    def test_reporting(self):
-        m = build_hand()
-        m.fs.unit.report()
 
 
 # -----------------------------------------------------------------------------
