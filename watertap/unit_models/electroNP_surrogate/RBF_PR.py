@@ -30,7 +30,9 @@ output_data = xy_data.iloc[:, 4:]
 # Define labels, and split training and validation data
 # note that PySMO requires that labels are passed as string lists
 input_labels = list(input_data.columns)
+# input_labels = [str(i) for i in list(input_data.columns)]
 output_labels = list(output_data.columns)
+# output_labels = [str(i) for i in list(output_data.columns)]
 
 # n_data = xy_data[input_labels[0]].size
 # data_training, data_validation = split_training_validation(
@@ -56,11 +58,12 @@ rbf_train = surrogate_trainer.train_surrogate()
 
 # create callable surrogate object
 xmin, xmax = [-1.3, 0.05, 5, 5], [-0.8, 0.15, 45, 30]
-input_bounds = {input_labels[i]: (xmin[i], xmax[i]) for i in range(len(input_labels))}
-rbf_surr = PysmoSurrogate(rbf_train, input_labels, output_labels, input_bounds)
+# input_bounds = {input_labels[i]: (xmin[i], xmax[i]) for i in range(len(input_labels))}
+# rbf_surr = PysmoSurrogate(rbf_train, input_labels, output_labels, input_bounds)
+rbf_surr = PysmoSurrogate(rbf_train, input_labels, output_labels)
 
 # save model to JSON
-model = rbf_surr.save_to_file("pysmo_rbf_surrogate.json", overwrite=True)
+model = rbf_surr.save_to_file("pysmo_RBF_PR_surrogate.json", overwrite=True)
 
 metrics_training = compute_fit_metrics(rbf_surr, data_training)
 metrics_validation = compute_fit_metrics(rbf_surr, data_validation)
