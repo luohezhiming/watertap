@@ -19,12 +19,14 @@ from idaes.core.surrogate.plotting.sm_plotter import (
 from idaes.core.surrogate.metrics import compute_fit_metrics
 
 # Load dataset from a csv file
-xy_data = pd.read_csv(
-    "Ener_DOE_unique_data_restructure_v2.csv", skiprows=1, header=None
-)
-xy_data_total = pd.read_csv(
-    "Ener_complete_DOE_results_restructure_v2.csv", skiprows=1, header=None
-)
+# xy_data = pd.read_csv(
+#     "Ener_DOE_unique_data_restructure_v2.csv", skiprows=1, header=None
+# )
+# xy_data_total = pd.read_csv(
+#     "Ener_complete_DOE_results_restructure_v2.csv", skiprows=1, header=None
+# )
+xy_data = pd.read_csv("Ener_DOE_unique_data_restructure_v2.csv")
+xy_data_total = pd.read_csv("Ener_complete_DOE_results_restructure_v2.csv")
 
 input_data = xy_data.iloc[:, :4]
 output_data = xy_data.iloc[:, 4:]
@@ -58,11 +60,12 @@ rbf_train = surrogate_trainer.train_surrogate()
 
 # create callable surrogate object
 xmin, xmax = [-1.3, 0.05, 5, 5], [-0.8, 0.15, 45, 30]
-input_bounds = {input_labels[i]: (xmin[i], xmax[i]) for i in range(len(input_labels))}
-rbf_surr = PysmoSurrogate(rbf_train, input_labels, output_labels, input_bounds)
+# input_bounds = {input_labels[i]: (xmin[i], xmax[i]) for i in range(len(input_labels))}
+# rbf_surr = PysmoSurrogate(rbf_train, input_labels, output_labels, input_bounds)
+rbf_surr = PysmoSurrogate(rbf_train, input_labels, output_labels)
 
 # save model to JSON
-model = rbf_surr.save_to_file("pysmo_rbf_surrogate.json", overwrite=True)
+model = rbf_surr.save_to_file("pysmo_RBF_Ener_surrogate.json", overwrite=True)
 
 metrics_training = compute_fit_metrics(rbf_surr, data_training)
 metrics_validation = compute_fit_metrics(rbf_surr, data_validation)

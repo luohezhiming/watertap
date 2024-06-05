@@ -19,10 +19,12 @@ from idaes.core.surrogate.plotting.sm_plotter import (
 from idaes.core.surrogate.metrics import compute_fit_metrics
 
 # Load dataset from a csv file
-xy_data = pd.read_csv("PR_DOE_unique_data_restructure_v2.csv", skiprows=1, header=None)
-xy_data_total = pd.read_csv(
-    "PR_complete_DOE_results_restructure_v2.csv", skiprows=1, header=None
-)
+# xy_data = pd.read_csv("PR_DOE_unique_data_restructure_v2.csv", skiprows=1, header=None)
+xy_data = pd.read_csv("PR_DOE_unique_data_restructure_v2.csv")
+# xy_data_total = pd.read_csv(
+#     "PR_complete_DOE_results_restructure_v2.csv", skiprows=1, header=None
+# )
+xy_data_total = pd.read_csv("PR_complete_DOE_results_restructure_v2.csv")
 
 input_data = xy_data.iloc[:, :4]
 output_data = xy_data.iloc[:, 4:]
