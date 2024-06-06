@@ -36,6 +36,7 @@ from watertap.costing.unit_models.electroNP import cost_electroNP
 
 from idaes.core.surrogate.surrogate_block import SurrogateBlock
 from idaes.core.surrogate.pysmo_surrogate import PysmoSurrogate
+import os
 
 
 __author__ = "Chenyu Wang"
@@ -238,9 +239,14 @@ class ElectroNPdata(SeparatorData):
         ]
         outputs = [self.P_removal_surrogate]
         self.surrogate_PR = SurrogateBlock(concrete=True)
+        PR_source_file = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "pysmo_RBF_PR_surrogate.json",
+        )
         # PR_surrogate = PysmoSurrogate.load_from_file(
         #     r"D:\Keylogic\WaterTap_Chenyu\watertap\watertap\unit_models\electroNP_surrogate\pysmo_RBF_PR_surrogate.json")
-        PR_surrogate = PysmoSurrogate.load_from_file("pysmo_RBF_PR_surrogate.json")
+        # PR_surrogate = PysmoSurrogate.load_from_file("pysmo_RBF_PR_surrogate.json")
+        PR_surrogate = PysmoSurrogate.load_from_file(PR_source_file)
         self.surrogate_PR.build_model(
             PR_surrogate, input_vars=inputs, output_vars=outputs
         )
@@ -392,7 +398,13 @@ class ElectroNPdata(SeparatorData):
         ]
         outputs = [self.EI_surrogate]
         self.surrogate_EI = SurrogateBlock(concrete=True)
-        EI_surrogate = PysmoSurrogate.load_from_file("pysmo_RBF_Ener_surrogate.json")
+        EI_source_file = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "pysmo_RBF_Ener_surrogate.json",
+        )
+        EI_surrogate = PysmoSurrogate.load_from_file(EI_source_file)
+        # EI_surrogate = PysmoSurrogate.load_from_file(
+        #     r"D:\Keylogic\WaterTap_Chenyu\watertap\watertap\unit_models\electroNP_surrogate\pysmo_RBF_Ener_surrogate.json")
         self.surrogate_EI.build_model(
             EI_surrogate, input_vars=inputs, output_vars=outputs
         )
