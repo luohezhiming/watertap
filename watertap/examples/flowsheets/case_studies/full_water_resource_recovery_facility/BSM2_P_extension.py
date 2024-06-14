@@ -861,19 +861,20 @@ def display_performance_metrics(m):
 
 if __name__ == "__main__":
     # This method builds and runs a steady state activated sludge flowsheet.
-    m, results = main()
+    m, results = main(bio_P=False)
 
     stream_table = create_stream_table_dataframe(
         {
             "Feed": m.fs.FeedWater.outlet,
-            "R1": m.fs.R1.outlet,
-            "R2": m.fs.R2.outlet,
-            "R3": m.fs.R3.outlet,
-            "R4": m.fs.R4.outlet,
-            "R5": m.fs.R5.outlet,
-            "R6": m.fs.R6.outlet,
-            "R7": m.fs.R7.outlet,
-            "thickener outlet": m.fs.thickener.underflow,
+            # "R1": m.fs.R1.outlet,
+            # "R2": m.fs.R2.outlet,
+            # "R3": m.fs.R3.outlet,
+            # "R4": m.fs.R4.outlet,
+            # "R5": m.fs.R5.outlet,
+            # "R6": m.fs.R6.outlet,
+            # "R7": m.fs.R7.outlet,
+            # "thickener outlet": m.fs.thickener.underflow,
+            "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
             "ADM-ASM translator outlet": m.fs.translator_adm1_asm2d.outlet,
             "dewater outlet": m.fs.dewater.overflow,
             "Treated water": m.fs.Treated.inlet,
