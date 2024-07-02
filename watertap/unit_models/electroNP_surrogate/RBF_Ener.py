@@ -26,7 +26,8 @@ from idaes.core.surrogate.metrics import compute_fit_metrics
 #     "Ener_complete_DOE_results_restructure_v2.csv", skiprows=1, header=None
 # )
 xy_data = pd.read_csv("Ener_DOE_unique_data_restructure_v2.csv")
-xy_data_total = pd.read_csv("Ener_complete_DOE_results_restructure_v2.csv")
+# xy_data_total = pd.read_csv("Ener_complete_DOE_results_restructure_v2.csv")
+xy_data_validation = pd.read_csv("Ener_validation_complete_data_resturcture.csv")
 
 input_data = xy_data.iloc[:, :4]
 output_data = xy_data.iloc[:, 4:]
@@ -42,7 +43,7 @@ output_labels = list(output_data.columns)
 # )  # seed=100
 
 data_training = xy_data
-data_validation = xy_data_total
+data_validation = xy_data_validation
 
 # Create PySMO trainer object
 surrogate_trainer = PysmoRBFTrainer(
