@@ -26,7 +26,8 @@ xy_data = pd.read_csv("PR_DOE_unique_data_restructure_v2.csv")
 # )
 # xy_data_total = pd.read_csv("PR_complete_DOE_results_restructure_v2.csv")
 
-xy_data_validation = pd.read_csv("PR_validation_complete_data_resturcture.csv")
+# xy_data_validation = pd.read_csv("PR_validation_complete_data_resturcture.csv")
+xy_data_validation = pd.read_csv("PR_validation_single_restrucutre.csv")
 
 input_data = xy_data.iloc[:, :4]
 output_data = xy_data.iloc[:, 4:]
