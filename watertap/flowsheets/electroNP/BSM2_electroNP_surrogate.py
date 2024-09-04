@@ -45,19 +45,19 @@ from idaes.core.util.tables import (
 )
 from watertap.unit_models.cstr_injection import CSTR_Injection
 from watertap.unit_models.clarifier import Clarifier
-from watertap.property_models.anaerobic_digestion.modified_adm1_properties import (
+from watertap.property_models.unit_specific.anaerobic_digestion.modified_adm1_properties import (
     ModifiedADM1ParameterBlock,
 )
-from watertap.property_models.anaerobic_digestion.adm1_properties_vapor import (
+from watertap.property_models.unit_specific.anaerobic_digestion.adm1_properties_vapor import (
     ADM1_vaporParameterBlock,
 )
-from watertap.property_models.anaerobic_digestion.modified_adm1_reactions import (
+from watertap.property_models.unit_specific.anaerobic_digestion.modified_adm1_reactions import (
     ModifiedADM1ReactionParameterBlock,
 )
-from watertap.property_models.activated_sludge.modified_asm2d_properties import (
+from watertap.property_models.unit_specific.activated_sludge.modified_asm2d_properties import (
     ModifiedASM2dParameterBlock,
 )
-from watertap.property_models.activated_sludge.modified_asm2d_reactions import (
+from watertap.property_models.unit_specific.activated_sludge.modified_asm2d_reactions import (
     ModifiedASM2dReactionParameterBlock,
 )
 from watertap.unit_models.translators.translator_adm1_asm2d import (
@@ -244,7 +244,8 @@ def build_flowsheet(has_electroNP=False):
     m.fs.translator_adm1_asm2d = Translator_ADM1_ASM2D(
         inlet_property_package=m.fs.props_ADM1,
         outlet_property_package=m.fs.props_ASM2D,
-        reaction_package=m.fs.rxn_props_ADM1,
+        inlet_reaction_package=m.fs.rxn_props_ADM1,
+        outlet_reaction_package=m.fs.rxn_props_ASM2D,
         has_phase_equilibrium=False,
         outlet_state_defined=True,
     )
