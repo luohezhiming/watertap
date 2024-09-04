@@ -37,7 +37,7 @@ SPECIAL_DEPENDENCIES_FOR_PRERELEASE = [
 setup(
     name="watertap",
     url="https://github.com/watertap-org/watertap",
-    version="1.0.dev0",
+    version="1.1.dev0",
     description="WaterTAP modeling library",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -83,9 +83,7 @@ setup(
         "pyomo>=6.6.1",
         "pyyaml",  # watertap.core.wt_database
         # for parameter_sweep
-        "h5py",
-        "requests",
-        "scipy",
+        "parameter-sweep>=0.1.dev5",
         # for watertap.ui.api_model (though may be generally useful)
         "pydantic >= 2, <3",
         "numpy",
@@ -137,15 +135,17 @@ setup(
     },
     entry_points={
         "watertap.flowsheets": [
-            "nf = watertap.examples.flowsheets.nf_dspmde.nf_ui",
-            "nf_with_bypass = watertap.examples.flowsheets.nf_dspmde.nf_with_bypass_ui",
-            "bsm2 = watertap.examples.flowsheets.case_studies.full_water_resource_recovery_facility.BSM2_ui",
-            "bsm2_P_extension = watertap.examples.flowsheets.case_studies.full_water_resource_recovery_facility.BSM2_P_extension_ui",
-            "dye_desalination = watertap.examples.flowsheets.case_studies.wastewater_resource_recovery.dye_desalination.dye_desalination_ui",
-            "mvc = watertap.examples.flowsheets.mvc.mvc_single_stage_ui",
-            "RO = watertap.examples.flowsheets.RO_with_energy_recovery.RO_with_energy_recovery_ui",
-            "OARO = watertap.examples.flowsheets.oaro.oaro_multi_ui",
-            "GAC = watertap.examples.flowsheets.gac.gac_ui",
+            "nf = watertap.flowsheets.nf_dspmde.nf_ui",
+            "bsm2 = watertap.flowsheets.full_water_resource_recovery_facility.BSM2_ui",
+            "bsm2_P_extension = watertap.flowsheets.full_water_resource_recovery_facility.BSM2_P_extension_ui",
+            "dye_desalination = watertap.flowsheets.dye_desalination.dye_desalination_ui",
+            "mvc = watertap.flowsheets.mvc.mvc_single_stage_ui",
+            "RO = watertap.flowsheets.RO_with_energy_recovery.RO_with_energy_recovery_ui",
+            "OARO = watertap.flowsheets.oaro.oaro_multi_ui",
+            "GAC = watertap.flowsheets.gac.gac_ui",
+            "ED_conc_recirc = watertap.flowsheets.electrodialysis.electrodialysis_1stack_conc_recirc_ui",
+            "LSRRO = watertap.flowsheets.lsrro.lsrro_ui",
+            "generic desal train = watertap.flowsheets.generic_desalination_train.generic_train_ui",
         ],
     },
 )
