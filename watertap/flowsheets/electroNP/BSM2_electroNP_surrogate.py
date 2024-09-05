@@ -104,32 +104,32 @@ def main(has_electroNP=False):
     m.fs.MX3.pressure_equality_constraints[0.0, 3].deactivate()
     print(f"DOF after initialization: {degrees_of_freedom(m)}")
 
-    # Use of Degeneracy Hunter for troubleshooting model.
-    m.obj = pyo.Objective(expr=0)
-    solver = get_solver()
-    solver.options["max_iter"] = 10000
-    results = solver.solve(m, tee=True)
-    dh = DegeneracyHunter(m, solver=pyo.SolverFactory("cbc"))
-    # badly_scaled_var_list = iscale.badly_scaled_var_generator(m, large=1e1, small=1e-1)
-    # for x in badly_scaled_var_list:
-    #     print(f"{x[0].name}\t{x[0].value}\tsf: {iscale.get_scaling_factor(x[0])}")
-    dh.check_residuals(tol=1e-8)
-    # dh.check_variable_bounds(tol=1e-8)
-    # dh.check_rank_equality_constraints(dense=True)
-    # ds = dh.find_candidate_equations(verbose=True, tee=True)
-    # ids = dh.find_irreducible_degenerate_sets(verbose=True)
-    # print_close_to_bounds(m)
-    # print_infeasible_constraints(m)
+    # # Use of Degeneracy Hunter for troubleshooting model.
+    # m.obj = pyo.Objective(expr=0)
+    # solver = get_solver()
+    # solver.options["max_iter"] = 10000
+    # results = solver.solve(m, tee=True)
+    # dh = DegeneracyHunter(m, solver=pyo.SolverFactory("cbc"))
+    # # badly_scaled_var_list = iscale.badly_scaled_var_generator(m, large=1e1, small=1e-1)
+    # # for x in badly_scaled_var_list:
+    # #     print(f"{x[0].name}\t{x[0].value}\tsf: {iscale.get_scaling_factor(x[0])}")
+    # dh.check_residuals(tol=1e-8)
+    # # dh.check_variable_bounds(tol=1e-8)
+    # # dh.check_rank_equality_constraints(dense=True)
+    # # ds = dh.find_candidate_equations(verbose=True, tee=True)
+    # # ids = dh.find_irreducible_degenerate_sets(verbose=True)
+    # # print_close_to_bounds(m)
+    # # print_infeasible_constraints(m)
 
-    # results = solve(m)
-    #
-    # pyo.assert_optimal_termination(results)
-    # check_solve(
-    #     results,
-    #     checkpoint="re-solve with controls in place",
-    #     logger=_log,
-    #     fail_flag=True,
-    # )
+    results = solve(m)
+
+    pyo.assert_optimal_termination(results)
+    check_solve(
+        results,
+        checkpoint="re-solve with controls in place",
+        logger=_log,
+        fail_flag=True,
+    )
 
     return m, results
 
@@ -538,6 +538,10 @@ def set_operating_conditions(m):
         # m.fs.electroNP.N_removal = 0.3
         m.fs.electroNP.frac_mass_H2O_treated[0].fix(0.99)
 
+        # iscale.set_scaling_factor(m.fs.electroNP.cathodic_potential, 1e0)
+        # iscale.set_scaling_factor(m.fs.electroNP.area_volume_ratio, 1e0)
+        # iscale.set_scaling_factor(m.fs.electroNP.settling_time, 1e-1)
+
     def scale_variables(m):
         for var in m.fs.component_data_objects(pyo.Var, descend_into=True):
             if "flow_vol" in var.name:
@@ -633,6 +637,7 @@ def initialize_system(m, has_electroNP=False):
             "pressure": {0: 101325},
         }
 
+        # success with CP<-1.05
         tear_guesses = {
             "flow_vol": {0: 1.2366},
             "conc_mass_comp": {
@@ -684,6 +689,58 @@ def initialize_system(m, has_electroNP=False):
             "temperature": {0: 308.15},
             "pressure": {0: 101325},
         }
+
+        # tear_guesses = {
+        #     "flow_vol": {0: 1.2366},
+        #     "conc_mass_comp": {
+        #         (0, "S_A"): 0.0006,
+        #         (0, "S_F"): 0.0004,
+        #         (0, "S_I"): 0.057,
+        #         (0, "S_N2"): 0.04,
+        #         (0, "S_NH4"): 0.006,
+        #         (0, "S_NO3"): 0.002,
+        #         (0, "S_O2"): 0.0019,
+        #         (0, "S_PO4"): 0.02,
+        #         (0, "S_K"): 0.37,
+        #         (0, "S_Mg"): 0.020,
+        #         (0, "S_IC"): 0.13,
+        #         (0, "X_AUT"): 0.086,
+        #         (0, "X_H"): 3.45,
+        #         (0, "X_I"): 3.13,
+        #         (0, "X_PAO"): 3.35,
+        #         (0, "X_PHA"): 0.087,
+        #         (0, "X_PP"): 1.12,
+        #         (0, "X_S"): 0.057,
+        #     },
+        #     "temperature": {0: 308.15},
+        #     "pressure": {0: 101325},
+        # }
+        #
+        # tear_guesses2 = {
+        #     "flow_vol": {0: 0.003},
+        #     "conc_mass_comp": {
+        #         (0, "S_A"): 0.097,
+        #         (0, "S_F"): 0.15,
+        #         (0, "S_I"): 0.057,
+        #         (0, "S_N2"): 0.033,
+        #         (0, "S_NH4"): 0.025,
+        #         (0, "S_NO3"): 0.0015,
+        #         (0, "S_O2"): 0.0013,
+        #         (0, "S_PO4"): 0.033,
+        #         (0, "S_K"): 0.38,
+        #         (0, "S_Mg"): 0.024,
+        #         (0, "S_IC"): 0.074,
+        #         (0, "X_AUT"): 0.21,
+        #         (0, "X_H"): 23.1,
+        #         (0, "X_I"): 11.3,
+        #         (0, "X_PAO"): 10.4,
+        #         (0, "X_PHA"): 0.005,
+        #         (0, "X_PP"): 2.8,
+        #         (0, "X_S"): 3.9,
+        #     },
+        #     "temperature": {0: 308.15},
+        #     "pressure": {0: 101325},
+        # }
 
     else:
         tear_guesses = {

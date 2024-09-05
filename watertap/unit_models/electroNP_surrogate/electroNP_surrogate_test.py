@@ -21,7 +21,7 @@ from pyomo.environ import (
 )
 from idaes.core import FlowsheetBlock
 from watertap.unit_models.electroNP_surrogate.electroNP_surrogate import ElectroNP
-from watertap.property_models.activated_sludge.simple_modified_asm2d_properties import (
+from watertap.property_models.unit_specific.activated_sludge.simple_modified_asm2d_properties import (
     SimpleModifiedASM2dParameterBlock,
 )
 from watertap.core.solvers import get_solver
@@ -92,7 +92,7 @@ def build_flowsheet():
     # m.fs.unit.settling_time.fix(30)
 
     iscale.set_scaling_factor(m.fs.unit.CP_surrogate, 1e0)
-    iscale.set_scaling_factor(m.fs.unit.r_AV_surrogate, 1e1)
+    iscale.set_scaling_factor(m.fs.unit.r_AV_surrogate, 1e0)
     iscale.set_scaling_factor(m.fs.unit.T_surrogate, 1e-1)
     iscale.set_scaling_factor(m.fs.unit.t_ss_surrogate, 1e-1)
 
