@@ -21,8 +21,15 @@ from pyomo.environ import (
 )
 from idaes.core import FlowsheetBlock
 from watertap.unit_models.electroNP_surrogate.electroNP_surrogate import ElectroNP
-from watertap.property_models.unit_specific.activated_sludge.simple_modified_asm2d_properties import (
-    SimpleModifiedASM2dParameterBlock,
+
+# from watertap.property_models.unit_specific.activated_sludge.simple_modified_asm2d_properties import (
+#     SimpleModifiedASM2dParameterBlock,
+# )
+from watertap.property_models.unit_specific.activated_sludge.modified_asm2d_properties import (
+    ModifiedASM2dParameterBlock,
+)
+from watertap.property_models.unit_specific.activated_sludge.modified_asm2d_reactions import (
+    ModifiedASM2dReactionParameterBlock,
 )
 from watertap.core.solvers import get_solver
 from idaes.core.util.model_statistics import degrees_of_freedom
@@ -42,49 +49,49 @@ def build_flowsheet():
     m = ConcreteModel()
     m.fs = FlowsheetBlock(dynamic=False)
 
-    m.fs.properties = SimpleModifiedASM2dParameterBlock(
-        additional_solute_list=["S_K", "S_Mg"]
-    )
+    m.fs.properties = ModifiedASM2dParameterBlock()
 
     m.fs.unit = ElectroNP(property_package=m.fs.properties)
 
-    EPS = 1e-8
+    EPS = 1e-10
 
-    m.fs.unit.inlet.temperature.fix(298.15 * units.K)
+    m.fs.unit.inlet.temperature.fix(308.15 * units.K)
     m.fs.unit.inlet.pressure.fix(1 * units.atm)
 
-    m.fs.unit.inlet.flow_vol.fix(18446 * units.m**3 / units.day)
-    m.fs.unit.inlet.conc_mass_comp[0, "S_O2"].fix(10 * units.mg / units.liter)
-    m.fs.unit.inlet.conc_mass_comp[0, "S_N2"].fix(EPS * units.mg / units.liter)
-    m.fs.unit.inlet.conc_mass_comp[0, "S_NH4"].fix(16 * units.mg / units.liter)
-    m.fs.unit.inlet.conc_mass_comp[0, "S_NO3"].fix(EPS * units.mg / units.liter)
-    m.fs.unit.inlet.conc_mass_comp[0, "S_PO4"].fix(3.6 * units.mg / units.liter)
-    m.fs.unit.inlet.conc_mass_comp[0, "S_F"].fix(30 * units.mg / units.liter)
-    m.fs.unit.inlet.conc_mass_comp[0, "S_A"].fix(20 * units.mg / units.liter)
-    m.fs.unit.inlet.conc_mass_comp[0, "S_I"].fix(30 * units.mg / units.liter)
-    m.fs.unit.inlet.conc_mass_comp[0, "X_I"].fix(25 * units.mg / units.liter)
-    m.fs.unit.inlet.conc_mass_comp[0, "X_S"].fix(125 * units.mg / units.liter)
-    m.fs.unit.inlet.conc_mass_comp[0, "X_H"].fix(30 * units.mg / units.liter)
-    m.fs.unit.inlet.conc_mass_comp[0, "X_PAO"].fix(EPS * units.mg / units.liter)
-    m.fs.unit.inlet.conc_mass_comp[0, "X_PP"].fix(EPS * units.mg / units.liter)
-    m.fs.unit.inlet.conc_mass_comp[0, "X_PHA"].fix(EPS * units.mg / units.liter)
-    m.fs.unit.inlet.conc_mass_comp[0, "X_AUT"].fix(EPS * units.mg / units.liter)
-    m.fs.unit.inlet.conc_mass_comp[0, "X_MeOH"].fix(EPS * units.mg / units.liter)
-    m.fs.unit.inlet.conc_mass_comp[0, "X_MeP"].fix(EPS * units.mg / units.liter)
-    m.fs.unit.inlet.conc_mass_comp[0, "X_TSS"].fix(EPS * units.mg / units.liter)
-    m.fs.unit.inlet.conc_mass_comp[0, "S_K"].fix(EPS * units.mg / units.liter)
-    m.fs.unit.inlet.conc_mass_comp[0, "S_Mg"].fix(EPS * units.mg / units.liter)
+    m.fs.unit.inlet.flow_vol.fix(0.0028385 * units.m**3 / units.s)
 
-    # Alkalinity was givien in mg/L based on C
-    m.fs.unit.inlet.alkalinity[0].fix(61 / 12 * units.mmol / units.liter)
+    m.fs.unit.inlet.conc_mass_comp[0, "S_A"].fix(8.4692 * units.g / units.liter)
+    m.fs.unit.inlet.conc_mass_comp[0, "S_F"].fix(22.083 * units.g / units.liter)
+    m.fs.unit.inlet.conc_mass_comp[0, "S_I"].fix(0.057262 * units.g / units.liter)
+    m.fs.unit.inlet.conc_mass_comp[0, "S_N2"].fix(EPS * units.g / units.liter)
+    m.fs.unit.inlet.conc_mass_comp[0, "S_NH4"].fix(2.0103 * units.g / units.liter)
+    m.fs.unit.inlet.conc_mass_comp[0, "S_NO3"].fix(EPS * units.g / units.liter)
+    m.fs.unit.inlet.conc_mass_comp[0, "S_O2"].fix(EPS * units.g / units.liter)
+    m.fs.unit.inlet.conc_mass_comp[0, "S_PO4"].fix(67.379 * units.g / units.liter)
+    m.fs.unit.inlet.conc_mass_comp[0, "S_K"].fix(1.0923 * units.g / units.liter)
+    m.fs.unit.inlet.conc_mass_comp[0, "S_Mg"].fix(0.74048 * units.g / units.liter)
+    m.fs.unit.inlet.conc_mass_comp[0, "S_IC"].fix(1.2161 * units.g / units.liter)
+
+    m.fs.unit.inlet.conc_mass_comp[0, "X_AUT"].fix(EPS * units.g / units.liter)
+    m.fs.unit.inlet.conc_mass_comp[0, "X_H"].fix(EPS * units.g / units.liter)
+    m.fs.unit.inlet.conc_mass_comp[0, "X_I"].fix(0.30624 * units.g / units.liter)
+    m.fs.unit.inlet.conc_mass_comp[0, "X_PAO"].fix(EPS * units.g / units.liter)
+    m.fs.unit.inlet.conc_mass_comp[0, "X_PHA"].fix(EPS * units.g / units.liter)
+    m.fs.unit.inlet.conc_mass_comp[0, "X_PP"].fix(EPS * units.g / units.liter)
+    m.fs.unit.inlet.conc_mass_comp[0, "X_S"].fix(0.070202 * units.g / units.liter)
+
+    # # Alkalinity was givien in mg/L based on C
+    # m.fs.unit.inlet.alkalinity[0].fix(61 / 12 * units.mmol / units.liter)
 
     # Unit option
     # m.fs.unit.energy_electric_flow_mass.fix(0.044 * units.kWh / units.kg)
     m.fs.unit.magnesium_chloride_dosage.fix(0.388)
 
-    m.fs.unit.cathodic_potential.fix(-1.05 * units.V)
+    m.fs.unit.cathodic_potential.fix(-0.8 * units.V)
     m.fs.unit.area_volume_ratio.fix(0.105)
     m.fs.unit.settling_time.fix(30 * units.min)
+
+    m.fs.unit.frac_mass_H2O_treated[0].fix(1)
 
     # m.fs.unit.cathodic_potential.fix(-1.05)
     # m.fs.unit.area_volume_ratio.fix(0.105)
@@ -96,30 +103,43 @@ def build_flowsheet():
     iscale.set_scaling_factor(m.fs.unit.T_surrogate, 1e-1)
     iscale.set_scaling_factor(m.fs.unit.t_ss_surrogate, 1e-1)
 
-    m.fs.properties.set_default_scaling("pressure", 1e-5)
-    m.fs.properties.set_default_scaling("temperature", 1e-1)
-    m.fs.properties.set_default_scaling("flow_vol", 1)
-    m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("S_O2"))
-    m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("S_N2"))
-    m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("S_NH4"))
-    m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("S_NO3"))
-    m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("S_PO4"))
-    m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("S_F"))
-    m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("S_A"))
-    m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("S_I"))
-    m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("X_I"))
-    m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("X_S"))
-    m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("X_H"))
-    m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("X_PAO"))
-    m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("X_PP"))
-    m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("X_PHA"))
-    m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("X_AUT"))
-    m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("X_MeOH"))
-    m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("X_MeP"))
-    m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("X_TSS"))
-    m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("S_K"))
-    m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("S_Mg"))
-    m.fs.properties.set_default_scaling("alkalinity", 1)
+    def scale_variables(m):
+        for var in m.fs.component_data_objects(pyo.Var, descend_into=True):
+            if "flow_vol" in var.name:
+                iscale.set_scaling_factor(var, 1e0)
+            if "temperature" in var.name:
+                iscale.set_scaling_factor(var, 1e-2)
+            if "pressure" in var.name:
+                iscale.set_scaling_factor(var, 1e-5)
+            if "conc_mass_comp" in var.name:
+                iscale.set_scaling_factor(var, 1e1)
+
+    # m.fs.properties.set_default_scaling("pressure", 1e-5)
+    # m.fs.properties.set_default_scaling("temperature", 1e-2)
+    # m.fs.properties.set_default_scaling("flow_vol", 1)
+    # m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("S_O2"))
+    # m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("S_N2"))
+    # m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("S_NH4"))
+    # m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("S_NO3"))
+    # m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("S_PO4"))
+    # m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("S_F"))
+    # m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("S_A"))
+    # m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("S_I"))
+    # m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("X_I"))
+    # m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("X_S"))
+    # m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("X_H"))
+    # m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("X_PAO"))
+    # m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("X_PP"))
+    # m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("X_PHA"))
+    # m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("X_AUT"))
+    # m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("X_MeOH"))
+    # m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("X_MeP"))
+    # m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("X_TSS"))
+    # m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("S_K"))
+    # m.fs.properties.set_default_scaling("conc_mass_comp", 1e1, index=("S_Mg"))
+    # m.fs.properties.set_default_scaling("alkalinity", 1)
+
+    scale_variables(m)
 
     calculate_scaling_factors(m)
 
@@ -150,3 +170,4 @@ def build_flowsheet():
 
 if __name__ == "__main__":
     m, results = build_flowsheet()
+    print(f"P removal: {m.fs.unit.P_removal.value}")
