@@ -343,6 +343,19 @@ class ElectroNPdata(SeparatorData):
         def eq_N_removal(b):
             return b.N_removal == 0.3 * b.P_removal
 
+        # self.dens_mass = Param(
+        #     initialize=997,
+        #     doc="Density of water",
+        #     units=pyunits.kg / pyunits.m ** 3,
+        # )
+        #
+        # @self.Constraint(
+        #     self.flowsheet().time,
+        #     doc="Constraint for water removal",
+        # )
+        # def eq_water_removal(b, t):
+        #     return b.frac_mass_H2O_treated[t] == (b.dens_mass - b.inlet.conc_mass_comp[t, "S_PO4"] * b.P_removal * (18*6/31))/b.dens_mass
+
         @self.Constraint(
             self.flowsheet().time,
             self.config.property_package.component_list,

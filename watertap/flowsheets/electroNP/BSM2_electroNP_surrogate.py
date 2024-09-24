@@ -94,6 +94,7 @@ from watertap.costing.unit_models.clarifier import (
 from idaes.core.util.model_diagnostics import DegeneracyHunter
 from idaes.core.util.model_diagnostics import DiagnosticsToolbox
 from pyomo.environ import *
+from watertap.unit_models.aeration_tank import AerationTank, ElectricityConsumption
 
 # Set up logger
 _log = idaeslog.getLogger(__name__)
@@ -102,6 +103,11 @@ _log = idaeslog.getLogger(__name__)
 def main(has_electroNP=False):
     m = build_flowsheet(has_electroNP=has_electroNP)
     set_operating_conditions(m)
+
+    print("----------------   scaling V0  ----------------")
+    badly_scaled_var_list = iscale.badly_scaled_var_generator(m, large=1e1, small=1e-1)
+    for x in badly_scaled_var_list:
+        print(f"{x[0].name}\t{x[0].value}\tsf: {iscale.get_scaling_factor(x[0])}")
 
     for mx in m.fs.mixers:
         mx.pressure_equality_constraints[0.0, 2].deactivate()
@@ -133,28 +139,28 @@ def main(has_electroNP=False):
     # # print_close_to_bounds(m)
     # # print_infeasible_constraints(m)
 
-    # results = solve(m)
-    #
-    # pyo.assert_optimal_termination(results)
-    # check_solve(
-    #     results,
-    #     checkpoint="re-solve with controls in place",
-    #     logger=_log,
-    #     fail_flag=True,
-    # )
-    #
-    # add_costing(m)
-    # m.fs.costing.initialize()
-    #
-    # interval_initializer(m.fs.costing)
-    #
-    # assert_degrees_of_freedom(m, 0)
-    #
-    # results = solve(m)
-    # pyo.assert_optimal_termination(results)
-    #
-    # display_costing(m)
-    # display_performance_metrics(m)
+    results = solve(m)
+
+    pyo.assert_optimal_termination(results)
+    check_solve(
+        results,
+        checkpoint="re-solve with controls in place",
+        logger=_log,
+        fail_flag=True,
+    )
+
+    add_costing(m, has_electroNP=has_electroNP)
+    m.fs.costing.initialize()
+
+    interval_initializer(m.fs.costing)
+
+    assert_degrees_of_freedom(m, 0)
+
+    results = solve(m)
+    pyo.assert_optimal_termination(results)
+
+    display_costing(m, has_electroNP=has_electroNP)
+    display_performance_metrics(m)
 
     return m, results
 
@@ -212,16 +218,22 @@ def build_flowsheet(has_electroNP=False):
         property_package=m.fs.props_ASM2D, reaction_package=m.fs.rxn_props_ASM2D
     )
     # Fifth reactor (aerobic) - CSTR with injection
-    m.fs.R5 = CSTR_Injection(
-        property_package=m.fs.props_ASM2D, reaction_package=m.fs.rxn_props_ASM2D
+    m.fs.R5 = AerationTank(
+        property_package=m.fs.props_ASM2D,
+        reaction_package=m.fs.rxn_props_ASM2D,
+        electricity_consumption=ElectricityConsumption.calculated,
     )
     # Sixth reactor (aerobic) - CSTR with injection
-    m.fs.R6 = CSTR_Injection(
-        property_package=m.fs.props_ASM2D, reaction_package=m.fs.rxn_props_ASM2D
+    m.fs.R6 = AerationTank(
+        property_package=m.fs.props_ASM2D,
+        reaction_package=m.fs.rxn_props_ASM2D,
+        electricity_consumption=ElectricityConsumption.calculated,
     )
     # Seventh reactor (aerobic) - CSTR with injection
-    m.fs.R7 = CSTR_Injection(
-        property_package=m.fs.props_ASM2D, reaction_package=m.fs.rxn_props_ASM2D
+    m.fs.R7 = AerationTank(
+        property_package=m.fs.props_ASM2D,
+        reaction_package=m.fs.rxn_props_ASM2D,
+        electricity_consumption=ElectricityConsumption.calculated,
     )
     m.fs.SP1 = Separator(
         property_package=m.fs.props_ASM2D, outlet_list=["underflow", "overflow"]
@@ -377,62 +389,62 @@ def build_flowsheet(has_electroNP=False):
 
     # Oxygen concentration in reactors 3 and 4 is governed by mass transfer
     # Add additional parameter and constraints
-    m.fs.R5.KLa = pyo.Var(
-        initialize=240,
-        units=pyo.units.hour**-1,
-        doc="Lumped mass transfer coefficient for oxygen",
-    )
-    m.fs.R6.KLa = pyo.Var(
-        initialize=240,
-        units=pyo.units.hour**-1,
-        doc="Lumped mass transfer coefficient for oxygen",
-    )
-    m.fs.R7.KLa = pyo.Var(
-        initialize=84,
-        units=pyo.units.hour**-1,
-        doc="Lumped mass transfer coefficient for oxygen",
-    )
-    m.fs.S_O_eq = pyo.Param(
-        default=8e-3,
-        units=pyo.units.kg / pyo.units.m**3,
-        mutable=True,
-        doc="Dissolved oxygen concentration at equilibrium",
-    )
+    # m.fs.R5.KLa = pyo.Var(
+    #     initialize=240,
+    #     units=pyo.units.hour**-1,
+    #     doc="Lumped mass transfer coefficient for oxygen",
+    # )
+    # m.fs.R6.KLa = pyo.Var(
+    #     initialize=240,
+    #     units=pyo.units.hour**-1,
+    #     doc="Lumped mass transfer coefficient for oxygen",
+    # )
+    # m.fs.R7.KLa = pyo.Var(
+    #     initialize=84,
+    #     units=pyo.units.hour**-1,
+    #     doc="Lumped mass transfer coefficient for oxygen",
+    # )
+    # m.fs.S_O_eq = pyo.Param(
+    #     default=8e-3,
+    #     units=pyo.units.kg / pyo.units.m**3,
+    #     mutable=True,
+    #     doc="Dissolved oxygen concentration at equilibrium",
+    # )
 
-    m.fs.aerobic_reactors = (m.fs.R5, m.fs.R6, m.fs.R7)
-    for R in m.fs.aerobic_reactors:
-        iscale.set_scaling_factor(R.KLa, 1e-2)
-        iscale.set_scaling_factor(R.hydraulic_retention_time[0], 1e-3)
+    # m.fs.aerobic_reactors = (m.fs.R5, m.fs.R6, m.fs.R7)
+    # for R in m.fs.aerobic_reactors:
+    #     iscale.set_scaling_factor(R.KLa, 1e0)
+    #     iscale.set_scaling_factor(R.hydraulic_retention_time[0], 1e-3)
 
-    @m.fs.R5.Constraint(m.fs.time, doc="Mass transfer constraint for R3")
-    def mass_transfer_R5(self, t):
-        return pyo.units.convert(
-            m.fs.R5.injection[t, "Liq", "S_O2"], to_units=pyo.units.kg / pyo.units.hour
-        ) == (
-            m.fs.R5.KLa
-            * m.fs.R5.volume[t]
-            * (m.fs.S_O_eq - m.fs.R5.outlet.conc_mass_comp[t, "S_O2"])
-        )
-
-    @m.fs.R6.Constraint(m.fs.time, doc="Mass transfer constraint for R4")
-    def mass_transfer_R6(self, t):
-        return pyo.units.convert(
-            m.fs.R6.injection[t, "Liq", "S_O2"], to_units=pyo.units.kg / pyo.units.hour
-        ) == (
-            m.fs.R6.KLa
-            * m.fs.R6.volume[t]
-            * (m.fs.S_O_eq - m.fs.R6.outlet.conc_mass_comp[t, "S_O2"])
-        )
-
-    @m.fs.R7.Constraint(m.fs.time, doc="Mass transfer constraint for R4")
-    def mass_transfer_R7(self, t):
-        return pyo.units.convert(
-            m.fs.R7.injection[t, "Liq", "S_O2"], to_units=pyo.units.kg / pyo.units.hour
-        ) == (
-            m.fs.R7.KLa
-            * m.fs.R7.volume[t]
-            * (m.fs.S_O_eq - m.fs.R7.outlet.conc_mass_comp[t, "S_O2"])
-        )
+    # @m.fs.R5.Constraint(m.fs.time, doc="Mass transfer constraint for R3")
+    # def mass_transfer_R5(self, t):
+    #     return pyo.units.convert(
+    #         m.fs.R5.injection[t, "Liq", "S_O2"], to_units=pyo.units.kg / pyo.units.hour
+    #     ) == (
+    #         m.fs.R5.KLa
+    #         * m.fs.R5.volume[t]
+    #         * (m.fs.S_O_eq - m.fs.R5.outlet.conc_mass_comp[t, "S_O2"])
+    #     )
+    #
+    # @m.fs.R6.Constraint(m.fs.time, doc="Mass transfer constraint for R4")
+    # def mass_transfer_R6(self, t):
+    #     return pyo.units.convert(
+    #         m.fs.R6.injection[t, "Liq", "S_O2"], to_units=pyo.units.kg / pyo.units.hour
+    #     ) == (
+    #         m.fs.R6.KLa
+    #         * m.fs.R6.volume[t]
+    #         * (m.fs.S_O_eq - m.fs.R6.outlet.conc_mass_comp[t, "S_O2"])
+    #     )
+    #
+    # @m.fs.R7.Constraint(m.fs.time, doc="Mass transfer constraint for R4")
+    # def mass_transfer_R7(self, t):
+    #     return pyo.units.convert(
+    #         m.fs.R7.injection[t, "Liq", "S_O2"], to_units=pyo.units.kg / pyo.units.hour
+    #     ) == (
+    #         m.fs.R7.KLa
+    #         * m.fs.R7.volume[t]
+    #         * (m.fs.S_O_eq - m.fs.R7.outlet.conc_mass_comp[t, "S_O2"])
+    #     )
 
     return m
 
@@ -557,17 +569,65 @@ def set_operating_conditions(m):
         # m.fs.electroNP.energy_electric_flow_mass.fix(
         #     0.044 * pyo.units.kWh / pyo.units.kg
         # )
-        m.fs.electroNP.cathodic_potential.fix(-1.0 * pyo.units.V)
+        m.fs.electroNP.cathodic_potential.fix(-1.05 * pyo.units.V)
         m.fs.electroNP.area_volume_ratio.fix(0.105)
         m.fs.electroNP.settling_time.fix(30 * pyo.units.min)
         m.fs.electroNP.magnesium_chloride_dosage.fix(0.388)
         # m.fs.electroNP.P_removal = 0.95
         # m.fs.electroNP.N_removal = 0.3
-        m.fs.electroNP.frac_mass_H2O_treated[0].fix(0.99)
+        m.fs.electroNP.frac_mass_H2O_treated[0].fix(0.9)
 
         # iscale.set_scaling_factor(m.fs.electroNP.cathodic_potential, 1e0)
         # iscale.set_scaling_factor(m.fs.electroNP.area_volume_ratio, 1e0)
         # iscale.set_scaling_factor(m.fs.electroNP.settling_time, 1e-1)
+
+    # Expressions
+    m.fs.TP_in = Expression(
+        expr=(
+            m.fs.FeedWater.conc_mass_comp[0, "S_PO4"]
+            + m.fs.FeedWater.conc_mass_comp[0, "X_PP"]
+            + m.fs.FeedWater.conc_mass_comp[0, "X_PHA"]
+            + m.fs.FeedWater.conc_mass_comp[0, "X_PAO"]
+        )
+    )
+    m.fs.TP_treated = Expression(
+        expr=(
+            m.fs.Treated.conc_mass_comp[0, "S_PO4"]
+            + m.fs.Treated.conc_mass_comp[0, "X_PP"]
+            + m.fs.Treated.conc_mass_comp[0, "X_PHA"]
+            + m.fs.Treated.conc_mass_comp[0, "X_PAO"]
+        )
+    )
+    m.fs.TN_in = Expression(
+        expr=(
+            m.fs.FeedWater.conc_mass_comp[0, "S_N2"]
+            + m.fs.FeedWater.conc_mass_comp[0, "S_NH4"]
+            + m.fs.FeedWater.conc_mass_comp[0, "S_NO3"]
+            + m.fs.FeedWater.conc_mass_comp[0, "X_AUT"]
+        )
+    )
+    m.fs.TN_treated = Expression(
+        expr=(
+            m.fs.Treated.conc_mass_comp[0, "S_N2"]
+            + m.fs.Treated.conc_mass_comp[0, "S_NH4"]
+            + m.fs.Treated.conc_mass_comp[0, "S_NO3"]
+            + m.fs.Treated.conc_mass_comp[0, "X_AUT"]
+        )
+    )
+
+    m.fs.aeration_energy = Expression(
+        expr=(
+            (
+                m.fs.R5.electricity_consumption[0]
+                + m.fs.R6.electricity_consumption[0]
+                + m.fs.R7.electricity_consumption[0]
+            )
+            / pyo.units.convert(
+                m.fs.FeedWater.properties[0].flow_vol,
+                to_units=pyo.units.m**3 / pyo.units.hr,
+            )
+        )
+    )
 
     def scale_variables(m):
         for var in m.fs.component_data_objects(pyo.Var, descend_into=True):
@@ -604,12 +664,12 @@ def initialize_system(m, has_electroNP=False):
     seq.options.iterLim = 1
     seq.options.tear_set = [m.fs.stream5, m.fs.stream10adm]
 
-    G = seq.create_graph(m)
-    # Uncomment this code to see tear set and initialization order
-    order = seq.calculation_order(G)
-    print("Initialization Order")
-    for o in order:
-        print(o[0].name)
+    # G = seq.create_graph(m)
+    # # Uncomment this code to see tear set and initialization order
+    # order = seq.calculation_order(G)
+    # print("Initialization Order")
+    # for o in order:
+    #     print(o[0].name)
 
     if has_electroNP:
         tear_guesses = {
@@ -718,7 +778,7 @@ def initialize_system(m, has_electroNP=False):
         }
 
         # tear_guesses = {
-        #     "flow_vol": {0: 1.2366},
+        #     "flow_vol": {0: 1.2364},
         #     "conc_mass_comp": {
         #         (0, "S_A"): 0.0006,
         #         (0, "S_F"): 0.0004,
@@ -727,15 +787,15 @@ def initialize_system(m, has_electroNP=False):
         #         (0, "S_NH4"): 0.006,
         #         (0, "S_NO3"): 0.002,
         #         (0, "S_O2"): 0.0019,
-        #         (0, "S_PO4"): 0.02,
+        #         (0, "S_PO4"): 0.019,
         #         (0, "S_K"): 0.37,
         #         (0, "S_Mg"): 0.020,
         #         (0, "S_IC"): 0.13,
-        #         (0, "X_AUT"): 0.086,
+        #         (0, "X_AUT"): 0.085,
         #         (0, "X_H"): 3.45,
         #         (0, "X_I"): 3.13,
-        #         (0, "X_PAO"): 3.35,
-        #         (0, "X_PHA"): 0.087,
+        #         (0, "X_PAO"): 3.4,
+        #         (0, "X_PHA"): 0.088,
         #         (0, "X_PP"): 1.12,
         #         (0, "X_S"): 0.057,
         #     },
@@ -753,14 +813,14 @@ def initialize_system(m, has_electroNP=False):
         #         (0, "S_NH4"): 0.025,
         #         (0, "S_NO3"): 0.0015,
         #         (0, "S_O2"): 0.0013,
-        #         (0, "S_PO4"): 0.033,
+        #         (0, "S_PO4"): 0.034,
         #         (0, "S_K"): 0.38,
-        #         (0, "S_Mg"): 0.024,
-        #         (0, "S_IC"): 0.074,
-        #         (0, "X_AUT"): 0.21,
+        #         (0, "S_Mg"): 0.023,
+        #         (0, "S_IC"): 0.075,
+        #         (0, "X_AUT"): 0.22,
         #         (0, "X_H"): 23.1,
         #         (0, "X_I"): 11.3,
-        #         (0, "X_PAO"): 10.4,
+        #         (0, "X_PAO"): 10.5,
         #         (0, "X_PHA"): 0.005,
         #         (0, "X_PP"): 2.8,
         #         (0, "X_S"): 3.9,
@@ -768,6 +828,59 @@ def initialize_system(m, has_electroNP=False):
         #     "temperature": {0: 308.15},
         #     "pressure": {0: 101325},
         # }
+
+        # aeration tank
+        tear_guesses = {
+            "flow_vol": {0: 1.2353},
+            "conc_mass_comp": {
+                (0, "S_A"): 0.0006,
+                (0, "S_F"): 0.0004,
+                (0, "S_I"): 0.057,
+                (0, "S_N2"): 0.04,
+                (0, "S_NH4"): 0.006,
+                (0, "S_NO3"): 0.002,
+                (0, "S_O2"): 0.0019,
+                (0, "S_PO4"): 0.023,
+                (0, "S_K"): 0.37,
+                (0, "S_Mg"): 0.020,
+                (0, "S_IC"): 0.13,
+                (0, "X_AUT"): 0.085,
+                (0, "X_H"): 3.45,
+                (0, "X_I"): 3.13,
+                (0, "X_PAO"): 3.4,
+                (0, "X_PHA"): 0.087,
+                (0, "X_PP"): 1.12,
+                (0, "X_S"): 0.057,
+            },
+            "temperature": {0: 308.15},
+            "pressure": {0: 101325},
+        }
+
+        tear_guesses2 = {
+            "flow_vol": {0: 0.003},
+            "conc_mass_comp": {
+                (0, "S_A"): 0.097,
+                (0, "S_F"): 0.15,
+                (0, "S_I"): 0.057,
+                (0, "S_N2"): 0.033,
+                (0, "S_NH4"): 0.025,
+                (0, "S_NO3"): 0.0015,
+                (0, "S_O2"): 0.0013,
+                (0, "S_PO4"): 0.036,
+                (0, "S_K"): 0.38,
+                (0, "S_Mg"): 0.024,
+                (0, "S_IC"): 0.075,
+                (0, "X_AUT"): 0.21,
+                (0, "X_H"): 23.1,
+                (0, "X_I"): 11.3,
+                (0, "X_PAO"): 10.4,
+                (0, "X_PHA"): 0.005,
+                (0, "X_PP"): 2.8,
+                (0, "X_S"): 3.9,
+            },
+            "temperature": {0: 308.15},
+            "pressure": {0: 101325},
+        }
 
     else:
         tear_guesses = {
@@ -803,7 +916,7 @@ def initialize_system(m, has_electroNP=False):
                 (0, "S_F"): 0.15,
                 (0, "S_I"): 0.057,
                 (0, "S_N2"): 0.036,
-                (0, "S_NH4"): 0.03,
+                (0, "S_NH4"): 0.029,
                 (0, "S_NO3"): 0.002,
                 (0, "S_O2"): 0.0013,
                 (0, "S_PO4"): 0.74,
@@ -827,7 +940,8 @@ def initialize_system(m, has_electroNP=False):
     seq.set_guesses_for(m.fs.translator_asm2d_adm1.inlet, tear_guesses2)
 
     def function(unit):
-        unit.initialize(outlvl=idaeslog.INFO, solver="ipopt-watertap")
+        # unit.initialize(outlvl=idaeslog.INFO, solver="ipopt-watertap")
+        unit.initialize(solver="ipopt-watertap")
 
     results = seq.run(m, function)
 
@@ -843,7 +957,7 @@ def solve(m, solver=None):
     return results
 
 
-def add_costing(m):
+def add_costing(m, has_electroNP=False):
     m.fs.costing = WaterTAPCosting()
     m.fs.costing.base_currency = pyo.units.USD_2020
 
@@ -868,7 +982,10 @@ def add_costing(m):
     m.fs.AD.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
     m.fs.dewater.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
     m.fs.thickener.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
-    m.fs.electroNP.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
+    if has_electroNP is True:
+        m.fs.electroNP.costing = UnitModelCostingBlock(
+            flowsheet_costing_block=m.fs.costing
+        )
 
     # TODO: Leaving out mixer costs; consider including later
 
@@ -886,86 +1003,97 @@ def add_costing(m):
             iscale.set_scaling_factor(block.costing.capital_cost, 1e-5)
 
 
-def display_costing(m):
-    print("Levelized cost of water: %.2f $/m3" % pyo.value(m.fs.costing.LCOW))
+def display_costing(m, has_electroNP=False):
+    print("---Costing Metrics---")
+    print("Levelized cost of water: %.3f $/m3" % pyo.value(m.fs.costing.LCOW))
 
     print(
-        "Total operating cost: %.2f $/yr" % pyo.value(m.fs.costing.total_operating_cost)
+        "Total operating cost: %.3f M$/yr"
+        % pyo.value(m.fs.costing.total_operating_cost / 1e6)
     )
-    print("Total capital cost: %.2f $" % pyo.value(m.fs.costing.total_capital_cost))
+    print(
+        "Total fixed operating cost: %.3f M$/yr"
+        % pyo.value(m.fs.costing.total_fixed_operating_cost / 1e6)
+    )
+    print(
+        "Total variable operating cost: %.3f M$/yr"
+        % pyo.value(m.fs.costing.total_variable_operating_cost / 1e6)
+    )
 
     print(
-        "Total annualized cost: %.2f $/yr"
-        % pyo.value(m.fs.costing.total_annualized_cost)
+        "Total capital cost: %.3f M$" % pyo.value(m.fs.costing.total_capital_cost / 1e6)
     )
 
     print(
-        "capital cost R1",
-        pyo.value(m.fs.R1.costing.capital_cost),
-        pyo.units.get_units(m.fs.R1.costing.capital_cost),
+        "Total annualized cost: %.3f M$/yr"
+        % pyo.value(m.fs.costing.total_annualized_cost / 1e6)
+    )
+
+    print("capital cost R1: %.3f M$" % pyo.value(m.fs.R1.costing.capital_cost / 1e6))
+    print("capital cost R2: %.3f M$" % pyo.value(m.fs.R2.costing.capital_cost / 1e6))
+    print("capital cost R3: %.3f M$" % pyo.value(m.fs.R3.costing.capital_cost / 1e6))
+    print("capital cost R4: %.3f M$" % pyo.value(m.fs.R4.costing.capital_cost / 1e6))
+    print("capital cost R5: %.3f M$" % pyo.value(m.fs.R5.costing.capital_cost / 1e6))
+    print("capital cost R6: %.3f M$" % pyo.value(m.fs.R6.costing.capital_cost / 1e6))
+    print("capital cost R7: %.3f M$" % pyo.value(m.fs.R7.costing.capital_cost / 1e6))
+    print(
+        "capital cost activated sludge reactors: %.3f M$"
+        % pyo.value(
+            (
+                m.fs.R1.costing.capital_cost
+                + m.fs.R2.costing.capital_cost
+                + m.fs.R3.costing.capital_cost
+                + m.fs.R4.costing.capital_cost
+                + +m.fs.R5.costing.capital_cost
+                + m.fs.R6.costing.capital_cost
+                + m.fs.R7.costing.capital_cost
+            )
+            / 1e6
+        )
     )
     print(
-        "capital cost R2",
-        pyo.value(m.fs.R2.costing.capital_cost),
-        pyo.units.get_units(m.fs.R2.costing.capital_cost),
+        "capital cost primary clarifier: %.3f M$"
+        % pyo.value(m.fs.CL.costing.capital_cost / 1e6)
     )
     print(
-        "capital cost R3",
-        pyo.value(m.fs.R3.costing.capital_cost),
-        pyo.units.get_units(m.fs.R3.costing.capital_cost),
+        "capital cost secondary clarifier: %.3f M$"
+        % pyo.value(m.fs.CL2.costing.capital_cost / 1e6)
+    )
+    print("capital cost AD: %.3f M$" % pyo.value(m.fs.AD.costing.capital_cost / 1e6))
+    print(
+        "capital cost dewatering Unit: %.3f M$"
+        % pyo.value(m.fs.dewater.costing.capital_cost / 1e6)
     )
     print(
-        "capital cost R4",
-        pyo.value(m.fs.R4.costing.capital_cost),
-        pyo.units.get_units(m.fs.R4.costing.capital_cost),
+        "capital cost thickener unit: %.3f M$"
+        % pyo.value(m.fs.thickener.costing.capital_cost / 1e6)
     )
-    print(
-        "capital cost R5",
-        pyo.value(m.fs.R5.costing.capital_cost),
-        pyo.units.get_units(m.fs.R5.costing.capital_cost),
-    )
-    print(
-        "capital cost R6",
-        pyo.value(m.fs.R6.costing.capital_cost),
-        pyo.units.get_units(m.fs.R6.costing.capital_cost),
-    )
-    print(
-        "capital cost R7",
-        pyo.value(m.fs.R7.costing.capital_cost),
-        pyo.units.get_units(m.fs.R7.costing.capital_cost),
-    )
-    print(
-        "capital cost primary clarifier",
-        pyo.value(m.fs.CL.costing.capital_cost),
-        pyo.units.get_units(m.fs.CL.costing.capital_cost),
-    )
-    print(
-        "capital cost secondary clarifier",
-        pyo.value(m.fs.CL2.costing.capital_cost),
-        pyo.units.get_units(m.fs.CL2.costing.capital_cost),
-    )
-    print(
-        "capital cost AD",
-        pyo.value(m.fs.AD.costing.capital_cost),
-        pyo.units.get_units(m.fs.AD.costing.capital_cost),
-    )
-    print(
-        "capital cost dewatering Unit",
-        pyo.value(m.fs.dewater.costing.capital_cost),
-        pyo.units.get_units(m.fs.dewater.costing.capital_cost),
-    )
-    print(
-        "capital cost thickener unit",
-        pyo.value(m.fs.thickener.costing.capital_cost),
-        pyo.units.get_units(m.fs.thickener.costing.capital_cost),
-    )
+    if has_electroNP:
+        print(
+            "capital cost electroNP unit: %.3f M$"
+            % pyo.value(m.fs.electroNP.costing.capital_cost / 1e6)
+        )
 
 
 def display_performance_metrics(m):
+    print("---Performance Metrics---")
     print(
-        "Specific energy consumption with respect to influent flowrate: %.1f kWh/m3"
+        "Inlet total phosphorus concentration: %.1f mg/L" % pyo.value(m.fs.TP_in * 1e3)
+    )
+    print(
+        "Treated total phosphorus concentration: %.1f mg/L"
+        % pyo.value(m.fs.TP_treated * 1e3)
+    )
+    print("Inlet total nitrogen concentration: %.1f mg/L" % pyo.value(m.fs.TN_in * 1e3))
+    print(
+        "Treated total nitrogen concentration: %.1f mg/L"
+        % pyo.value(m.fs.TN_treated * 1e3)
+    )
+    print(
+        "Specific energy consumption with respect to influent flowrate: %.3f kWh/m3"
         % pyo.value(m.fs.costing.specific_energy_consumption)
     )
+    print("Aeration energy: %.3f kWh/m3" % pyo.value(m.fs.aeration_energy))
 
     print(
         "electricity consumption R5",
@@ -1031,6 +1159,8 @@ if __name__ == "__main__":
         stream_table = create_stream_table_dataframe(
             {
                 "Feed": m.fs.FeedWater.outlet,
+                "R3 inlet": m.fs.R3.inlet,
+                "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
                 "R1": m.fs.R1.outlet,
                 "R2": m.fs.R2.outlet,
                 "R3": m.fs.R3.outlet,
@@ -1062,9 +1192,9 @@ if __name__ == "__main__":
                 # "thickener outlet": m.fs.thickener.underflow,
                 # "ADM-ASM translator outlet": m.fs.translator_adm1_asm2d.outlet,
                 # "dewater outlet": m.fs.dewater.overflow,
-                "electroNP inlet": m.fs.electroNP.inlet,
-                "electroNP treated": m.fs.electroNP.treated,
-                "electroNP byproduct": m.fs.electroNP.byproduct,
+                # "electroNP inlet": m.fs.electroNP.inlet,
+                # "electroNP treated": m.fs.electroNP.treated,
+                # "electroNP byproduct": m.fs.electroNP.byproduct,
                 # "electroNP byproduct": m.fs.electroNP.byproduct,
                 # "Treated water": m.fs.Treated.inlet,
                 # "Sludge": m.fs.Sludge.inlet,

@@ -13,11 +13,9 @@
 import pytest
 import idaes.logger as idaeslog
 import pyomo.environ as pyo
-from pyomo.environ import (
-    ConcreteModel,
-    assert_optimal_termination,
-    value,
-    units,
+from idaes.core.util.tables import (
+    create_stream_table_dataframe,
+    stream_table_dataframe_to_string,
 )
 from idaes.core import FlowsheetBlock
 from watertap.unit_models.electroNP_surrogate.electroNP_surrogate import ElectroNP
@@ -31,6 +29,11 @@ from watertap.property_models.unit_specific.activated_sludge.modified_asm2d_prop
 from watertap.property_models.unit_specific.activated_sludge.modified_asm2d_reactions import (
     ModifiedASM2dReactionParameterBlock,
 )
+from watertap.core.util.initialization import (
+    check_solve,
+    assert_degrees_of_freedom,
+    interval_initializer,
+)
 from watertap.core.solvers import get_solver
 from idaes.core.util.model_statistics import degrees_of_freedom
 from idaes.core.util.testing import initialization_tester
@@ -43,6 +46,56 @@ import idaes.core.util.scaling as iscale
 from idaes.core.util.model_diagnostics import DegeneracyHunter
 from idaes.core.util.model_diagnostics import DiagnosticsToolbox
 from pyomo.environ import *
+
+
+def main():
+    m = build_flowsheet()
+
+    # results = DiagnosticsToolbox(m)
+    # results.report_structural_issues()
+    # results.report_numerical_issues()
+    # results.display_constraints_with_large_residuals()
+
+    # # Use of Degeneracy Hunter for troubleshooting model.
+    # m.obj = pyo.Objective(expr=0)
+    # solver = get_solver()
+    # solver.options["max_iter"] = 10000
+    # results = solver.solve(m, tee=True)
+    # dh = DegeneracyHunter(m, solver=pyo.SolverFactory("cbc"))
+    # badly_scaled_var_list = iscale.badly_scaled_var_generator(m, large=1e1, small=1e-1)
+    # for x in badly_scaled_var_list:
+    #     print(f"{x[0].name}\t{x[0].value}\tsf: {iscale.get_scaling_factor(x[0])}")
+    # dh.check_residuals(tol=1e-8)
+
+    print("----------------   scaling V0  ----------------")
+    badly_scaled_var_list = iscale.badly_scaled_var_generator(m, large=1e1, small=1e-1)
+    for x in badly_scaled_var_list:
+        print(f"{x[0].name}\t{x[0].value}\tsf: {iscale.get_scaling_factor(x[0])}")
+
+    print("---Structural Issues---")
+    dt = DiagnosticsToolbox(m)
+    dt.report_structural_issues()
+    # dt.display_potential_evaluation_errors()
+
+    # m.fs.unit.initialize(outlvl=idaeslog.INFO_HIGH)
+    m.fs.unit.initialize(solver="ipopt-watertap")
+
+    # Costing
+    # add_costing(m)
+    # m.fs.costing.initialize()
+
+    # Get default solver for testing
+    results = solve(m)
+
+    print("---Numerical Issues---")
+    dt.report_numerical_issues()
+    # dt.compute_infeasibility_explanation()
+    # dt.display_variables_at_or_outside_bounds()
+    # dt.display_constraints_with_large_residuals()
+    # dt.display_variables_with_extreme_jacobians()
+    # dt.display_constraints_with_extreme_jacobians()
+
+    return m, results
 
 
 def build_flowsheet():
@@ -87,11 +140,11 @@ def build_flowsheet():
     # m.fs.unit.energy_electric_flow_mass.fix(0.044 * units.kWh / units.kg)
     m.fs.unit.magnesium_chloride_dosage.fix(0.388)
 
-    m.fs.unit.cathodic_potential.fix(-0.8 * units.V)
+    m.fs.unit.cathodic_potential.fix(-1.05 * units.V)
     m.fs.unit.area_volume_ratio.fix(0.105)
     m.fs.unit.settling_time.fix(30 * units.min)
 
-    m.fs.unit.frac_mass_H2O_treated[0].fix(1)
+    m.fs.unit.frac_mass_H2O_treated[0].fix(0.9)
 
     # m.fs.unit.cathodic_potential.fix(-1.05)
     # m.fs.unit.area_volume_ratio.fix(0.105)
@@ -143,31 +196,33 @@ def build_flowsheet():
 
     calculate_scaling_factors(m)
 
-    # results = DiagnosticsToolbox(m)
-    # results.report_structural_issues()
-    # results.report_numerical_issues()
-    # results.display_constraints_with_large_residuals()
+    return m
 
-    # # Use of Degeneracy Hunter for troubleshooting model.
-    # m.obj = pyo.Objective(expr=0)
-    # solver = get_solver()
-    # solver.options["max_iter"] = 100000
-    # results = solver.solve(m, tee=True)
-    # dh = DegeneracyHunter(m, solver=pyo.SolverFactory("cbc"))
-    # badly_scaled_var_list = iscale.badly_scaled_var_generator(m, large=1e1, small=1e-1)
-    # for x in badly_scaled_var_list:
-    #     print(f"{x[0].name}\t{x[0].value}\tsf: {iscale.get_scaling_factor(x[0])}")
-    # dh.check_residuals(tol=1e-8)
 
-    m.fs.unit.initialize(outlvl=idaeslog.INFO_HIGH)
-
-    # Get default solver for testing
-    solver = get_solver()
+def solve(m, solver=None):
+    if solver is None:
+        solver = get_solver()
     results = solver.solve(m, tee=True)
+    pyo.assert_optimal_termination(results)
+    return results
 
-    return m, results
+
+def add_costing(m):
+    m.fs.costing = WaterTAPCosting()
+    m.fs.costing.base_currency = pyo.units.USD_2020
+
+    m.fs.unit.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
 
 
 if __name__ == "__main__":
-    m, results = build_flowsheet()
+    m, results = main()
     print(f"P removal: {m.fs.unit.P_removal.value}")
+    stream_table = create_stream_table_dataframe(
+        {
+            "electroNP inlet": m.fs.unit.inlet,
+            "electroNP treated": m.fs.unit.treated,
+            "electroNP byproduct": m.fs.unit.byproduct,
+        },
+        time_point=0,
+    )
+    print(stream_table_dataframe_to_string(stream_table))
