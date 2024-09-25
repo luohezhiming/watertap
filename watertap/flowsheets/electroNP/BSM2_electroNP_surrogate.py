@@ -115,7 +115,7 @@ def main(has_electroNP=False):
     m.fs.MX3.pressure_equality_constraints[0.0, 3].deactivate()
     print(f"DOF before initialization: {degrees_of_freedom(m)}")
 
-    m, results = initialize_system(m, has_electroNP=has_electroNP)
+    m, results = initialize_system(m)
     for mx in m.fs.mixers:
         mx.pressure_equality_constraints[0.0, 2].deactivate()
     m.fs.MX3.pressure_equality_constraints[0.0, 2].deactivate()
@@ -149,17 +149,21 @@ def main(has_electroNP=False):
         fail_flag=True,
     )
 
-    add_costing(m, has_electroNP=has_electroNP)
+    add_costing(m)
     m.fs.costing.initialize()
 
     interval_initializer(m.fs.costing)
-
     assert_degrees_of_freedom(m, 0)
+
+    # if has_electroNP:
+    #     setup_optimization(m)
 
     results = solve(m)
     pyo.assert_optimal_termination(results)
 
-    display_costing(m, has_electroNP=has_electroNP)
+    display_design(m)
+
+    display_costing(m)
     display_performance_metrics(m)
 
     return m, results
@@ -569,8 +573,8 @@ def set_operating_conditions(m):
         # m.fs.electroNP.energy_electric_flow_mass.fix(
         #     0.044 * pyo.units.kWh / pyo.units.kg
         # )
-        m.fs.electroNP.cathodic_potential.fix(-1.05 * pyo.units.V)
-        m.fs.electroNP.area_volume_ratio.fix(0.105)
+        m.fs.electroNP.cathodic_potential.fix(-1.1 * pyo.units.V)
+        m.fs.electroNP.area_volume_ratio.fix(0.1)
         m.fs.electroNP.settling_time.fix(30 * pyo.units.min)
         m.fs.electroNP.magnesium_chloride_dosage.fix(0.388)
         # m.fs.electroNP.P_removal = 0.95
@@ -582,52 +586,44 @@ def set_operating_conditions(m):
         # iscale.set_scaling_factor(m.fs.electroNP.settling_time, 1e-1)
 
     # Expressions
-    m.fs.TP_in = Expression(
-        expr=(
-            m.fs.FeedWater.conc_mass_comp[0, "S_PO4"]
-            + m.fs.FeedWater.conc_mass_comp[0, "X_PP"]
-            + m.fs.FeedWater.conc_mass_comp[0, "X_PHA"]
-            + m.fs.FeedWater.conc_mass_comp[0, "X_PAO"]
-        )
-    )
-    m.fs.TP_treated = Expression(
-        expr=(
-            m.fs.Treated.conc_mass_comp[0, "S_PO4"]
-            + m.fs.Treated.conc_mass_comp[0, "X_PP"]
-            + m.fs.Treated.conc_mass_comp[0, "X_PHA"]
-            + m.fs.Treated.conc_mass_comp[0, "X_PAO"]
-        )
-    )
-    m.fs.TN_in = Expression(
-        expr=(
-            m.fs.FeedWater.conc_mass_comp[0, "S_N2"]
-            + m.fs.FeedWater.conc_mass_comp[0, "S_NH4"]
-            + m.fs.FeedWater.conc_mass_comp[0, "S_NO3"]
-            + m.fs.FeedWater.conc_mass_comp[0, "X_AUT"]
-        )
-    )
-    m.fs.TN_treated = Expression(
-        expr=(
-            m.fs.Treated.conc_mass_comp[0, "S_N2"]
-            + m.fs.Treated.conc_mass_comp[0, "S_NH4"]
-            + m.fs.Treated.conc_mass_comp[0, "S_NO3"]
-            + m.fs.Treated.conc_mass_comp[0, "X_AUT"]
-        )
-    )
+    # m.fs.TP_in = Expression(
+    #     expr=(
+    #         m.fs.FeedWater.conc_mass_comp[0, "S_PO4"]
+    #         + m.fs.FeedWater.conc_mass_comp[0, "X_PP"]
+    #         + m.fs.FeedWater.conc_mass_comp[0, "X_PHA"]
+    #         + m.fs.FeedWater.conc_mass_comp[0, "X_PAO"]
+    #     )
+    # )
+    # m.fs.TP_treated = Expression(
+    #     expr=(
+    #         m.fs.Treated.conc_mass_comp[0, "S_PO4"]
+    #         + m.fs.Treated.conc_mass_comp[0, "X_PP"]
+    #         + m.fs.Treated.conc_mass_comp[0, "X_PHA"]
+    #         + m.fs.Treated.conc_mass_comp[0, "X_PAO"]
+    #     )
+    # )
+    # m.fs.TN_in = Expression(
+    #     expr=(
+    #         m.fs.FeedWater.conc_mass_comp[0, "S_N2"]
+    #         + m.fs.FeedWater.conc_mass_comp[0, "S_NH4"]
+    #         + m.fs.FeedWater.conc_mass_comp[0, "S_NO3"]
+    #         + m.fs.FeedWater.conc_mass_comp[0, "X_AUT"]
+    #     )
+    # )
+    # m.fs.TN_treated = Expression(
+    #     expr=(
+    #         m.fs.Treated.conc_mass_comp[0, "S_N2"]
+    #         + m.fs.Treated.conc_mass_comp[0, "S_NH4"]
+    #         + m.fs.Treated.conc_mass_comp[0, "S_NO3"]
+    #         + m.fs.Treated.conc_mass_comp[0, "X_AUT"]
+    #     )
+    # )
 
-    m.fs.aeration_energy = Expression(
-        expr=(
-            (
-                m.fs.R5.electricity_consumption[0]
-                + m.fs.R6.electricity_consumption[0]
-                + m.fs.R7.electricity_consumption[0]
-            )
-            / pyo.units.convert(
-                m.fs.FeedWater.properties[0].flow_vol,
-                to_units=pyo.units.m**3 / pyo.units.hr,
-            )
-        )
+    m.fs.water_recovery = Expression(
+        expr=(m.fs.Treated.flow_vol[0] / m.fs.FeedWater.flow_vol[0])
     )
+    if m.fs.has_electroNP is True:
+        m.fs.phosphorus_recovery = Expression(expr=(m.fs.electroNP.P_removal))
 
     def scale_variables(m):
         for var in m.fs.component_data_objects(pyo.Var, descend_into=True):
@@ -656,7 +652,7 @@ def set_operating_conditions(m):
     iscale.calculate_scaling_factors(m)
 
 
-def initialize_system(m, has_electroNP=False):
+def initialize_system(m):
     # Initialize flowsheet
     # Apply sequential decomposition - 1 iteration should suffice
     seq = SequentialDecomposition()
@@ -671,7 +667,7 @@ def initialize_system(m, has_electroNP=False):
     # for o in order:
     #     print(o[0].name)
 
-    if has_electroNP:
+    if m.fs.has_electroNP is True:
         tear_guesses = {
             "flow_vol": {0: 1.2366},
             "conc_mass_comp": {
@@ -957,7 +953,7 @@ def solve(m, solver=None):
     return results
 
 
-def add_costing(m, has_electroNP=False):
+def add_costing(m):
     m.fs.costing = WaterTAPCosting()
     m.fs.costing.base_currency = pyo.units.USD_2020
 
@@ -982,7 +978,7 @@ def add_costing(m, has_electroNP=False):
     m.fs.AD.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
     m.fs.dewater.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
     m.fs.thickener.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
-    if has_electroNP is True:
+    if m.fs.has_electroNP is True:
         m.fs.electroNP.costing = UnitModelCostingBlock(
             flowsheet_costing_block=m.fs.costing
         )
@@ -995,17 +991,157 @@ def add_costing(m, has_electroNP=False):
     m.fs.costing.add_LCOW(m.fs.FeedWater.properties[0].flow_vol)
     m.fs.costing.add_specific_energy_consumption(m.fs.FeedWater.properties[0].flow_vol)
 
-    m.fs.objective = pyo.Objective(expr=m.fs.costing.LCOW)
     iscale.set_scaling_factor(m.fs.costing.total_capital_cost, 1e-5)
 
     for block in m.fs.component_objects(pyo.Block, descend_into=True):
         if isinstance(block, UnitModelBlockData) and hasattr(block, "costing"):
             iscale.set_scaling_factor(block.costing.capital_cost, 1e-5)
 
+    # Expression
+    if m.fs.has_electroNP is True:
+        m.fs.costing.LCOW_P_removal = Expression(
+            expr=(
+                m.fs.costing.total_capital_cost * m.fs.costing.capital_recovery_factor
+                + m.fs.costing.total_operating_cost
+            )
+            / (
+                pyo.units.convert(
+                    m.fs.electroNP.byproduct.flow_vol[0]
+                    * m.fs.electroNP.byproduct.conc_mass_comp[0, "S_PO4"],
+                    to_units=pyo.units.kg / m.fs.costing.base_period,
+                )
+                * m.fs.costing.utilization_factor
+            )
+        )
 
-def display_costing(m, has_electroNP=False):
+        m.fs.costing.specific_energy_consumption_P_removal = Expression(
+            expr=(
+                m.fs.costing.aggregate_flow_electricity
+                / pyo.units.convert(
+                    m.fs.electroNP.byproduct.flow_vol[0]
+                    * m.fs.electroNP.byproduct.conc_mass_comp[0, "S_PO4"],
+                    to_units=pyo.units.kg / pyo.units.hr,
+                )
+            )
+        )
+
+    m.fs.costing.aeration_energy = Expression(
+        expr=(
+            (
+                m.fs.R5.electricity_consumption[0]
+                + m.fs.R6.electricity_consumption[0]
+                + m.fs.R7.electricity_consumption[0]
+            )
+            / pyo.units.convert(
+                m.fs.FeedWater.properties[0].flow_vol,
+                to_units=pyo.units.m**3 / pyo.units.hr,
+            )
+        )
+    )
+
+
+def setup_optimization(m):
+    # Objective function
+    m.fs.objective = pyo.Objective(expr=m.fs.costing.LCOW)
+
+    # Decision variables
+    m.fs.electroNP.cathodic_potential.unfix()
+    m.fs.electroNP.cathodic_potential.setlb(-1.3)
+    m.fs.electroNP.cathodic_potential.setub(-0.8)
+
+    m.fs.electroNP.area_volume_ratio.unfix()
+    m.fs.electroNP.area_volume_ratio.setlb(0.06)
+    m.fs.electroNP.area_volume_ratio.setub(0.15)
+
+    # for i in ["R1", "R2", "R3", "R4", "R5", "R6", "R7"]:
+    #     reactor = getattr(m.fs, i)
+    #     reactor.volume.unfix()
+    #     reactor.volume.setlb(1)
+    #     # reactor.volume.setub(2000)
+    # if reactor_volume_equalities:
+    #     add_reactor_volume_equalities(m)
+    #
+    # m.fs.R5.outlet.conc_mass_comp[:, "S_O2"].unfix()
+    # m.fs.R5.outlet.conc_mass_comp[:, "S_O2"].setub(1e-2)
+    #
+    # m.fs.R6.outlet.conc_mass_comp[:, "S_O2"].unfix()
+    # m.fs.R6.outlet.conc_mass_comp[:, "S_O2"].setub(1e-2)
+    #
+    # m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].unfix()
+    # m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].setub(1e-2)
+    #
+    # # m.fs.R5.injection[:, :, :].unfix()
+    # # m.fs.R6.injection[:, :, :].unfix()
+    # # m.fs.R7.injection[:, :, :].unfix()
+    #
+    # # Unfix fraction of outflow from reactor 7 that goes to recycle
+    # m.fs.SP1.split_fraction[:, "underflow"].unfix()
+    # # m.fs.SP1.split_fraction[:, "underflow"].setlb(0.45)
+    # m.fs.SP2.split_fraction[:, "recycle"].unfix()
+
+    add_effluent_violations(m)
+
+
+def add_effluent_violations(m):
+    # TODO: Revisit the max effluent concentration values
+
+    # Max value taken from Flores-Alsina Excel - modified
+    m.fs.TSS_max = pyo.Var(initialize=0.05, units=pyo.units.kg / pyo.units.m**3)
+    m.fs.TSS_max.fix()
+
+    @m.fs.Constraint(m.fs.time)
+    def eq_TSS_max(self, t):
+        return m.fs.Treated.properties[t].TSS <= m.fs.TSS_max
+
+    # Max value carried over from BSM2
+    m.fs.COD_max = pyo.Var(initialize=0.1, units=pyo.units.kg / pyo.units.m**3)
+    m.fs.COD_max.fix()
+
+    @m.fs.Constraint(m.fs.time)
+    def eq_COD_max(self, t):
+        return m.fs.Treated.properties[t].COD <= m.fs.COD_max
+
+    # Max value taken from Flores-Alsina Excel - modified
+    m.fs.SNKj_max = pyo.Var(initialize=0.01, units=pyo.units.kg / pyo.units.m**3)
+    m.fs.SNKj_max.fix()
+
+    @m.fs.Constraint(m.fs.time)
+    def eq_SNKj_max(self, t):
+        return m.fs.Treated.properties[t].SNKj <= m.fs.SNKj_max
+
+    # Max value carried over from BSM2
+    m.fs.BOD5_max = pyo.Var(initialize=0.01, units=pyo.units.kg / pyo.units.m**3)
+    m.fs.BOD5_max.fix()
+
+    @m.fs.Constraint(m.fs.time)
+    def eq_BOD5_max(self, t):
+        return m.fs.Treated.properties[t].BOD5["effluent"] <= m.fs.BOD5_max
+
+    # Max value taken from Flores-Alsina Excel - modified
+    m.fs.total_P_max = pyo.Var(initialize=0.02, units=pyo.units.kg / pyo.units.m**3)
+    m.fs.total_P_max.fix()
+
+    @m.fs.Constraint(m.fs.time)
+    def eq_total_P_max(self, t):
+        return (
+            m.fs.Treated.properties[0].SP_organic
+            + m.fs.Treated.properties[0].SP_inorganic
+            <= m.fs.total_P_max
+        )
+
+
+def display_costing(m):
     print("---Costing Metrics---")
     print("Levelized cost of water: %.3f $/m3" % pyo.value(m.fs.costing.LCOW))
+    if m.fs.has_electroNP is True:
+        print(
+            "Levelized cost of phosphorus removal: %.3f $/kg"
+            % pyo.value(m.fs.costing.LCOW_P_removal)
+        )
+    print(
+        "Total annualized cost: %.3f M$/yr"
+        % pyo.value(m.fs.costing.total_annualized_cost / 1e6)
+    )
 
     print(
         "Total operating cost: %.3f M$/yr"
@@ -1015,18 +1151,45 @@ def display_costing(m, has_electroNP=False):
         "Total fixed operating cost: %.3f M$/yr"
         % pyo.value(m.fs.costing.total_fixed_operating_cost / 1e6)
     )
+    if m.fs.has_electroNP is True:
+        print(
+            "Total variable operating cost: %.3f M$/yr"
+            % pyo.value(
+                (
+                    m.fs.costing.total_variable_operating_cost
+                    - m.fs.costing.aggregate_flow_costs["phosphorus salt product"]
+                    * m.fs.costing.utilization_factor
+                )
+                / 1e6
+            )
+        )
+        print(
+            "Revenue: %.3f M$/yr"
+            % pyo.value(
+                -m.fs.costing.aggregate_flow_costs["phosphorus salt product"]
+                * m.fs.costing.utilization_factor
+                / 1e6
+            )
+        )
+    else:
+        print(
+            "Total variable operating cost: %.3f M$/yr"
+            % pyo.value(m.fs.costing.total_variable_operating_cost / 1e6)
+        )
+
     print(
-        "Total variable operating cost: %.3f M$/yr"
-        % pyo.value(m.fs.costing.total_variable_operating_cost / 1e6)
+        "Electricity cost: %.3f M$/yr"
+        % pyo.value(
+            (
+                m.fs.costing.aggregate_flow_costs["electricity"]
+                * m.fs.costing.utilization_factor
+            )
+            / 1e6
+        )
     )
 
     print(
         "Total capital cost: %.3f M$" % pyo.value(m.fs.costing.total_capital_cost / 1e6)
-    )
-
-    print(
-        "Total annualized cost: %.3f M$/yr"
-        % pyo.value(m.fs.costing.total_annualized_cost / 1e6)
     )
 
     print("capital cost R1: %.3f M$" % pyo.value(m.fs.R1.costing.capital_cost / 1e6))
@@ -1068,7 +1231,7 @@ def display_costing(m, has_electroNP=False):
         "capital cost thickener unit: %.3f M$"
         % pyo.value(m.fs.thickener.costing.capital_cost / 1e6)
     )
-    if has_electroNP:
+    if m.fs.has_electroNP is True:
         print(
             "capital cost electroNP unit: %.3f M$"
             % pyo.value(m.fs.electroNP.costing.capital_cost / 1e6)
@@ -1077,79 +1240,161 @@ def display_costing(m, has_electroNP=False):
 
 def display_performance_metrics(m):
     print("---Performance Metrics---")
-    print(
-        "Inlet total phosphorus concentration: %.1f mg/L" % pyo.value(m.fs.TP_in * 1e3)
-    )
-    print(
-        "Treated total phosphorus concentration: %.1f mg/L"
-        % pyo.value(m.fs.TP_treated * 1e3)
-    )
-    print("Inlet total nitrogen concentration: %.1f mg/L" % pyo.value(m.fs.TN_in * 1e3))
-    print(
-        "Treated total nitrogen concentration: %.1f mg/L"
-        % pyo.value(m.fs.TN_treated * 1e3)
-    )
-    print(
-        "Specific energy consumption with respect to influent flowrate: %.3f kWh/m3"
-        % pyo.value(m.fs.costing.specific_energy_consumption)
-    )
-    print("Aeration energy: %.3f kWh/m3" % pyo.value(m.fs.aeration_energy))
+    print("Water recovery: %.3f" % pyo.value(m.fs.water_recovery))
+    if m.fs.has_electroNP is True:
+        print("Phosphorus recovery: %.3f" % pyo.value(m.fs.phosphorus_recovery))
 
-    print(
-        "electricity consumption R5",
-        pyo.value(m.fs.R5.electricity_consumption[0]),
-        pyo.units.get_units(m.fs.R5.electricity_consumption[0]),
-    )
-    print(
-        "electricity consumption R6",
-        pyo.value(m.fs.R6.electricity_consumption[0]),
-        pyo.units.get_units(m.fs.R6.electricity_consumption[0]),
-    )
-    print(
-        "electricity consumption R7",
-        pyo.value(m.fs.R7.electricity_consumption[0]),
-        pyo.units.get_units(m.fs.R7.electricity_consumption[0]),
-    )
-    print(
-        "electricity consumption primary clarifier",
-        pyo.value(m.fs.CL.electricity_consumption[0]),
-        pyo.units.get_units(m.fs.CL.electricity_consumption[0]),
-    )
-    print(
-        "electricity consumption secondary clarifier",
-        pyo.value(m.fs.CL2.electricity_consumption[0]),
-        pyo.units.get_units(m.fs.CL2.electricity_consumption[0]),
-    )
-    print(
-        "electricity consumption AD",
-        pyo.value(m.fs.AD.electricity_consumption[0]),
-        pyo.units.get_units(m.fs.AD.electricity_consumption[0]),
-    )
-    print(
-        "electricity consumption dewatering Unit",
-        pyo.value(m.fs.dewater.electricity_consumption[0]),
-        pyo.units.get_units(m.fs.dewater.electricity_consumption[0]),
-    )
-    print(
-        "electricity consumption thickening Unit",
-        pyo.value(m.fs.thickener.electricity_consumption[0]),
-        pyo.units.get_units(m.fs.thickener.electricity_consumption[0]),
-    )
+    print("---- Influent Metrics----")
     print(
         "Influent flow",
         pyo.value(m.fs.FeedWater.flow_vol[0]),
         pyo.units.get_units(m.fs.FeedWater.flow_vol[0]),
     )
     print(
-        "flow into R3",
-        pyo.value(m.fs.R3.control_volume.properties_in[0].flow_vol),
-        pyo.units.get_units(m.fs.R3.control_volume.properties_in[0].flow_vol),
+        "Feed TSS concentration: %.1f mg/L"
+        % pyo.value(m.fs.FeedWater.properties[0].TSS * 1e3)
     )
     print(
-        "flow into RADM",
-        pyo.value(m.fs.AD.liquid_phase.properties_in[0].flow_vol),
-        pyo.units.get_units(m.fs.AD.liquid_phase.properties_in[0].flow_vol),
+        "Feed COD concentration: %.1f mg/L"
+        % pyo.value(m.fs.FeedWater.properties[0].COD * 1e3)
     )
+    print(
+        "BOD5 concentration: %.1f mg/L"
+        % pyo.value(m.fs.FeedWater.properties[0].BOD5["effluent"] * 1e3)
+    )
+    print(
+        "SNKj concentration: %.1f mg/L"
+        % pyo.value(m.fs.FeedWater.properties[0].SNKj * 1e3)
+    )
+    print(
+        "SNOX concentration: %.1f mg/L"
+        % pyo.value(m.fs.FeedWater.properties[0].SNOX * 1e3)
+    )
+    print(
+        "Organic phosphorus concentration: %.1f mg/L"
+        % pyo.value(m.fs.FeedWater.properties[0].SP_organic * 1e3)
+    )
+    print(
+        "Inorganic phosphorus concentration: %.1f mg/L"
+        % pyo.value(m.fs.FeedWater.properties[0].SP_inorganic * 1e3)
+    )
+
+    print("---- Effluent Metrics----")
+    print(
+        "Influent flow",
+        pyo.value(m.fs.Treated.flow_vol[0]),
+        pyo.units.get_units(m.fs.Treated.flow_vol[0]),
+    )
+    print(
+        "TSS concentration: %.1f mg/L" % pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
+    )
+    print(
+        "COD concentration: %.1f mg/L" % pyo.value(m.fs.Treated.properties[0].COD * 1e3)
+    )
+    print(
+        "BOD5 concentration: %.1f mg/L"
+        % pyo.value(m.fs.Treated.properties[0].BOD5["effluent"] * 1e3)
+    )
+    print(
+        "SNKj concentration: %.1f mg/L"
+        % pyo.value(m.fs.Treated.properties[0].SNKj * 1e3)
+    )
+    print(
+        "SNOX concentration: %.1f mg/L"
+        % pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
+    )
+    print(
+        "Organic phosphorus concentration: %.1f mg/L"
+        % pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
+    )
+    print(
+        "Inorganic phosphorus concentration: %.1f mg/L"
+        % pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
+    )
+    # print(
+    #     "Inlet total phosphorus concentration: %.1f mg/L" % pyo.value(m.fs.TP_in * 1e3)
+    # )
+    # print(
+    #     "Treated total phosphorus concentration: %.1f mg/L"
+    #     % pyo.value(m.fs.TP_treated * 1e3)
+    # )
+    # print("Inlet total nitrogen concentration: %.1f mg/L" % pyo.value(m.fs.TN_in * 1e3))
+    # print(
+    #     "Treated total nitrogen concentration: %.1f mg/L"
+    #     % pyo.value(m.fs.TN_treated * 1e3)
+    # )
+
+    print("---- Energy Metrics----")
+    print(
+        "Specific energy consumption with respect to influent flowrate: %.3f kWh/m3"
+        % pyo.value(m.fs.costing.specific_energy_consumption)
+    )
+    if m.fs.has_electroNP is True:
+        print(
+            "Specific energy consumption with respect to phosphorus removal: %.3f kWh/kg"
+            % pyo.value(m.fs.costing.specific_energy_consumption_P_removal)
+        )
+    print("Aeration energy: %.3f kWh/m3" % pyo.value(m.fs.costing.aeration_energy))
+
+    # print(
+    #     "electricity consumption R5",
+    #     pyo.value(m.fs.R5.electricity_consumption[0]),
+    #     pyo.units.get_units(m.fs.R5.electricity_consumption[0]),
+    # )
+    # print(
+    #     "electricity consumption R6",
+    #     pyo.value(m.fs.R6.electricity_consumption[0]),
+    #     pyo.units.get_units(m.fs.R6.electricity_consumption[0]),
+    # )
+    # print(
+    #     "electricity consumption R7",
+    #     pyo.value(m.fs.R7.electricity_consumption[0]),
+    #     pyo.units.get_units(m.fs.R7.electricity_consumption[0]),
+    # )
+    # print(
+    #     "electricity consumption primary clarifier",
+    #     pyo.value(m.fs.CL.electricity_consumption[0]),
+    #     pyo.units.get_units(m.fs.CL.electricity_consumption[0]),
+    # )
+    # print(
+    #     "electricity consumption secondary clarifier",
+    #     pyo.value(m.fs.CL2.electricity_consumption[0]),
+    #     pyo.units.get_units(m.fs.CL2.electricity_consumption[0]),
+    # )
+    # print(
+    #     "electricity consumption AD",
+    #     pyo.value(m.fs.AD.electricity_consumption[0]),
+    #     pyo.units.get_units(m.fs.AD.electricity_consumption[0]),
+    # )
+    # print(
+    #     "electricity consumption dewatering Unit",
+    #     pyo.value(m.fs.dewater.electricity_consumption[0]),
+    #     pyo.units.get_units(m.fs.dewater.electricity_consumption[0]),
+    # )
+    # print(
+    #     "electricity consumption thickening Unit",
+    #     pyo.value(m.fs.thickener.electricity_consumption[0]),
+    #     pyo.units.get_units(m.fs.thickener.electricity_consumption[0]),
+    # )
+    # print(
+    #     "flow into R3",
+    #     pyo.value(m.fs.R3.control_volume.properties_in[0].flow_vol),
+    #     pyo.units.get_units(m.fs.R3.control_volume.properties_in[0].flow_vol),
+    # )
+    # print(
+    #     "flow into RADM",
+    #     pyo.value(m.fs.AD.liquid_phase.properties_in[0].flow_vol),
+    #     pyo.units.get_units(m.fs.AD.liquid_phase.properties_in[0].flow_vol),
+    # )
+
+
+def display_design(m):
+    print("--decision variables--")
+    if m.fs.has_electroNP is True:
+        print(
+            "Cathodic potential: %.3f V" % pyo.value(m.fs.electroNP.cathodic_potential)
+        )
+        print("Area volume ratio: %.3f V" % pyo.value(m.fs.electroNP.area_volume_ratio))
 
 
 if __name__ == "__main__":
@@ -1196,7 +1441,7 @@ if __name__ == "__main__":
                 # "electroNP treated": m.fs.electroNP.treated,
                 # "electroNP byproduct": m.fs.electroNP.byproduct,
                 # "electroNP byproduct": m.fs.electroNP.byproduct,
-                # "Treated water": m.fs.Treated.inlet,
+                "Treated water": m.fs.Treated.inlet,
                 # "Sludge": m.fs.Sludge.inlet,
             },
             time_point=0,
