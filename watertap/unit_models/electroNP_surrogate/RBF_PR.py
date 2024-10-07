@@ -70,6 +70,9 @@ rbf_surr = PysmoSurrogate(rbf_train, input_labels, output_labels)
 # save model to JSON
 model = rbf_surr.save_to_file("pysmo_RBF_PR_surrogate.json", overwrite=True)
 
+# report model terms
+rbf_train._data[output_labels[0]]._model.print_report()
+
 metrics_training = compute_fit_metrics(rbf_surr, data_training)
 metrics_validation = compute_fit_metrics(rbf_surr, data_validation)
 

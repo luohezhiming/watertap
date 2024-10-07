@@ -139,15 +139,15 @@ def main(has_electroNP=False):
     # # print_close_to_bounds(m)
     # # print_infeasible_constraints(m)
 
-    results = solve(m)
-
-    pyo.assert_optimal_termination(results)
-    check_solve(
-        results,
-        checkpoint="re-solve with controls in place",
-        logger=_log,
-        fail_flag=True,
-    )
+    # results = solve(m)
+    #
+    # pyo.assert_optimal_termination(results)
+    # check_solve(
+    #     results,
+    #     checkpoint="re-solve with controls in place",
+    #     logger=_log,
+    #     fail_flag=True,
+    # )
 
     add_costing(m)
     m.fs.costing.initialize()
@@ -163,8 +163,8 @@ def main(has_electroNP=False):
 
     display_design(m)
 
-    display_costing(m)
     display_performance_metrics(m)
+    display_costing(m)
 
     return m, results
 
@@ -415,10 +415,10 @@ def build_flowsheet(has_electroNP=False):
     #     doc="Dissolved oxygen concentration at equilibrium",
     # )
 
-    # m.fs.aerobic_reactors = (m.fs.R5, m.fs.R6, m.fs.R7)
-    # for R in m.fs.aerobic_reactors:
-    #     iscale.set_scaling_factor(R.KLa, 1e0)
-    #     iscale.set_scaling_factor(R.hydraulic_retention_time[0], 1e-3)
+    m.fs.aerobic_reactors = (m.fs.R5, m.fs.R6, m.fs.R7)
+    for R in m.fs.aerobic_reactors:
+        iscale.set_scaling_factor(R.KLa, 1e0)
+        iscale.set_scaling_factor(R.hydraulic_retention_time[0], 1e-3)
 
     # @m.fs.R5.Constraint(m.fs.time, doc="Mass transfer constraint for R3")
     # def mass_transfer_R5(self, t):
@@ -523,7 +523,7 @@ def set_operating_conditions(m):
     m.fs.R6.outlet.conc_mass_comp[:, "S_O2"].fix(2.60e-3)
     m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].fix(3.20e-3)
 
-    # Set fraction of outflow from reactor 5 that goes to recycle
+    # Set fraction of outflow from reactor 7 that goes to recycle
     m.fs.SP1.split_fraction[:, "underflow"].fix(0.60)
 
     # Secondary Clarifier
@@ -633,6 +633,8 @@ def set_operating_conditions(m):
                 iscale.set_scaling_factor(var, 1e-2)
             if "pressure" in var.name:
                 iscale.set_scaling_factor(var, 1e-5)
+                # # for plotting
+                # iscale.set_scaling_factor(var, 1e-3)
             if "conc_mass_comp" in var.name:
                 iscale.set_scaling_factor(var, 1e1)
 
@@ -878,6 +880,59 @@ def initialize_system(m):
             "pressure": {0: 101325},
         }
 
+        # aeration tank - guess 2
+        tear_guesses = {
+            "flow_vol": {0: 1.2353},
+            "conc_mass_comp": {
+                (0, "S_A"): 0.0006,
+                (0, "S_F"): 0.0004,
+                (0, "S_I"): 0.057,
+                (0, "S_N2"): 0.04,
+                (0, "S_NH4"): 0.006,
+                (0, "S_NO3"): 0.002,
+                (0, "S_O2"): 0.0019,
+                (0, "S_PO4"): 0.04,
+                (0, "S_K"): 0.37,
+                (0, "S_Mg"): 0.020,
+                (0, "S_IC"): 0.13,
+                (0, "X_AUT"): 0.086,
+                (0, "X_H"): 3.4,
+                (0, "X_I"): 3.1,
+                (0, "X_PAO"): 3.4,
+                (0, "X_PHA"): 0.087,
+                (0, "X_PP"): 1.12,
+                (0, "X_S"): 0.057,
+            },
+            "temperature": {0: 308.15},
+            "pressure": {0: 101325},
+        }
+
+        tear_guesses2 = {
+            "flow_vol": {0: 0.003},
+            "conc_mass_comp": {
+                (0, "S_A"): 0.1,
+                (0, "S_F"): 0.15,
+                (0, "S_I"): 0.057,
+                (0, "S_N2"): 0.033,
+                (0, "S_NH4"): 0.025,
+                (0, "S_NO3"): 0.0015,
+                (0, "S_O2"): 0.0013,
+                (0, "S_PO4"): 0.05,
+                (0, "S_K"): 0.38,
+                (0, "S_Mg"): 0.024,
+                (0, "S_IC"): 0.075,
+                (0, "X_AUT"): 0.21,
+                (0, "X_H"): 23,
+                (0, "X_I"): 11,
+                (0, "X_PAO"): 10,
+                (0, "X_PHA"): 0.005,
+                (0, "X_PP"): 2.8,
+                (0, "X_S"): 3.9,
+            },
+            "temperature": {0: 308.15},
+            "pressure": {0: 101325},
+        }
+
     else:
         tear_guesses = {
             "flow_vol": {0: 1.2368},
@@ -1025,6 +1080,16 @@ def add_costing(m):
             )
         )
 
+        m.fs.costing.electroNP_energy_consumption = Expression(
+            expr=(
+                m.fs.electroNP.electricity[0]
+                / pyo.units.convert(
+                    m.fs.FeedWater.properties[0].flow_vol,
+                    to_units=pyo.units.m**3 / pyo.units.hr,
+                )
+            )
+        )
+
     m.fs.costing.aeration_energy = Expression(
         expr=(
             (
@@ -1042,7 +1107,8 @@ def add_costing(m):
 
 def setup_optimization(m):
     # Objective function
-    m.fs.objective = pyo.Objective(expr=m.fs.costing.LCOW)
+    # m.fs.objective = pyo.Objective(expr=m.fs.costing.LCOW)
+    m.fs.objective = pyo.Objective(expr=m.fs.costing.LCOW_P_removal)
 
     # Decision variables
     m.fs.electroNP.cathodic_potential.unfix()
@@ -1050,8 +1116,8 @@ def setup_optimization(m):
     m.fs.electroNP.cathodic_potential.setub(-0.8)
 
     m.fs.electroNP.area_volume_ratio.unfix()
-    m.fs.electroNP.area_volume_ratio.setlb(0.06)
-    m.fs.electroNP.area_volume_ratio.setub(0.15)
+    m.fs.electroNP.area_volume_ratio.setlb(0.065)
+    m.fs.electroNP.area_volume_ratio.setub(0.145)
 
     # for i in ["R1", "R2", "R3", "R4", "R5", "R6", "R7"]:
     #     reactor = getattr(m.fs, i)
@@ -1085,7 +1151,7 @@ def setup_optimization(m):
 def add_effluent_violations(m):
     # TODO: Revisit the max effluent concentration values
 
-    # Max value taken from Flores-Alsina Excel - modified
+    # Max value taken from Flores-Alsina Excel 0.03 - modified
     m.fs.TSS_max = pyo.Var(initialize=0.05, units=pyo.units.kg / pyo.units.m**3)
     m.fs.TSS_max.fix()
 
@@ -1101,8 +1167,8 @@ def add_effluent_violations(m):
     def eq_COD_max(self, t):
         return m.fs.Treated.properties[t].COD <= m.fs.COD_max
 
-    # Max value taken from Flores-Alsina Excel - modified
-    m.fs.SNKj_max = pyo.Var(initialize=0.01, units=pyo.units.kg / pyo.units.m**3)
+    # Max value taken from Flores-Alsina Excel 0.004 - modified
+    m.fs.SNKj_max = pyo.Var(initialize=0.007, units=pyo.units.kg / pyo.units.m**3)
     m.fs.SNKj_max.fix()
 
     @m.fs.Constraint(m.fs.time)
@@ -1117,8 +1183,8 @@ def add_effluent_violations(m):
     def eq_BOD5_max(self, t):
         return m.fs.Treated.properties[t].BOD5["effluent"] <= m.fs.BOD5_max
 
-    # Max value taken from Flores-Alsina Excel - modified
-    m.fs.total_P_max = pyo.Var(initialize=0.02, units=pyo.units.kg / pyo.units.m**3)
+    # Max value taken from Flores-Alsina Excel 0.002 - modified
+    m.fs.total_P_max = pyo.Var(initialize=0.005, units=pyo.units.kg / pyo.units.m**3)
     m.fs.total_P_max.fix()
 
     @m.fs.Constraint(m.fs.time)
@@ -1239,11 +1305,6 @@ def display_costing(m):
 
 
 def display_performance_metrics(m):
-    print("---Performance Metrics---")
-    print("Water recovery: %.3f" % pyo.value(m.fs.water_recovery))
-    if m.fs.has_electroNP is True:
-        print("Phosphorus recovery: %.3f" % pyo.value(m.fs.phosphorus_recovery))
-
     print("---- Influent Metrics----")
     print(
         "Influent flow",
@@ -1324,6 +1385,11 @@ def display_performance_metrics(m):
     #     % pyo.value(m.fs.TN_treated * 1e3)
     # )
 
+    print("---Performance Metrics---")
+    print("Water recovery: %.3f" % pyo.value(m.fs.water_recovery))
+    if m.fs.has_electroNP is True:
+        print("Phosphorus recovery: %.3f" % pyo.value(m.fs.phosphorus_recovery))
+
     print("---- Energy Metrics----")
     print(
         "Specific energy consumption with respect to influent flowrate: %.3f kWh/m3"
@@ -1333,6 +1399,10 @@ def display_performance_metrics(m):
         print(
             "Specific energy consumption with respect to phosphorus removal: %.3f kWh/kg"
             % pyo.value(m.fs.costing.specific_energy_consumption_P_removal)
+        )
+        print(
+            "ElectroNP energy consumption: %.3f kWh/m3"
+            % pyo.value(m.fs.costing.electroNP_energy_consumption)
         )
     print("Aeration energy: %.3f kWh/m3" % pyo.value(m.fs.costing.aeration_energy))
 
