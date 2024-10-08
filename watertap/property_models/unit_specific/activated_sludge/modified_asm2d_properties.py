@@ -43,7 +43,6 @@ from idaes.core import (
 from idaes.core.util.model_statistics import degrees_of_freedom
 from idaes.core.util.initialization import fix_state_vars, revert_state_vars
 import idaes.logger as idaeslog
-import idaes.core.util.scaling as iscale
 
 # Some more information about this module
 __author__ = "Marcus Holly, Adam Atia, Xinhong Liu"
@@ -328,7 +327,7 @@ class ModifiedASM2dParameterData(PhysicalParameterBlock):
                 "ISS": {"method": "_ISS"},
                 "TSS": {"method": "_TSS"},
                 "COD": {"method": "_COD"},
-                "SNKj": {"method": "_SNKj"},
+                "TKN": {"method": "_TKN"},
                 "SNOX": {"method": "_SNOX"},
                 "BOD5": {"method": "_BOD5"},
                 "SP_organic": {"method": "_SP_organic"},
@@ -541,8 +540,8 @@ class ModifiedASM2dStateBlockData(StateBlockData):
 
         self.COD = pyo.Expression(rule=_COD, doc="Chemical oxygen demand")
 
-        def _SNKj(self):
-            snkj = (
+        def _TKN(self):
+            tkn = (
                 self.conc_mass_comp["S_NH4"]
                 + self.params.i_NSF * self.conc_mass_comp["S_F"]
                 + self.params.i_NSI * self.conc_mass_comp["S_I"]
@@ -555,9 +554,9 @@ class ModifiedASM2dStateBlockData(StateBlockData):
                     + self.conc_mass_comp["X_AUT"]
                 )
             )
-            return snkj
+            return tkn
 
-        self.SNKj = pyo.Expression(rule=_SNKj, doc="Kjeldahl nitrogen")
+        self.TKN = pyo.Expression(rule=_TKN, doc="Kjeldahl nitrogen")
 
         def _SNOX(self):
             snox = self.conc_mass_comp["S_NO3"]
@@ -663,40 +662,3 @@ class ModifiedASM2dStateBlockData(StateBlockData):
 
     def calculate_scaling_factors(self):
         super().calculate_scaling_factors()
-
-        # TODO: revisit scaling of these new on-demand props
-        if self.is_property_constructed("VSS"):
-            if iscale.get_scaling_factor(self.VSS) is None:
-                iscale.set_scaling_factor(self.VSS, 1)
-
-        if self.is_property_constructed("ISS"):
-            if iscale.get_scaling_factor(self.ISS) is None:
-                iscale.set_scaling_factor(self.ISS, 1)
-
-        if self.is_property_constructed("TSS"):
-            if iscale.get_scaling_factor(self.TSS) is None:
-                iscale.set_scaling_factor(self.TSS, 1e1)
-
-        if self.is_property_constructed("COD"):
-            if iscale.get_scaling_factor(self.COD) is None:
-                iscale.set_scaling_factor(self.COD, 1e1)
-
-        if self.is_property_constructed("BOD5"):
-            if iscale.get_scaling_factor(self.BOD5) is None:
-                iscale.set_scaling_factor(self.BOD5, 1e2)
-
-        if self.is_property_constructed("SNKj"):
-            if iscale.get_scaling_factor(self.SNKj) is None:
-                iscale.set_scaling_factor(self.SNKj, 1e3)
-
-        if self.is_property_constructed("SNOX"):
-            if iscale.get_scaling_factor(self.SNOX) is None:
-                iscale.set_scaling_factor(self.SNOX, 1e3)
-
-        if self.is_property_constructed("SP_organic"):
-            if iscale.get_scaling_factor(self.SP_organic) is None:
-                iscale.set_scaling_factor(self.SP_organic, 1e3)
-
-        if self.is_property_constructed("SP_inorganic"):
-            if iscale.get_scaling_factor(self.SP_inorganic) is None:
-                iscale.set_scaling_factor(self.SP_inorganic, 1e3)
