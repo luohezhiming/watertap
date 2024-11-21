@@ -91,18 +91,48 @@ from watertap.costing.unit_models.clarifier import (
     cost_primary_clarifier,
 )
 
-from idaes.core.util.model_diagnostics import DegeneracyHunter
-from idaes.core.util.model_diagnostics import DiagnosticsToolbox
 from pyomo.environ import *
 from watertap.unit_models.aeration_tank import AerationTank, ElectricityConsumption
+
+from idaes.core.util.model_diagnostics import DegeneracyHunter
+from idaes.core.util.model_diagnostics import DiagnosticsToolbox
+from idaes.core.scaling.custom_scaler_base import (
+    CustomScalerBase,
+    ConstraintScalingScheme,
+)
+from idaes.core.scaling.autoscaling import AutoScaler
+
 
 # Set up logger
 _log = idaeslog.getLogger(__name__)
 
 
+def multi_run(has_electroNP=False):
+    m = build_flowsheet(has_electroNP=has_electroNP)
+    set_operating_conditions(m)
+    set_scaling(m)
+
+    for mx in m.fs.mixers:
+        mx.pressure_equality_constraints[0.0, 2].deactivate()
+    m.fs.MX3.pressure_equality_constraints[0.0, 2].deactivate()
+    m.fs.MX3.pressure_equality_constraints[0.0, 3].deactivate()
+    print(f"DOF before initialization: {degrees_of_freedom(m)}")
+
+    m, results = initialize_system(m)
+    for mx in m.fs.mixers:
+        mx.pressure_equality_constraints[0.0, 2].deactivate()
+    m.fs.MX3.pressure_equality_constraints[0.0, 2].deactivate()
+    m.fs.MX3.pressure_equality_constraints[0.0, 3].deactivate()
+    print(f"DOF after initialization: {degrees_of_freedom(m)}")
+
+    add_costing(m)
+    m.fs.costing.initialize()
+
+
 def main(has_electroNP=False):
     m = build_flowsheet(has_electroNP=has_electroNP)
     set_operating_conditions(m)
+    set_scaling(m)
 
     print("----------------   scaling V0  ----------------")
     badly_scaled_var_list = iscale.badly_scaled_var_generator(m, large=1e1, small=1e-1)
@@ -138,8 +168,8 @@ def main(has_electroNP=False):
         fail_flag=True,
     )
 
-    if has_electroNP:
-        setup_optimization(m, reactor_volume_equalities=False)
+    # if has_electroNP:
+    #     setup_optimization(m, reactor_volume_equalities=False)
 
     # # Use of Degeneracy Hunter for troubleshooting model.
     # m.obj = pyo.Objective(expr=0)
@@ -160,6 +190,13 @@ def main(has_electroNP=False):
 
     results = solve(m)
     pyo.assert_optimal_termination(results)
+
+    dt = DiagnosticsToolbox(m)
+    print("---Numerical Issues---")
+    dt.report_numerical_issues()
+    # dt.display_variables_at_or_outside_bounds()
+    dt.display_variables_with_extreme_jacobians()
+    dt.display_constraints_with_extreme_jacobians()
 
     display_design(m)
 
@@ -569,12 +606,14 @@ def set_operating_conditions(m):
         #     0.044 * pyo.units.kWh / pyo.units.kg
         # )
         m.fs.electroNP.cathodic_potential.fix(-1.1 * pyo.units.V)
-        m.fs.electroNP.area_volume_ratio.fix(0.1)
+        m.fs.electroNP.area_volume_ratio.fix(0.105)
         m.fs.electroNP.settling_time.fix(30 * pyo.units.min)
         m.fs.electroNP.magnesium_chloride_dosage.fix(0.388)
         # m.fs.electroNP.P_removal = 0.95
         # m.fs.electroNP.N_removal = 0.3
         m.fs.electroNP.frac_mass_H2O_treated[0].fix(0.9)
+        m.fs.electroNP.area[0].fix(4.5)
+        # m.fs.electroNP.HRT.fix(1.3333 * pyo.units.hr)
 
         # iscale.set_scaling_factor(m.fs.electroNP.cathodic_potential, 1e0)
         # iscale.set_scaling_factor(m.fs.electroNP.area_volume_ratio, 1e0)
@@ -587,6 +626,8 @@ def set_operating_conditions(m):
     if m.fs.has_electroNP is True:
         m.fs.phosphorus_recovery = Expression(expr=(m.fs.electroNP.P_removal))
 
+
+def set_scaling(m):
     def scale_variables(m):
         for var in m.fs.component_data_objects(pyo.Var, descend_into=True):
             if "flow_vol" in var.name:
@@ -643,6 +684,55 @@ def set_operating_conditions(m):
 
     # Apply scaling
     scale_variables(m)
+
+    csb = CustomScalerBase()
+    auto = AutoScaler()
+
+    # scaling factor of variables with extreme Jacobian
+    auto.scale_variables_by_magnitude(m.fs.dewater.mixed_state[0.0].flow_vol)
+    auto.scale_variables_by_magnitude(m.fs.AD.liquid_phase.properties_in[0.0].flow_vol)
+    auto.scale_variables_by_magnitude(
+        m.fs.AD.liquid_phase.reactions[0.0].reaction_rate["R24"]
+    )
+
+    # scaling factor of constraints with extreme Jacobians
+    csb.scale_constraint_by_nominal_value(
+        m.fs.AD.liquid_phase.reactions[0.0].rate_expression["R24"],
+        scheme=ConstraintScalingScheme.inverseMaximum,
+        overwrite=True,
+    )
+    csb.scale_constraint_by_nominal_value(
+        m.fs.AD.AD_retention_time[0.0],
+        scheme=ConstraintScalingScheme.inverseMaximum,
+        overwrite=True,
+    )
+
+    csb.scale_constraint_by_nominal_value(
+        m.fs.MX1.enthalpy_mixing_equations[0.0],
+        scheme=ConstraintScalingScheme.inverseMaximum,
+        overwrite=True,
+    )
+    csb.scale_constraint_by_nominal_value(
+        m.fs.MX2.enthalpy_mixing_equations[0.0],
+        scheme=ConstraintScalingScheme.inverseMaximum,
+        overwrite=True,
+    )
+    csb.scale_constraint_by_nominal_value(
+        m.fs.MX3.enthalpy_mixing_equations[0.0],
+        scheme=ConstraintScalingScheme.inverseMaximum,
+        overwrite=True,
+    )
+    csb.scale_constraint_by_nominal_value(
+        m.fs.MX4.enthalpy_mixing_equations[0.0],
+        scheme=ConstraintScalingScheme.inverseMaximum,
+        overwrite=True,
+    )
+    csb.scale_constraint_by_nominal_value(
+        m.fs.AD.liquid_phase.reactions[0.0].pH_calc,
+        scheme=ConstraintScalingScheme.inverseMaximum,
+        overwrite=True,
+    )
+
     iscale.calculate_scaling_factors(m)
 
 
@@ -690,34 +780,113 @@ def initialize_system(m):
         #     "pressure": {0: 101325},
         # }
 
+        # tear_guesses0 = {
+        #     "flow_vol": {0: 0.494},
+        #     "conc_mass_comp": {
+        #         (0, "S_A"): 0.08,
+        #         (0, "S_F"): 0.13,
+        #         (0, "S_I"): 0.057,
+        #         (0, "S_N2"): 0.035,
+        #         (0, "S_NH4"): 0.02,
+        #         (0, "S_NO3"): 0.001,
+        #         (0, "S_O2"): 0.0006,
+        #         (0, "S_PO4"): 0.017,
+        #         (0, "S_K"): 0.37,
+        #         (0, "S_Mg"): 0.02,
+        #         (0, "S_IC"): 0.085,
+        #         (0, "X_AUT"): 0.08,
+        #         (0, "X_H"): 3.4,
+        #         (0, "X_I"): 3.1,
+        #         (0, "X_PAO"): 3.9,
+        #         (0, "X_PHA"): 0.0055,
+        #         (0, "X_PP"): 1.0,
+        #         (0, "X_S"): 0.081,
+        #     },
+        #     "temperature": {0: 308.15},
+        #     "pressure": {0: 101325},
+        # }
+        #
+        # tear_guesses = {
+        #     "flow_vol": {0: 1.2353},
+        #     "conc_mass_comp": {
+        #         (0, "S_A"): 0.0006,
+        #         (0, "S_F"): 0.0004,
+        #         (0, "S_I"): 0.057,
+        #         (0, "S_N2"): 0.04,
+        #         (0, "S_NH4"): 0.006,
+        #         (0, "S_NO3"): 0.002,
+        #         (0, "S_O2"): 0.0019,
+        #         (0, "S_PO4"): 0.04,
+        #         (0, "S_K"): 0.37,
+        #         (0, "S_Mg"): 0.020,
+        #         (0, "S_IC"): 0.13,
+        #         (0, "X_AUT"): 0.086,
+        #         (0, "X_H"): 3.4,
+        #         (0, "X_I"): 3.1,
+        #         (0, "X_PAO"): 3.4,
+        #         (0, "X_PHA"): 0.087,
+        #         (0, "X_PP"): 1.12,
+        #         (0, "X_S"): 0.057,
+        #     },
+        #     "temperature": {0: 308.15},
+        #     "pressure": {0: 101325},
+        # }
+        #
+        # tear_guesses2 = {
+        #     "flow_vol": {0: 0.003},
+        #     "conc_mass_comp": {
+        #         (0, "S_A"): 0.1,
+        #         (0, "S_F"): 0.15,
+        #         (0, "S_I"): 0.057,
+        #         (0, "S_N2"): 0.033,
+        #         (0, "S_NH4"): 0.025,
+        #         (0, "S_NO3"): 0.0015,
+        #         (0, "S_O2"): 0.0013,
+        #         (0, "S_PO4"): 0.05,
+        #         (0, "S_K"): 0.38,
+        #         (0, "S_Mg"): 0.024,
+        #         (0, "S_IC"): 0.075,
+        #         (0, "X_AUT"): 0.21,
+        #         (0, "X_H"): 23,
+        #         (0, "X_I"): 11,
+        #         (0, "X_PAO"): 10,
+        #         (0, "X_PHA"): 0.005,
+        #         (0, "X_PP"): 2.8,
+        #         (0, "X_S"): 3.9,
+        #     },
+        #     "temperature": {0: 308.15},
+        #     "pressure": {0: 101325},
+        # }
+
+        # with area specified
         tear_guesses0 = {
-            "flow_vol": {0: 0.494},
+            "flow_vol": {0: 0.495},
             "conc_mass_comp": {
-                (0, "S_A"): 0.0837,
+                (0, "S_A"): 0.08,
                 (0, "S_F"): 0.13,
                 (0, "S_I"): 0.057,
-                (0, "S_N2"): 0.035,
+                (0, "S_N2"): 0.036,
                 (0, "S_NH4"): 0.02,
-                (0, "S_NO3"): 0.001,
-                (0, "S_O2"): 0.0006,
-                (0, "S_PO4"): 0.017,
+                (0, "S_NO3"): 0.0019,
+                (0, "S_O2"): 0.0016,
+                (0, "S_PO4"): 0.04,
                 (0, "S_K"): 0.37,
                 (0, "S_Mg"): 0.02,
-                (0, "S_IC"): 0.085,
-                (0, "X_AUT"): 0.08,
-                (0, "X_H"): 3.4,
+                (0, "S_IC"): 0.086,
+                (0, "X_AUT"): 0.085,
+                (0, "X_H"): 3.5,
                 (0, "X_I"): 3.1,
-                (0, "X_PAO"): 3.9,
-                (0, "X_PHA"): 0.0055,
-                (0, "X_PP"): 1.0,
-                (0, "X_S"): 0.081,
+                (0, "X_PAO"): 3.3,
+                (0, "X_PHA"): 0.002,
+                (0, "X_PP"): 1.1,
+                (0, "X_S"): 0.08,
             },
             "temperature": {0: 308.15},
             "pressure": {0: 101325},
         }
 
         tear_guesses = {
-            "flow_vol": {0: 1.2353},
+            "flow_vol": {0: 1.235},
             "conc_mass_comp": {
                 (0, "S_A"): 0.0006,
                 (0, "S_F"): 0.0004,
@@ -726,7 +895,7 @@ def initialize_system(m):
                 (0, "S_NH4"): 0.006,
                 (0, "S_NO3"): 0.002,
                 (0, "S_O2"): 0.0019,
-                (0, "S_PO4"): 0.04,
+                (0, "S_PO4"): 0.037,
                 (0, "S_K"): 0.37,
                 (0, "S_Mg"): 0.020,
                 (0, "S_IC"): 0.13,
@@ -908,11 +1077,25 @@ def add_costing(m):
     m.fs.costing.add_LCOW(m.fs.FeedWater.properties[0].flow_vol)
     m.fs.costing.add_specific_energy_consumption(m.fs.FeedWater.properties[0].flow_vol)
 
+    # Set scaling:
     iscale.set_scaling_factor(m.fs.costing.total_capital_cost, 1e-5)
 
     for block in m.fs.component_objects(pyo.Block, descend_into=True):
         if isinstance(block, UnitModelBlockData) and hasattr(block, "costing"):
             iscale.set_scaling_factor(block.costing.capital_cost, 1e-5)
+
+    # scaling constraints
+    csb = CustomScalerBase()
+    csb.scale_constraint_by_nominal_value(
+        m.fs.AD.costing.capital_cost_constraint,
+        scheme=ConstraintScalingScheme.inverseMaximum,
+        overwrite=True,
+    )
+    csb.scale_constraint_by_nominal_value(
+        m.fs.dewater.costing.capital_cost_constraint,
+        scheme=ConstraintScalingScheme.inverseMaximum,
+        overwrite=True,
+    )
 
     # Expression
     if m.fs.has_electroNP is True:
@@ -1007,7 +1190,7 @@ def setup_optimization(m, reactor_volume_equalities=False):
     # # m.fs.SP1.split_fraction[:, "underflow"].setlb(0.45)
     # m.fs.SP2.split_fraction[:, "recycle"].unfix()
 
-    # add_effluent_violations(m)
+    add_effluent_violations(m)
 
 
 def add_reactor_volume_equalities(m):
@@ -1065,7 +1248,7 @@ def add_effluent_violations(m):
         return m.fs.Treated.properties[t].BOD5["effluent"] <= m.fs.BOD5_max
 
     # Max value taken from Flores-Alsina Excel 0.002 - modified
-    m.fs.total_P_max = pyo.Var(initialize=0.005, units=pyo.units.kg / pyo.units.m**3)
+    m.fs.total_P_max = pyo.Var(initialize=0.006, units=pyo.units.kg / pyo.units.m**3)
     m.fs.total_P_max.fix()
 
     @m.fs.Constraint(m.fs.time)
@@ -1377,25 +1560,26 @@ if __name__ == "__main__":
             {
                 "Feed": m.fs.FeedWater.outlet,
                 # "CL inlet": m.fs.CL.inlet,
-                "R1 inlet": m.fs.R1.inlet,
-                "R3 inlet": m.fs.R3.inlet,
+                # "R1 inlet": m.fs.R1.inlet,
+                # "R3 inlet": m.fs.R3.inlet,
+                # "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
+                "R1": m.fs.R1.outlet,
+                "R2": m.fs.R2.outlet,
+                "R3": m.fs.R3.outlet,
+                "R4": m.fs.R4.outlet,
+                "R5": m.fs.R5.outlet,
+                "R6": m.fs.R6.outlet,
+                "R7": m.fs.R7.outlet,
+                "thickener outlet": m.fs.thickener.underflow,
                 "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
-                # "R1": m.fs.R1.outlet,
-                # "R2": m.fs.R2.outlet,
-                # "R3": m.fs.R3.outlet,
-                # "R4": m.fs.R4.outlet,
-                # "R5": m.fs.R5.outlet,
-                # "R6": m.fs.R6.outlet,
-                # "R7": m.fs.R7.outlet,
-                # "thickener outlet": m.fs.thickener.underflow,
-                # "ADM-ASM translator outlet": m.fs.translator_adm1_asm2d.outlet,
-                # "dewater outlet": m.fs.dewater.overflow,
-                # "electroNP inlet": m.fs.electroNP.inlet,
-                # "electroNP treated": m.fs.electroNP.treated,
+                "ADM-ASM translator outlet": m.fs.translator_adm1_asm2d.outlet,
+                "dewater outlet": m.fs.dewater.overflow,
+                "electroNP inlet": m.fs.electroNP.inlet,
+                "electroNP treated": m.fs.electroNP.treated,
                 # "electroNP byproduct": m.fs.electroNP.byproduct,
                 # "electroNP byproduct": m.fs.electroNP.byproduct,
                 "Treated water": m.fs.Treated.inlet,
-                # "Sludge": m.fs.Sludge.inlet,
+                "Sludge": m.fs.Sludge.inlet,
             },
             time_point=0,
         )

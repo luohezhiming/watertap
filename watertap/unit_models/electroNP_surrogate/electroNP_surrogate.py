@@ -461,6 +461,46 @@ class ElectroNPdata(SeparatorData):
                 )
             )
 
+        self.volume = Var(
+            self.flowsheet().time,
+            units=pyunits.m**3,
+            bounds=(0, None),
+            doc="Reactor volume",
+        )
+
+        self.area = Var(
+            self.flowsheet().time,
+            units=pyunits.m**2,
+            bounds=(0, None),
+            doc="Reactor cross-section area",
+        )
+
+        self.HRT = Var(
+            initialize=1.3333,
+            doc="Hydraulic retention time",
+            units=pyunits.hr,
+        )
+
+        @self.Constraint(
+            self.flowsheet().time,
+            doc="Constraint for reactor volume",
+        )
+        def eq_volume(b, t):
+            return b.volume[t] == pyunits.convert(
+                b.area[t] / b.area_volume_ratio * 1 * pyunits.m,
+                to_units=pyunits.m**3,
+            )
+
+        @self.Constraint(
+            self.flowsheet().time,
+            doc="Constraint for HRT",
+        )
+        def eq_HRT(b, t):
+            return b.volume[t] == pyunits.convert(
+                b.mixed_state[t].flow_vol * b.HRT,
+                to_units=pyunits.m**3,
+            )
+
     def _get_performance_contents(self, time_point=0):
         var_dict = {}
         var_dict["Mass fraction of H2O in treated stream"] = self.frac_mass_H2O_treated[
@@ -490,6 +530,7 @@ class ElectroNPdata(SeparatorData):
 
     def calculate_scaling_factors(self):
         super().calculate_scaling_factors()
+        # self.set_variable_scaling_factor(model.frac_mass_H2O_treated, 1)
 
         iscale.set_scaling_factor(self.frac_mass_H2O_treated, 1)
 

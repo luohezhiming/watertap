@@ -158,6 +158,16 @@ def main(has_electroNP=False):
     # print_close_to_bounds(m)
     # print_infeasible_constraints(m)
 
+    dt = DiagnosticsToolbox(m)
+    print("---Numerical Issues---")
+    dt.report_numerical_issues()
+    dt.display_constraints_with_large_residuals()
+    # dt.compute_infeasibility_explanation()
+    # dt.display_variables_at_or_outside_bounds()
+    # dt.display_variables_with_extreme_jacobians()
+    # dt.display_constraints_with_extreme_jacobians()
+    # dt.display_near_parallel_variables()
+
     # results = solve(m)
     # pyo.assert_optimal_termination(results)
     #
@@ -575,6 +585,7 @@ def set_operating_conditions(m):
         # m.fs.electroNP.P_removal = 0.95
         # m.fs.electroNP.N_removal = 0.3
         m.fs.electroNP.frac_mass_H2O_treated[0].fix(0.9)
+        m.fs.electroNP.area[0].fix(5)
 
         # iscale.set_scaling_factor(m.fs.electroNP.cathodic_potential, 1e0)
         # iscale.set_scaling_factor(m.fs.electroNP.area_volume_ratio, 1e0)

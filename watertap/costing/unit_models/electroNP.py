@@ -18,11 +18,11 @@ from ..util import (
 
 
 def build_electroNP_cost_param_block(blk):
-    blk.HRT = pyo.Var(
-        initialize=1.3333,
-        doc="Hydraulic retention time",
-        units=pyo.units.hr,
-    )
+    # blk.HRT = pyo.Var(
+    #     initialize=1.3333,
+    #     doc="Hydraulic retention time",
+    #     units=pyo.units.hr,
+    # )
     blk.sizing_cost = pyo.Var(
         initialize=1000,
         doc="Reactor sizing cost",
@@ -57,9 +57,13 @@ def cost_electroNP(
     """
     ElectroNP costing method
     """
+    # cost_electroNP_capital(
+    #     blk,
+    #     blk.costing_package.electroNP.HRT,
+    #     blk.costing_package.electroNP.sizing_cost,
+    # )
     cost_electroNP_capital(
         blk,
-        blk.costing_package.electroNP.HRT,
         blk.costing_package.electroNP.sizing_cost,
     )
 
@@ -93,26 +97,45 @@ def cost_electroNP(
         )
 
 
-def cost_electroNP_capital(blk, HRT, sizing_cost):
+# def cost_electroNP_capital(blk, HRT, sizing_cost):
+#     """
+#     Generic function for costing an ElectroNP system.
+#     """
+#     make_capital_cost_var(blk)
+#
+#     blk.HRT = pyo.Expression(expr=HRT)
+#     blk.sizing_cost = pyo.Expression(expr=sizing_cost)
+#
+#     flow_in = pyo.units.convert(
+#         blk.unit_model.mixed_state[0].flow_vol,
+#         to_units=pyo.units.m**3 / pyo.units.hr,
+#     )
+#
+#     blk.costing_package.add_cost_factor(blk, "TIC")
+#     blk.capital_cost_constraint = pyo.Constraint(
+#         expr=blk.capital_cost
+#         == blk.cost_factor
+#         * pyo.units.convert(
+#             blk.HRT * flow_in * blk.sizing_cost,
+#             to_units=blk.costing_package.base_currency,
+#         )
+#     )
+
+
+def cost_electroNP_capital(blk, sizing_cost):
     """
     Generic function for costing an ElectroNP system.
     """
     make_capital_cost_var(blk)
 
-    blk.HRT = pyo.Expression(expr=HRT)
     blk.sizing_cost = pyo.Expression(expr=sizing_cost)
-
-    flow_in = pyo.units.convert(
-        blk.unit_model.mixed_state[0].flow_vol,
-        to_units=pyo.units.m**3 / pyo.units.hr,
-    )
 
     blk.costing_package.add_cost_factor(blk, "TIC")
     blk.capital_cost_constraint = pyo.Constraint(
         expr=blk.capital_cost
         == blk.cost_factor
         * pyo.units.convert(
-            blk.HRT * flow_in * blk.sizing_cost,
+            blk.unit_model.volume[0] * blk.sizing_cost,
             to_units=blk.costing_package.base_currency,
         )
     )
