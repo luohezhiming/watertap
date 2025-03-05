@@ -101,15 +101,22 @@ from idaes.core.scaling.custom_scaler_base import (
     ConstraintScalingScheme,
 )
 from idaes.core.scaling.autoscaling import AutoScaler
-
+import numpy as np
 
 # Set up logger
 _log = idaeslog.getLogger(__name__)
 
 
-def multi_run(has_electroNP=False):
+def multi_run(has_electroNP=True, num=5):
     m = build_flowsheet(has_electroNP=has_electroNP)
+
+    CP_list = np.linspace(-1.2, -0.8, num)
+    r_AV_list = np.linspace(0.08, 0.13, num)
+    m_set = []
+    obj_set = []
+
     set_operating_conditions(m)
+
     set_scaling(m)
 
     for mx in m.fs.mixers:
@@ -127,6 +134,73 @@ def multi_run(has_electroNP=False):
 
     add_costing(m)
     m.fs.costing.initialize()
+
+    interval_initializer(m.fs.costing)
+    assert_degrees_of_freedom(m, 0)
+
+    results = solve(m)
+
+    if has_electroNP:
+        setup_optimization(m, reactor_volume_equalities=False)
+
+    results = solve(m)
+
+    m_set = m
+    obj_set = pyo.value(m.fs.objective)
+
+    for i in range(0, num):
+        for j in range(0, num):
+            set_operating_conditions(m)
+            m.fs.electroNP.cathodic_potential.unfix()
+            m.fs.electroNP.area_volume_ratio.unfix()
+            m.fs.electroNP.cathodic_potential.fix(CP_list[i])
+            m.fs.electroNP.area_volume_ratio.fix(r_AV_list[j])
+            set_scaling(m)
+            try:
+                for mx in m.fs.mixers:
+                    mx.pressure_equality_constraints[0.0, 2].deactivate()
+                m.fs.MX3.pressure_equality_constraints[0.0, 2].deactivate()
+                m.fs.MX3.pressure_equality_constraints[0.0, 3].deactivate()
+                print(f"DOF before initialization: {degrees_of_freedom(m)}")
+
+                m, results = initialize_system(m)
+                for mx in m.fs.mixers:
+                    mx.pressure_equality_constraints[0.0, 2].deactivate()
+                m.fs.MX3.pressure_equality_constraints[0.0, 2].deactivate()
+                m.fs.MX3.pressure_equality_constraints[0.0, 3].deactivate()
+                print(f"DOF after initialization: {degrees_of_freedom(m)}")
+
+                add_costing(m)
+                m.fs.costing.initialize()
+
+                interval_initializer(m.fs.costing)
+                assert_degrees_of_freedom(m, 0)
+
+                results = solve(m)
+
+                if has_electroNP:
+                    setup_optimization(m, reactor_volume_equalities=False)
+
+                results = solve(m)
+
+                m_set = [m_set, m]
+                obj_set = [obj_set, pyo.value(m.fs.objective)]
+            except:
+                pass
+
+    # min_value = min(obj_set)
+    # min_idx = obj_set.index(min_value)
+    #
+    # min_m = m_set[min_idx]
+    #
+    # display_design(min_m)
+    #
+    # display_performance_metrics(min_m)
+    # display_costing(min_m)
+    #
+    # m = min_m
+
+    return m, obj_set
 
 
 def main(has_electroNP=False):
@@ -191,12 +265,12 @@ def main(has_electroNP=False):
     results = solve(m)
     pyo.assert_optimal_termination(results)
 
-    dt = DiagnosticsToolbox(m)
-    print("---Numerical Issues---")
-    dt.report_numerical_issues()
-    # dt.display_variables_at_or_outside_bounds()
-    dt.display_variables_with_extreme_jacobians()
-    dt.display_constraints_with_extreme_jacobians()
+    # dt = DiagnosticsToolbox(m)
+    # print("---Numerical Issues---")
+    # dt.report_numerical_issues()
+    # # dt.display_variables_at_or_outside_bounds()
+    # dt.display_variables_with_extreme_jacobians()
+    # dt.display_constraints_with_extreme_jacobians()
 
     display_design(m)
 
@@ -612,7 +686,7 @@ def set_operating_conditions(m):
         # m.fs.electroNP.P_removal = 0.95
         # m.fs.electroNP.N_removal = 0.3
         m.fs.electroNP.frac_mass_H2O_treated[0].fix(0.9)
-        m.fs.electroNP.area[0].fix(4.5)
+        m.fs.electroNP.area[0].fix(5)
         # m.fs.electroNP.HRT.fix(1.3333 * pyo.units.hr)
 
         # iscale.set_scaling_factor(m.fs.electroNP.cathodic_potential, 1e0)
@@ -1533,6 +1607,7 @@ def display_design(m):
 if __name__ == "__main__":
     # This method builds and runs a steady state activated sludge flowsheet.
     m, results = main(has_electroNP=True)
+    # m, obj_set = multi_run(has_electroNP=True, num=5)
     if m.fs.has_electroNP is False:
         stream_table = create_stream_table_dataframe(
             {

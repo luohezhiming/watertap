@@ -1056,8 +1056,8 @@ def add_costing(m):
 
 def setup_optimization(m, reactor_volume_equalities=False):
     # Objective function
-    # m.fs.objective = pyo.Objective(expr=m.fs.costing.LCOW)
-    m.fs.objective = pyo.Objective(expr=m.fs.costing.LCOW_P_removal)
+    m.fs.objective = pyo.Objective(expr=m.fs.costing.LCOW)
+    # m.fs.objective = pyo.Objective(expr=m.fs.costing.LCOW_P_removal)
 
     # Decision variables
     m.fs.electroNP.cathodic_potential.unfix()
