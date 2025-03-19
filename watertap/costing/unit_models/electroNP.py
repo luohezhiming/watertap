@@ -18,20 +18,45 @@ from ..util import (
 
 
 def build_electroNP_cost_param_block(blk):
+    # Electrolyzer
     blk.sizing_cost_electrolyzer = pyo.Var(
         initialize=400,
         doc="Electrolyzer sizing cost",
         units=pyo.units.USD_2023 / pyo.units.m**2,
     )
 
-    costing = blk.parent_block()
-    blk.magnesium_chloride_cost = pyo.Param(
-        mutable=True,
-        initialize=0.0786,
-        doc="Magnesium chloride cost",
-        units=pyo.units.USD_2020 / pyo.units.kg,
+    # Centrifuge
+    blk.PEC_centrifuge = pyo.Var(
+        initialize=1e5,
+        doc="Centrifuge purchase equipment cost",
+        units=pyo.units.USD_2013,
     )
-    costing.register_flow_type("magnesium chloride", blk.magnesium_chloride_cost)
+    blk.Fd_centrifuge = pyo.Var(
+        initialize=16,
+        doc="Centrifuge design capacity",
+        units=pyo.units.m**3 / pyo.units.hr,
+    )
+    blk.a_centrifuge = pyo.Var(
+        initialize=0.46,
+        doc="Centrifuge sizing exponent",
+        units=pyo.units.dimensionless,
+    )
+
+    # MgCl2
+    blk.sizing_cost_MgCl2 = pyo.Var(
+        initialize=445,
+        doc="MgCl2 sizing cost",
+        units=pyo.units.USD_2023 / pyo.units.m**2,
+    )
+
+    costing = blk.parent_block()
+    # blk.magnesium_chloride_cost = pyo.Param(
+    #     mutable=True,
+    #     initialize=0.0786,
+    #     doc="Magnesium chloride cost",
+    #     units=pyo.units.USD_2020 / pyo.units.kg,
+    # )
+    # costing.register_flow_type("magnesium chloride", blk.magnesium_chloride_cost)
 
     blk.phosphorus_recovery_value = pyo.Param(
         mutable=True,
@@ -46,17 +71,10 @@ def build_electroNP_cost_param_block(blk):
     build_rule=build_electroNP_cost_param_block,
     parameter_block_name="electroNP",
 )
-def cost_electroNP(
-    blk, cost_electricity_flow=True, cost_MgCl2_flow=True, cost_phosphorus_flow=True
-):
+def cost_electroNP(blk, cost_electricity_flow=True, cost_phosphorus_flow=True):
     """
     ElectroNP costing method
     """
-    # cost_electroNP_capital(
-    #     blk,
-    #     blk.costing_package.electroNP.HRT,
-    #     blk.costing_package.electroNP.sizing_cost,
-    # )
     cost_electroNP_capital(
         blk,
     )
@@ -71,14 +89,14 @@ def cost_electroNP(
             "electricity",
         )
 
-    if cost_MgCl2_flow:
-        blk.costing_package.cost_flow(
-            pyo.units.convert(
-                blk.unit_model.MgCl2_flowrate[t0],
-                to_units=pyo.units.kg / pyo.units.hr,
-            ),
-            "magnesium chloride",
-        )
+    # if cost_MgCl2_flow:
+    #     blk.costing_package.cost_flow(
+    #         pyo.units.convert(
+    #             blk.unit_model.MgCl2_flowrate[t0],
+    #             to_units=pyo.units.kg / pyo.units.hr,
+    #         ),
+    #         "magnesium chloride",
+    #     )
 
     if cost_phosphorus_flow:
         blk.costing_package.cost_flow(
@@ -122,8 +140,13 @@ def cost_electroNP_capital(blk):
     """
     make_capital_cost_var(blk)
     cost_blk = blk.costing_package.electroNP
-    t0 = blk.flowsheet().time.first()
     blk.costing_package.add_cost_factor(blk, "TIC")
+
+    t0 = blk.flowsheet().time.first()
+    flow_in = pyo.units.convert(
+        blk.unit_model.inlet.flow_vol[t0],
+        to_units=pyo.units.m**3 / pyo.units.hr,
+    )
 
     # Electrolyzer
     electrolyzer_cost_expr = blk.cost_factor * pyo.units.convert(
@@ -132,6 +155,25 @@ def cost_electroNP_capital(blk):
     )
     blk.electrolyzer_cost = pyo.Expression(expr=electrolyzer_cost_expr)
 
-    cap_total = blk.electrolyzer_cost
+    # Centrifuge
+    centrifuge_cost_expr = blk.cost_factor * pyo.units.convert(
+        cost_blk.PEC_centrifuge
+        * (flow_in / cost_blk.Fd_centrifuge) ** cost_blk.a_centrifuge,
+        to_units=blk.costing_package.base_currency,
+    )
+    blk.centrifuge_cost = pyo.Expression(expr=centrifuge_cost_expr)
+
+    # MgCl2
+    MgCl2_cost_expr = blk.cost_factor * pyo.units.convert(
+        blk.unit_model.area[t0] * cost_blk.sizing_cost_MgCl2,
+        to_units=blk.costing_package.base_currency,
+    )
+    blk.MgCl2_cost = pyo.Expression(expr=MgCl2_cost_expr)
+
+    blk.DCC = pyo.Expression(
+        expr=blk.electrolyzer_cost + blk.centrifuge_cost
+    )  # direct capital cost
+
+    cap_total = blk.DCC + blk.MgCl2_cost
 
     blk.capital_cost_constraint = pyo.Constraint(expr=blk.capital_cost == cap_total)
