@@ -686,8 +686,8 @@ def set_operating_conditions(m):
         # m.fs.electroNP.P_removal = 0.95
         # m.fs.electroNP.N_removal = 0.3
         m.fs.electroNP.frac_mass_H2O_treated[0].fix(0.9)
-        m.fs.electroNP.area[0].fix(5)
-        # m.fs.electroNP.HRT.fix(1.3333 * pyo.units.hr)
+        # m.fs.electroNP.area[0].fix(5)
+        m.fs.electroNP.HRT.fix(1.3333 * pyo.units.hr)
 
         # iscale.set_scaling_factor(m.fs.electroNP.cathodic_potential, 1e0)
         # iscale.set_scaling_factor(m.fs.electroNP.area_volume_ratio, 1e0)

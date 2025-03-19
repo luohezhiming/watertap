@@ -18,15 +18,10 @@ from ..util import (
 
 
 def build_electroNP_cost_param_block(blk):
-    # blk.HRT = pyo.Var(
-    #     initialize=1.3333,
-    #     doc="Hydraulic retention time",
-    #     units=pyo.units.hr,
-    # )
-    blk.sizing_cost = pyo.Var(
-        initialize=1000,
-        doc="Reactor sizing cost",
-        units=pyo.units.USD_2020 / pyo.units.m**3,
+    blk.sizing_cost_electrolyzer = pyo.Var(
+        initialize=400,
+        doc="Electrolyzer sizing cost",
+        units=pyo.units.USD_2023 / pyo.units.m**2,
     )
 
     costing = blk.parent_block()
@@ -64,7 +59,6 @@ def cost_electroNP(
     # )
     cost_electroNP_capital(
         blk,
-        blk.costing_package.electroNP.sizing_cost,
     )
 
     t0 = blk.flowsheet().time.first()
@@ -122,20 +116,22 @@ def cost_electroNP(
 #     )
 
 
-def cost_electroNP_capital(blk, sizing_cost):
+def cost_electroNP_capital(blk):
     """
     Generic function for costing an ElectroNP system.
     """
     make_capital_cost_var(blk)
-
-    blk.sizing_cost = pyo.Expression(expr=sizing_cost)
-
+    cost_blk = blk.costing_package.electroNP
+    t0 = blk.flowsheet().time.first()
     blk.costing_package.add_cost_factor(blk, "TIC")
-    blk.capital_cost_constraint = pyo.Constraint(
-        expr=blk.capital_cost
-        == blk.cost_factor
-        * pyo.units.convert(
-            blk.unit_model.volume[0] * blk.sizing_cost,
-            to_units=blk.costing_package.base_currency,
-        )
+
+    # Electrolyzer
+    electrolyzer_cost_expr = blk.cost_factor * pyo.units.convert(
+        blk.unit_model.area[t0] * cost_blk.sizing_cost_electrolyzer,
+        to_units=blk.costing_package.base_currency,
     )
+    blk.electrolyzer_cost = pyo.Expression(expr=electrolyzer_cost_expr)
+
+    cap_total = blk.electrolyzer_cost
+
+    blk.capital_cost_constraint = pyo.Constraint(expr=blk.capital_cost == cap_total)
