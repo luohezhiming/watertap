@@ -42,6 +42,50 @@ def build_electroNP_cost_param_block(blk):
         units=pyo.units.dimensionless,
     )
 
+    # Dryer
+    blk.PEC_dryer = pyo.Var(
+        initialize=712730,
+        doc="Dryer purchase equipment cost",
+        units=pyo.units.USD_2015,
+    )
+    blk.Fd_dryer = pyo.Var(
+        initialize=2000,
+        doc="Dryer design wet struvite feed",
+        units=pyo.units.kg / pyo.units.hr,
+    )
+    blk.a_dryer = pyo.Var(
+        initialize=0.6,
+        doc="Dryer sizing exponent",
+        units=pyo.units.dimensionless,
+    )
+    blk.K_dryer = pyo.Var(
+        initialize=1360 / 1113,
+        doc="Dryer conversion coefficient for design capacity",
+        units=pyo.units.kg / pyo.units.m**3,
+    )
+
+    # Pump
+    blk.PEC_pump = pyo.Var(
+        initialize=27000,
+        doc="Pump purchase equipment cost",
+        units=pyo.units.USD_2015,
+    )
+    blk.Pd_pump = pyo.Var(
+        initialize=59,
+        doc="Pump design input power",
+        units=pyo.units.kW,
+    )
+    blk.a_pump = pyo.Var(
+        initialize=0.67,
+        doc="Pump sizing exponent",
+        units=pyo.units.dimensionless,
+    )
+    blk.K_pump = pyo.Var(
+        initialize=109 / 3400,
+        doc="Pump conversion coefficient for design capacity",
+        units=pyo.units.kWh / pyo.units.m**3,
+    )
+
     # MgCl2
     blk.sizing_cost_MgCl2 = pyo.Var(
         initialize=445,
@@ -163,6 +207,59 @@ def cost_electroNP_capital(blk):
     )
     blk.centrifuge_cost = pyo.Expression(expr=centrifuge_cost_expr)
 
+    # Dryer
+    dryer_cost_expr = blk.cost_factor * pyo.units.convert(
+        cost_blk.PEC_dryer
+        * (flow_in * cost_blk.K_dryer / cost_blk.Fd_dryer) ** cost_blk.a_dryer,
+        to_units=blk.costing_package.base_currency,
+    )
+    blk.dryer_cost = pyo.Expression(expr=dryer_cost_expr)
+
+    # Pumps (3 in the system)
+    pump_cost_expr = blk.cost_factor * pyo.units.convert(
+        3
+        * cost_blk.PEC_pump
+        * (flow_in * cost_blk.K_pump / cost_blk.Pd_pump) ** cost_blk.a_pump,
+        to_units=blk.costing_package.base_currency,
+    )
+    blk.pump_cost = pyo.Expression(expr=pump_cost_expr)
+
+    # Direct capital costs
+    blk.DCC = pyo.Expression(
+        expr=blk.electrolyzer_cost
+        + blk.centrifuge_cost
+        + blk.dryer_cost
+        + blk.pump_cost
+    )
+
+    # Permits & license
+    blk.permits_and_licence_fee = pyo.Expression(expr=0.02 * blk.DCC)
+
+    # Installation
+    blk.installation_fee = pyo.Expression(expr=0.12 * blk.DCC)
+
+    # Building
+    blk.building_fee = pyo.Expression(expr=0.1 * blk.DCC)
+
+    # Engineering design
+    blk.engineering_design_fee = pyo.Expression(expr=0.1 * blk.DCC)
+
+    # Construction & contractor
+    blk.construction_and_contractor_fee = pyo.Expression(expr=0.25 * blk.DCC)
+
+    # Contingency
+    blk.contingency_fee = pyo.Expression(expr=0.15 * blk.DCC)
+
+    # Indirect capital costs
+    blk.IDC = pyo.Expression(
+        expr=blk.permits_and_licence_fee
+        + blk.installation_fee
+        + blk.building_fee
+        + blk.engineering_design_fee
+        + blk.construction_and_contractor_fee
+        + blk.contingency_fee
+    )
+
     # MgCl2
     MgCl2_cost_expr = blk.cost_factor * pyo.units.convert(
         blk.unit_model.area[t0] * cost_blk.sizing_cost_MgCl2,
@@ -170,10 +267,7 @@ def cost_electroNP_capital(blk):
     )
     blk.MgCl2_cost = pyo.Expression(expr=MgCl2_cost_expr)
 
-    blk.DCC = pyo.Expression(
-        expr=blk.electrolyzer_cost + blk.centrifuge_cost
-    )  # direct capital cost
-
-    cap_total = blk.DCC + blk.MgCl2_cost
+    # Total capital cost
+    cap_total = blk.DCC + blk.IDC + blk.MgCl2_cost
 
     blk.capital_cost_constraint = pyo.Constraint(expr=blk.capital_cost == cap_total)
