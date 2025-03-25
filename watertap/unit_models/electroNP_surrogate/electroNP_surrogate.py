@@ -341,7 +341,7 @@ class ElectroNPdata(SeparatorData):
             doc="Constraint for nitrogen removal",
         )
         def eq_N_removal(b):
-            return b.N_removal == 0.3 * b.P_removal
+            return b.N_removal == 0.452 * b.P_removal
 
         # self.dens_mass = Param(
         #     initialize=997,

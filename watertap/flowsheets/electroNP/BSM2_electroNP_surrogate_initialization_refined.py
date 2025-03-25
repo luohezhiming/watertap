@@ -140,8 +140,8 @@ def multi_run(has_electroNP=True, num=5):
 
     results = solve(m)
 
-    if has_electroNP:
-        setup_optimization(m, reactor_volume_equalities=False)
+    # if has_electroNP:
+    #     setup_optimization(m, reactor_volume_equalities=False)
 
     results = solve(m)
 
@@ -242,8 +242,8 @@ def main(has_electroNP=False):
         fail_flag=True,
     )
 
-    # if has_electroNP:
-    #     setup_optimization(m, reactor_volume_equalities=False)
+    if has_electroNP:
+        setup_optimization(m, reactor_volume_equalities=False)
 
     # # Use of Degeneracy Hunter for troubleshooting model.
     # m.obj = pyo.Objective(expr=0)
@@ -680,7 +680,7 @@ def set_operating_conditions(m):
         #     0.044 * pyo.units.kWh / pyo.units.kg
         # )
         m.fs.electroNP.cathodic_potential.fix(-1.1 * pyo.units.V)
-        m.fs.electroNP.area_volume_ratio.fix(0.105)
+        m.fs.electroNP.area_volume_ratio.fix(0.1)
         m.fs.electroNP.settling_time.fix(30 * pyo.units.min)
         m.fs.electroNP.magnesium_chloride_dosage.fix(0.388)
         # m.fs.electroNP.P_removal = 0.95
@@ -827,61 +827,35 @@ def initialize_system(m):
         print(o[0].name)
 
     if m.fs.has_electroNP is True:
-        # aeration tank - guess 2
-        # tear_guesses_CL = {
-        #     "flow_vol": {0: 0.247},
-        #     "conc_mass_comp": {
-        #         (0, "S_A"): 0.17,
-        #         (0, "S_F"): 0.26,
-        #         (0, "S_I"): 0.057,
-        #         (0, "S_N2"): 0.025,
-        #         (0, "S_NH4"): 0.04,
-        #         (0, "S_NO3"): 2e-5,
-        #         (0, "S_O2"): 1e-5,
-        #         (0, "S_PO4"): 0.033,
-        #         (0, "S_K"): 0.38,
-        #         (0, "S_Mg"): 0.03,
-        #         (0, "S_IC"): 0.021,
-        #         (0, "X_AUT"): 5e-5,
-        #         (0, "X_H"): 0.36,
-        #         (0, "X_I"): 0.088,
-        #         (0, "X_PAO"): 0.053,
-        #         (0, "X_PHA"): 3e-6,
-        #         (0, "X_PP"): 0.0006,
-        #         (0, "X_S"): 0.093,
-        #     },
-        #     "temperature": {0: 308.15},
-        #     "pressure": {0: 101325},
-        # }
-
+        # # with area specified
         # tear_guesses0 = {
-        #     "flow_vol": {0: 0.494},
+        #     "flow_vol": {0: 0.495},
         #     "conc_mass_comp": {
         #         (0, "S_A"): 0.08,
         #         (0, "S_F"): 0.13,
         #         (0, "S_I"): 0.057,
-        #         (0, "S_N2"): 0.035,
+        #         (0, "S_N2"): 0.036,
         #         (0, "S_NH4"): 0.02,
-        #         (0, "S_NO3"): 0.001,
-        #         (0, "S_O2"): 0.0006,
-        #         (0, "S_PO4"): 0.017,
+        #         (0, "S_NO3"): 0.0019,
+        #         (0, "S_O2"): 0.0016,
+        #         (0, "S_PO4"): 0.04,
         #         (0, "S_K"): 0.37,
         #         (0, "S_Mg"): 0.02,
-        #         (0, "S_IC"): 0.085,
-        #         (0, "X_AUT"): 0.08,
-        #         (0, "X_H"): 3.4,
+        #         (0, "S_IC"): 0.086,
+        #         (0, "X_AUT"): 0.085,
+        #         (0, "X_H"): 3.5,
         #         (0, "X_I"): 3.1,
-        #         (0, "X_PAO"): 3.9,
-        #         (0, "X_PHA"): 0.0055,
-        #         (0, "X_PP"): 1.0,
-        #         (0, "X_S"): 0.081,
+        #         (0, "X_PAO"): 3.3,
+        #         (0, "X_PHA"): 0.002,
+        #         (0, "X_PP"): 1.1,
+        #         (0, "X_S"): 0.08,
         #     },
         #     "temperature": {0: 308.15},
         #     "pressure": {0: 101325},
         # }
         #
         # tear_guesses = {
-        #     "flow_vol": {0: 1.2353},
+        #     "flow_vol": {0: 1.235},
         #     "conc_mass_comp": {
         #         (0, "S_A"): 0.0006,
         #         (0, "S_F"): 0.0004,
@@ -890,7 +864,7 @@ def initialize_system(m):
         #         (0, "S_NH4"): 0.006,
         #         (0, "S_NO3"): 0.002,
         #         (0, "S_O2"): 0.0019,
-        #         (0, "S_PO4"): 0.04,
+        #         (0, "S_PO4"): 0.037,
         #         (0, "S_K"): 0.37,
         #         (0, "S_Mg"): 0.020,
         #         (0, "S_IC"): 0.13,
@@ -932,25 +906,25 @@ def initialize_system(m):
         #     "pressure": {0: 101325},
         # }
 
-        # with area specified
+        # with HRT specified
         tear_guesses0 = {
             "flow_vol": {0: 0.495},
             "conc_mass_comp": {
                 (0, "S_A"): 0.08,
                 (0, "S_F"): 0.13,
                 (0, "S_I"): 0.057,
-                (0, "S_N2"): 0.036,
+                (0, "S_N2"): 0.035,
                 (0, "S_NH4"): 0.02,
-                (0, "S_NO3"): 0.0019,
+                (0, "S_NO3"): 0.0015,
                 (0, "S_O2"): 0.0016,
                 (0, "S_PO4"): 0.04,
                 (0, "S_K"): 0.37,
                 (0, "S_Mg"): 0.02,
                 (0, "S_IC"): 0.086,
-                (0, "X_AUT"): 0.085,
+                (0, "X_AUT"): 0.07,
                 (0, "X_H"): 3.5,
                 (0, "X_I"): 3.1,
-                (0, "X_PAO"): 3.3,
+                (0, "X_PAO"): 3.4,
                 (0, "X_PHA"): 0.002,
                 (0, "X_PP"): 1.1,
                 (0, "X_S"): 0.08,
@@ -969,16 +943,16 @@ def initialize_system(m):
                 (0, "S_NH4"): 0.006,
                 (0, "S_NO3"): 0.002,
                 (0, "S_O2"): 0.0019,
-                (0, "S_PO4"): 0.037,
+                (0, "S_PO4"): 0.03,
                 (0, "S_K"): 0.37,
                 (0, "S_Mg"): 0.020,
                 (0, "S_IC"): 0.13,
-                (0, "X_AUT"): 0.086,
+                (0, "X_AUT"): 0.074,
                 (0, "X_H"): 3.4,
                 (0, "X_I"): 3.1,
                 (0, "X_PAO"): 3.4,
-                (0, "X_PHA"): 0.087,
-                (0, "X_PP"): 1.12,
+                (0, "X_PHA"): 0.088,
+                (0, "X_PP"): 1.14,
                 (0, "X_S"): 0.057,
             },
             "temperature": {0: 308.15},
@@ -1226,8 +1200,8 @@ def add_costing(m):
 
 def setup_optimization(m, reactor_volume_equalities=False):
     # Objective function
-    m.fs.objective = pyo.Objective(expr=m.fs.costing.LCOW)
-    # m.fs.objective = pyo.Objective(expr=m.fs.costing.LCOW_P_removal)
+    # m.fs.objective = pyo.Objective(expr=m.fs.costing.LCOW)
+    m.fs.objective = pyo.Objective(expr=m.fs.costing.LCOW_P_removal)
 
     # Decision variables
     m.fs.electroNP.cathodic_potential.unfix()
@@ -1235,24 +1209,27 @@ def setup_optimization(m, reactor_volume_equalities=False):
     m.fs.electroNP.cathodic_potential.setub(-0.8)
 
     m.fs.electroNP.area_volume_ratio.unfix()
-    m.fs.electroNP.area_volume_ratio.setlb(0.065)
+    m.fs.electroNP.area_volume_ratio.setlb(0.06)
     m.fs.electroNP.area_volume_ratio.setub(0.145)
 
     # for i in ["R1", "R2", "R3", "R4", "R5", "R6", "R7"]:
     #     reactor = getattr(m.fs, i)
     #     reactor.volume.unfix()
     #     reactor.volume.setlb(1)
-    #     # reactor.volume.setub(2000)
+    #     reactor.volume.setub(5000)
     # if reactor_volume_equalities:
     #     add_reactor_volume_equalities(m)
 
     m.fs.R5.outlet.conc_mass_comp[:, "S_O2"].unfix()
+    m.fs.R5.outlet.conc_mass_comp[:, "S_O2"].setlb(0)
     m.fs.R5.outlet.conc_mass_comp[:, "S_O2"].setub(1e-2)
 
     m.fs.R6.outlet.conc_mass_comp[:, "S_O2"].unfix()
+    m.fs.R6.outlet.conc_mass_comp[:, "S_O2"].setlb(0)
     m.fs.R6.outlet.conc_mass_comp[:, "S_O2"].setub(1e-2)
 
     m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].unfix()
+    m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].setlb(0)
     m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].setub(1e-2)
 
     # m.fs.R5.injection[:, :, :].unfix()
@@ -1264,7 +1241,7 @@ def setup_optimization(m, reactor_volume_equalities=False):
     # # m.fs.SP1.split_fraction[:, "underflow"].setlb(0.45)
     # m.fs.SP2.split_fraction[:, "recycle"].unfix()
 
-    add_effluent_violations(m)
+    # add_effluent_violations(m)
 
 
 def add_reactor_volume_equalities(m):
@@ -1635,26 +1612,26 @@ if __name__ == "__main__":
             {
                 "Feed": m.fs.FeedWater.outlet,
                 # "CL inlet": m.fs.CL.inlet,
-                # "R1 inlet": m.fs.R1.inlet,
-                # "R3 inlet": m.fs.R3.inlet,
-                # "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
-                "R1": m.fs.R1.outlet,
-                "R2": m.fs.R2.outlet,
-                "R3": m.fs.R3.outlet,
-                "R4": m.fs.R4.outlet,
-                "R5": m.fs.R5.outlet,
-                "R6": m.fs.R6.outlet,
-                "R7": m.fs.R7.outlet,
-                "thickener outlet": m.fs.thickener.underflow,
+                "R1 inlet": m.fs.R1.inlet,
+                "R3 inlet": m.fs.R3.inlet,
                 "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
-                "ADM-ASM translator outlet": m.fs.translator_adm1_asm2d.outlet,
-                "dewater outlet": m.fs.dewater.overflow,
-                "electroNP inlet": m.fs.electroNP.inlet,
-                "electroNP treated": m.fs.electroNP.treated,
-                # "electroNP byproduct": m.fs.electroNP.byproduct,
-                # "electroNP byproduct": m.fs.electroNP.byproduct,
-                "Treated water": m.fs.Treated.inlet,
-                "Sludge": m.fs.Sludge.inlet,
+                # "R1": m.fs.R1.outlet,
+                # "R2": m.fs.R2.outlet,
+                # "R3": m.fs.R3.outlet,
+                # "R4": m.fs.R4.outlet,
+                # "R5": m.fs.R5.outlet,
+                # "R6": m.fs.R6.outlet,
+                # "R7": m.fs.R7.outlet,
+                # "thickener outlet": m.fs.thickener.underflow,
+                # "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
+                # "ADM-ASM translator outlet": m.fs.translator_adm1_asm2d.outlet,
+                # "dewater outlet": m.fs.dewater.overflow,
+                # "electroNP inlet": m.fs.electroNP.inlet,
+                # "electroNP treated": m.fs.electroNP.treated,
+                # # "electroNP byproduct": m.fs.electroNP.byproduct,
+                # # "electroNP byproduct": m.fs.electroNP.byproduct,
+                # "Treated water": m.fs.Treated.inlet,
+                # "Sludge": m.fs.Sludge.inlet,
             },
             time_point=0,
         )
