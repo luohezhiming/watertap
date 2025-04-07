@@ -102,54 +102,49 @@ from idaes.core.scaling.custom_scaler_base import (
 )
 from idaes.core.scaling.autoscaling import AutoScaler
 import numpy as np
+from idaes.core.util.misc import StrEnum
 
 # Set up logger
 _log = idaeslog.getLogger(__name__)
 
 
-def multi_run(has_electroNP=True, num=5):
-    m = build_flowsheet(has_electroNP=has_electroNP)
+class objective_fun(StrEnum):
+    LCOW = "LCOW"
+    LCOP = "LCOP"
 
-    CP_list = np.linspace(-1.2, -0.8, num)
-    r_AV_list = np.linspace(0.08, 0.13, num)
+
+def multi_run(
+    has_electroNP=True,
+    objective=objective_fun.LCOW,
+    has_effluent_constraints=False,
+    num=5,
+):
+    CP_list = np.linspace(-1.3, -0.8, num)
+    r_AV_list = np.linspace(0.065, 0.145, num)
+
+    # m = build_flowsheet(has_electroNP=has_electroNP)
+    # set_operating_conditions(m)
+    # set_scaling(m)
+    # m, results = initialize_system(m)
+    # add_costing(m)
+    # m.fs.costing.initialize()
+    # interval_initializer(m.fs.costing)
+    # assert_degrees_of_freedom(m, 0)
+    # results = solve(m)
+    # # setup_optimization(m, objective=objective, has_effluent_constraints=has_effluent_constraints,
+    # #                    reactor_volume_equalities=False)
+    # # results = solve(m)
+    # # m_set = [m]
+    # # obj_set = [pyo.value(m.fs.objective)]
+
     m_set = []
     obj_set = []
-
-    set_operating_conditions(m)
-
-    set_scaling(m)
-
-    for mx in m.fs.mixers:
-        mx.pressure_equality_constraints[0.0, 2].deactivate()
-    m.fs.MX3.pressure_equality_constraints[0.0, 2].deactivate()
-    m.fs.MX3.pressure_equality_constraints[0.0, 3].deactivate()
-    print(f"DOF before initialization: {degrees_of_freedom(m)}")
-
-    m, results = initialize_system(m)
-    for mx in m.fs.mixers:
-        mx.pressure_equality_constraints[0.0, 2].deactivate()
-    m.fs.MX3.pressure_equality_constraints[0.0, 2].deactivate()
-    m.fs.MX3.pressure_equality_constraints[0.0, 3].deactivate()
-    print(f"DOF after initialization: {degrees_of_freedom(m)}")
-
-    add_costing(m)
-    m.fs.costing.initialize()
-
-    interval_initializer(m.fs.costing)
-    assert_degrees_of_freedom(m, 0)
-
-    results = solve(m)
-
-    # if has_electroNP:
-    #     setup_optimization(m, reactor_volume_equalities=False)
-
-    results = solve(m)
-
-    m_set = m
-    obj_set = pyo.value(m.fs.objective)
+    CP_set_opt = []
+    r_AV_opt = []
 
     for i in range(0, num):
         for j in range(0, num):
+            m = build_flowsheet(has_electroNP=has_electroNP)
             set_operating_conditions(m)
             m.fs.electroNP.cathodic_potential.unfix()
             m.fs.electroNP.area_volume_ratio.unfix()
@@ -157,74 +152,67 @@ def multi_run(has_electroNP=True, num=5):
             m.fs.electroNP.area_volume_ratio.fix(r_AV_list[j])
             set_scaling(m)
             try:
-                for mx in m.fs.mixers:
-                    mx.pressure_equality_constraints[0.0, 2].deactivate()
-                m.fs.MX3.pressure_equality_constraints[0.0, 2].deactivate()
-                m.fs.MX3.pressure_equality_constraints[0.0, 3].deactivate()
-                print(f"DOF before initialization: {degrees_of_freedom(m)}")
-
                 m, results = initialize_system(m)
-                for mx in m.fs.mixers:
-                    mx.pressure_equality_constraints[0.0, 2].deactivate()
-                m.fs.MX3.pressure_equality_constraints[0.0, 2].deactivate()
-                m.fs.MX3.pressure_equality_constraints[0.0, 3].deactivate()
-                print(f"DOF after initialization: {degrees_of_freedom(m)}")
-
                 add_costing(m)
                 m.fs.costing.initialize()
-
                 interval_initializer(m.fs.costing)
-                assert_degrees_of_freedom(m, 0)
-
+                # results = solve(m)
+                setup_optimization(
+                    m,
+                    objective=objective,
+                    has_effluent_constraints=has_effluent_constraints,
+                    reactor_volume_equalities=False,
+                )
                 results = solve(m)
-
-                if has_electroNP:
-                    setup_optimization(m, reactor_volume_equalities=False)
-
-                results = solve(m)
-
-                m_set = [m_set, m]
-                obj_set = [obj_set, pyo.value(m.fs.objective)]
+                m_set.append(m)
+                obj_set.append(pyo.value(m.fs.objective))
+                CP_set_opt.append(CP_list[i])
+                r_AV_opt.append(r_AV_list[j])
             except:
                 pass
 
-    # min_value = min(obj_set)
-    # min_idx = obj_set.index(min_value)
-    #
-    # min_m = m_set[min_idx]
-    #
-    # display_design(min_m)
-    #
-    # display_performance_metrics(min_m)
-    # display_costing(min_m)
-    #
-    # m = min_m
+    min_value = min(obj_set)
+    min_idx = obj_set.index(min_value)
 
-    return m, obj_set
+    cp_opt = CP_set_opt[min_idx]
+    r_AV_opt = r_AV_opt[min_idx]
+
+    # set_operating_conditions(m)
+    # m.fs.electroNP.cathodic_potential.unfix()
+    # m.fs.electroNP.area_volume_ratio.unfix()
+    # m.fs.electroNP.cathodic_potential.fix(cp_opt)
+    # m.fs.electroNP.area_volume_ratio.fix(r_AV_opt)
+    # set_scaling(m)
+    # setup_optimization(m, objective=objective, has_effluent_constraints=has_effluent_constraints,
+    #                    reactor_volume_equalities=False)
+    # results = solve(m)
+
+    m_min = m_set[min_idx]
+
+    display_design(m_min)
+
+    display_performance_metrics(m_min)
+    display_costing(m_min)
+
+    return m_min, obj_set, m_set, cp_opt, r_AV_opt
 
 
-def main(has_electroNP=False):
+def main(
+    has_electroNP=False,
+    has_optimization=False,
+    objective=objective_fun.LCOW,
+    has_effluent_constraints=False,
+):
     m = build_flowsheet(has_electroNP=has_electroNP)
     set_operating_conditions(m)
     set_scaling(m)
 
-    print("----------------   scaling V0  ----------------")
-    badly_scaled_var_list = iscale.badly_scaled_var_generator(m, large=1e1, small=1e-1)
-    for x in badly_scaled_var_list:
-        print(f"{x[0].name}\t{x[0].value}\tsf: {iscale.get_scaling_factor(x[0])}")
-
-    for mx in m.fs.mixers:
-        mx.pressure_equality_constraints[0.0, 2].deactivate()
-    m.fs.MX3.pressure_equality_constraints[0.0, 2].deactivate()
-    m.fs.MX3.pressure_equality_constraints[0.0, 3].deactivate()
-    print(f"DOF before initialization: {degrees_of_freedom(m)}")
+    # print("----------------   scaling V0  ----------------")
+    # badly_scaled_var_list = iscale.badly_scaled_var_generator(m, large=1e1, small=1e-1)
+    # for x in badly_scaled_var_list:
+    #     print(f"{x[0].name}\t{x[0].value}\tsf: {iscale.get_scaling_factor(x[0])}")
 
     m, results = initialize_system(m)
-    for mx in m.fs.mixers:
-        mx.pressure_equality_constraints[0.0, 2].deactivate()
-    m.fs.MX3.pressure_equality_constraints[0.0, 2].deactivate()
-    m.fs.MX3.pressure_equality_constraints[0.0, 3].deactivate()
-    print(f"DOF after initialization: {degrees_of_freedom(m)}")
 
     add_costing(m)
     m.fs.costing.initialize()
@@ -242,8 +230,13 @@ def main(has_electroNP=False):
         fail_flag=True,
     )
 
-    if has_electroNP:
-        setup_optimization(m, reactor_volume_equalities=False)
+    if has_optimization:
+        setup_optimization(
+            m,
+            objective=objective,
+            has_effluent_constraints=has_effluent_constraints,
+            reactor_volume_equalities=False,
+        )
 
     # # Use of Degeneracy Hunter for troubleshooting model.
     # m.obj = pyo.Objective(expr=0)
@@ -717,7 +710,7 @@ def set_scaling(m):
             # if "pressure_sat[S_h2]" in var.name:
             #     iscale.set_scaling_factor(var, 1e-2)
             if "conc_mass_comp" in var.name:
-                iscale.set_scaling_factor(var, 1e1)
+                iscale.set_scaling_factor(var, 1e2)
             # if "conc_mass_comp[S_h2]" in var.name:
             #     iscale.set_scaling_factor(var, 1e5)
             # if "conc_mass_comp[S_ch4]" in var.name:
@@ -740,6 +733,22 @@ def set_scaling(m):
         iscale.set_scaling_factor(R.KLa, 1e0)
         iscale.set_scaling_factor(R.hydraulic_retention_time[0], 1e-3)
 
+    # scaling factor for low flowrate units
+    m.fs.low_flowrate = (
+        m.fs.thickener,
+        m.fs.translator_asm2d_adm1,
+        m.fs.AD,
+        m.fs.translator_adm1_asm2d,
+        m.fs.dewater,
+        m.fs.electroNP,
+        m.fs.MX4,
+        m.fs.Sludge,
+    )
+    for unit in m.fs.low_flowrate:
+        for var in unit.component_data_objects(pyo.Var, descend_into=True):
+            if "flow_vol" in var.name:
+                iscale.set_scaling_factor(var, 1e3)
+
     # scaling factor of AD
     iscale.set_scaling_factor(m.fs.AD.volume_AD[0.0], 1e-3)
     iscale.set_scaling_factor(m.fs.AD.KH_h2[0.0], 1e4)
@@ -749,6 +758,10 @@ def set_scaling(m):
     iscale.set_scaling_factor(m.fs.AD.liquid_phase.reactions[0.0].conc_mol_K, 1e2)
     iscale.set_scaling_factor(m.fs.AD.vapor_phase[0.0].pressure_sat["H2O"], 1e-3)
     iscale.set_scaling_factor(m.fs.AD.vapor_phase[0.0].pressure_sat["S_h2"], 1e0)
+
+    # scaling factor of electroNP
+    iscale.set_scaling_factor(m.fs.electroNP.inlet.flow_vol[0], 1e3)
+    iscale.set_scaling_factor(m.fs.electroNP.inlet.conc_mass_comp[0, "S_PO4"], 1e-2)
 
     # scaling factor of other units
     iscale.set_scaling_factor(m.fs.CL.surface_area, 1e-3)
@@ -811,6 +824,13 @@ def set_scaling(m):
 
 
 def initialize_system(m):
+    # Deactivate extra constraints
+    for mx in m.fs.mixers:
+        mx.pressure_equality_constraints[0.0, 2].deactivate()
+    m.fs.MX3.pressure_equality_constraints[0.0, 2].deactivate()
+    m.fs.MX3.pressure_equality_constraints[0.0, 3].deactivate()
+    print(f"DOF before initialization: {degrees_of_freedom(m)}")
+
     # Initialize flowsheet
     # Apply sequential decomposition - 1 iteration should suffice
     seq = SequentialDecomposition()
@@ -917,10 +937,10 @@ def initialize_system(m):
                 (0, "S_NH4"): 0.02,
                 (0, "S_NO3"): 0.0015,
                 (0, "S_O2"): 0.0016,
-                (0, "S_PO4"): 0.04,
+                (0, "S_PO4"): 0.05,
                 (0, "S_K"): 0.37,
                 (0, "S_Mg"): 0.02,
-                (0, "S_IC"): 0.086,
+                (0, "S_IC"): 0.09,
                 (0, "X_AUT"): 0.07,
                 (0, "X_H"): 3.5,
                 (0, "X_I"): 3.1,
@@ -943,7 +963,7 @@ def initialize_system(m):
                 (0, "S_NH4"): 0.006,
                 (0, "S_NO3"): 0.002,
                 (0, "S_O2"): 0.0019,
-                (0, "S_PO4"): 0.03,
+                (0, "S_PO4"): 0.04,
                 (0, "S_K"): 0.37,
                 (0, "S_Mg"): 0.020,
                 (0, "S_IC"): 0.13,
@@ -967,13 +987,13 @@ def initialize_system(m):
                 (0, "S_I"): 0.057,
                 (0, "S_N2"): 0.033,
                 (0, "S_NH4"): 0.025,
-                (0, "S_NO3"): 0.0015,
+                (0, "S_NO3"): 0.0013,
                 (0, "S_O2"): 0.0013,
                 (0, "S_PO4"): 0.05,
-                (0, "S_K"): 0.38,
+                (0, "S_K"): 0.37,
                 (0, "S_Mg"): 0.024,
                 (0, "S_IC"): 0.075,
-                (0, "X_AUT"): 0.21,
+                (0, "X_AUT"): 0.19,
                 (0, "X_H"): 23,
                 (0, "X_I"): 11,
                 (0, "X_PAO"): 10,
@@ -1075,6 +1095,13 @@ def initialize_system(m):
 
     results = seq.run(m, function)
 
+    # Deactivate extra constraints
+    for mx in m.fs.mixers:
+        mx.pressure_equality_constraints[0.0, 2].deactivate()
+    m.fs.MX3.pressure_equality_constraints[0.0, 2].deactivate()
+    m.fs.MX3.pressure_equality_constraints[0.0, 3].deactivate()
+    print(f"DOF before initialization: {degrees_of_freedom(m)}")
+
     return m, results
 
 
@@ -1154,8 +1181,11 @@ def add_costing(m):
             )
             / (
                 pyo.units.convert(
-                    m.fs.electroNP.byproduct.flow_vol[0]
-                    * m.fs.electroNP.byproduct.conc_mass_comp[0, "S_PO4"],
+                    # m.fs.electroNP.byproduct.flow_vol[0]
+                    # * m.fs.electroNP.byproduct.conc_mass_comp[0, "S_PO4"],
+                    m.fs.electroNP.inlet.flow_vol[0]
+                    * m.fs.electroNP.inlet.conc_mass_comp[0, "S_PO4"]
+                    * m.fs.electroNP.P_removal,
                     to_units=pyo.units.kg / m.fs.costing.base_period,
                 )
                 * m.fs.costing.utilization_factor
@@ -1198,10 +1228,22 @@ def add_costing(m):
     )
 
 
-def setup_optimization(m, reactor_volume_equalities=False):
+def setup_optimization(
+    m,
+    objective=objective_fun.LCOW,
+    has_effluent_constraints=False,
+    reactor_volume_equalities=False,
+):
     # Objective function
-    # m.fs.objective = pyo.Objective(expr=m.fs.costing.LCOW)
-    m.fs.objective = pyo.Objective(expr=m.fs.costing.LCOW_P_removal)
+    if objective == objective_fun.LCOW:
+        m.fs.objective = pyo.Objective(expr=m.fs.costing.LCOW)
+    elif objective == objective_fun.LCOP:
+        m.fs.objective = pyo.Objective(expr=m.fs.costing.LCOW_P_removal)
+    else:
+        raise TypeError(
+            f'objective must be set to "LCOW"  or "LCOP".'
+            f" objective was set to {objective}"
+        )
 
     # Decision variables
     m.fs.electroNP.cathodic_potential.unfix()
@@ -1209,7 +1251,7 @@ def setup_optimization(m, reactor_volume_equalities=False):
     m.fs.electroNP.cathodic_potential.setub(-0.8)
 
     m.fs.electroNP.area_volume_ratio.unfix()
-    m.fs.electroNP.area_volume_ratio.setlb(0.06)
+    m.fs.electroNP.area_volume_ratio.setlb(0.065)
     m.fs.electroNP.area_volume_ratio.setub(0.145)
 
     # for i in ["R1", "R2", "R3", "R4", "R5", "R6", "R7"]:
@@ -1241,7 +1283,8 @@ def setup_optimization(m, reactor_volume_equalities=False):
     # # m.fs.SP1.split_fraction[:, "underflow"].setlb(0.45)
     # m.fs.SP2.split_fraction[:, "recycle"].unfix()
 
-    # add_effluent_violations(m)
+    if has_effluent_constraints:
+        add_effluent_violations(m)
 
 
 def add_reactor_volume_equalities(m):
@@ -1503,6 +1546,14 @@ def display_performance_metrics(m):
     print("Water recovery: %.3f" % pyo.value(m.fs.water_recovery))
     if m.fs.has_electroNP is True:
         print("Phosphorus recovery: %.3f" % pyo.value(m.fs.phosphorus_recovery))
+        print(
+            "Recovered phosphorus mass: %.3f kg/s"
+            % pyo.value(
+                m.fs.electroNP.inlet.flow_vol[0]
+                * m.fs.electroNP.inlet.conc_mass_comp[0, "S_PO4"]
+                * m.fs.electroNP.P_removal
+            )
+        )
 
     print("---- Energy Metrics----")
     print(
@@ -1583,8 +1634,12 @@ def display_design(m):
 
 if __name__ == "__main__":
     # This method builds and runs a steady state activated sludge flowsheet.
-    m, results = main(has_electroNP=True)
-    # m, obj_set = multi_run(has_electroNP=True, num=5)
+    m, results = main(
+        has_electroNP=True,
+        has_optimization=False,
+        objective=objective_fun.LCOW,
+        has_effluent_constraints=False,
+    )
     if m.fs.has_electroNP is False:
         stream_table = create_stream_table_dataframe(
             {
@@ -1612,27 +1667,67 @@ if __name__ == "__main__":
             {
                 "Feed": m.fs.FeedWater.outlet,
                 # "CL inlet": m.fs.CL.inlet,
-                "R1 inlet": m.fs.R1.inlet,
-                "R3 inlet": m.fs.R3.inlet,
-                "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
-                # "R1": m.fs.R1.outlet,
-                # "R2": m.fs.R2.outlet,
-                # "R3": m.fs.R3.outlet,
-                # "R4": m.fs.R4.outlet,
-                # "R5": m.fs.R5.outlet,
-                # "R6": m.fs.R6.outlet,
-                # "R7": m.fs.R7.outlet,
-                # "thickener outlet": m.fs.thickener.underflow,
+                # "R1 inlet": m.fs.R1.inlet,
+                # "R3 inlet": m.fs.R3.inlet,
                 # "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
-                # "ADM-ASM translator outlet": m.fs.translator_adm1_asm2d.outlet,
-                # "dewater outlet": m.fs.dewater.overflow,
-                # "electroNP inlet": m.fs.electroNP.inlet,
-                # "electroNP treated": m.fs.electroNP.treated,
-                # # "electroNP byproduct": m.fs.electroNP.byproduct,
-                # # "electroNP byproduct": m.fs.electroNP.byproduct,
-                # "Treated water": m.fs.Treated.inlet,
-                # "Sludge": m.fs.Sludge.inlet,
+                "R1": m.fs.R1.outlet,
+                "R2": m.fs.R2.outlet,
+                "R3": m.fs.R3.outlet,
+                "R4": m.fs.R4.outlet,
+                "R5": m.fs.R5.outlet,
+                "R6": m.fs.R6.outlet,
+                "R7": m.fs.R7.outlet,
+                # "thickener inlet": m.fs.thickener.inlet,
+                "thickener outlet": m.fs.thickener.underflow,
+                "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
+                "ADM-ASM translator outlet": m.fs.translator_adm1_asm2d.outlet,
+                "dewater outlet": m.fs.dewater.overflow,
+                "electroNP inlet": m.fs.electroNP.inlet,
+                "electroNP treated": m.fs.electroNP.treated,
+                # "electroNP byproduct": m.fs.electroNP.byproduct,
+                # "electroNP byproduct": m.fs.electroNP.byproduct,
+                "Treated water": m.fs.Treated.inlet,
+                "Sludge": m.fs.Sludge.inlet,
+                # "MX1": m.fs.MX1.outlet,
+                # "MX2": m.fs.MX2.outlet,
+                # "MX3": m.fs.MX3.outlet,
+                # "MX4": m.fs.MX4.outlet,
             },
             time_point=0,
         )
-    print(stream_table_dataframe_to_string(stream_table))
+
+    # m_min, obj_set, m_set, cp_opt, r_AV_opt = multi_run(has_electroNP=True, objective=objective_fun.LCOP, has_effluent_constraints=True, num=10)
+    # stream_table = create_stream_table_dataframe(
+    #     {
+    #         "Feed": m_min.fs.FeedWater.outlet,
+    #         "CL inlet": m_min.fs.CL.inlet,
+    #         # "R1 inlet": m_min.fs.R1.inlet,
+    #         # "R3 inlet": m_min.fs.R3.inlet,
+    #         # "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
+    #         "R1": m_min.fs.R1.outlet,
+    #         "R2": m_min.fs.R2.outlet,
+    #         "R3": m_min.fs.R3.outlet,
+    #         "R4": m_min.fs.R4.outlet,
+    #         "R5": m_min.fs.R5.outlet,
+    #         "R6": m_min.fs.R6.outlet,
+    #         "R7": m_min.fs.R7.outlet,
+    #         # "thickener inlet": m_min.fs.thickener.inlet,
+    #         "thickener outlet": m_min.fs.thickener.underflow,
+    #         "ASM-ADM translator inlet": m_min.fs.translator_asm2d_adm1.inlet,
+    #         "ADM-ASM translator outlet": m_min.fs.translator_adm1_asm2d.outlet,
+    #         "dewater outlet": m_min.fs.dewater.overflow,
+    #         "electroNP inlet": m_min.fs.electroNP.inlet,
+    #         "electroNP treated": m_min.fs.electroNP.treated,
+    #         # "electroNP byproduct": m_min.fs.electroNP.byproduct,
+    #         # "electroNP byproduct": m_min.fs.electroNP.byproduct,
+    #         "Treated water": m_min.fs.Treated.inlet,
+    #         "Sludge": m_min.fs.Sludge.inlet,
+    #         # "MX1": m_min.fs.MX1.outlet,
+    #         # "MX2": m_min.fs.MX2.outlet,
+    #         # "MX3": m_min.fs.MX3.outlet,
+    #         # "MX4": m_min.fs.MX4.outlet,
+    #     },
+    #     time_point=0,
+    # )
+    #
+    # print(stream_table_dataframe_to_string(stream_table))

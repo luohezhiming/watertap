@@ -441,25 +441,25 @@ class ElectroNPdata(SeparatorData):
             doc="Dosage of magnesium chloride per phosphorus removal",
         )
 
-        self.MgCl2_flowrate = Var(
-            self.flowsheet().time,
-            units=pyunits.kg / pyunits.hr,
-            bounds=(0, None),
-            doc="Magnesium chloride flowrate",
-        )
+        # self.MgCl2_flowrate = Var(
+        #     self.flowsheet().time,
+        #     units=pyunits.kg / pyunits.hr,
+        #     bounds=(0, None),
+        #     doc="Magnesium chloride flowrate",
+        # )
 
-        @self.Constraint(
-            self.flowsheet().time,
-            doc="Constraint for magnesium chloride demand based on phosphorus removal.",
-        )
-        def MgCl2_demand(b, t):
-            return b.MgCl2_flowrate[t] == (
-                b.magnesium_chloride_dosage
-                * pyunits.convert(
-                    b.properties_byproduct[t].get_material_flow_terms("Liq", "S_PO4"),
-                    to_units=pyunits.kg / pyunits.hour,
-                )
-            )
+        # @self.Constraint(
+        #     self.flowsheet().time,
+        #     doc="Constraint for magnesium chloride demand based on phosphorus removal.",
+        # )
+        # def MgCl2_demand(b, t):
+        #     return b.MgCl2_flowrate[t] == (
+        #         b.magnesium_chloride_dosage
+        #         * pyunits.convert(
+        #             b.properties_byproduct[t].get_material_flow_terms("Liq", "S_PO4"),
+        #             to_units=pyunits.kg / pyunits.hour,
+        #         )
+        #     )
 
         self.volume = Var(
             self.flowsheet().time,
@@ -515,8 +515,8 @@ class ElectroNPdata(SeparatorData):
         var_dict["Dosage of magnesium chloride per treated phosphorus"] = (
             self.magnesium_chloride_dosage
         )
-        var_dict["Magnesium Chloride Demand"] = self.MgCl2_flowrate[time_point]
-        return {"vars": var_dict}
+        # var_dict["Magnesium Chloride Demand"] = self.MgCl2_flowrate[time_point]
+        # return {"vars": var_dict}
 
     def _get_stream_table_contents(self, time_point=0):
         return create_stream_table_dataframe(
@@ -576,13 +576,13 @@ class ElectroNPdata(SeparatorData):
             )
             iscale.set_scaling_factor(v, sf)
 
-        for t, v in self.MgCl2_flowrate.items():
-            sf = (
-                iscale.get_scaling_factor(self.magnesium_chloride_dosage)
-                * iscale.get_scaling_factor(self.inlet.flow_vol[t])
-                * iscale.get_scaling_factor(self.inlet.conc_mass_comp[t, "S_PO4"])
-            )
-            iscale.set_scaling_factor(v, sf)
+        # for t, v in self.MgCl2_flowrate.items():
+        #     sf = (
+        #         iscale.get_scaling_factor(self.magnesium_chloride_dosage)
+        #         * iscale.get_scaling_factor(self.inlet.flow_vol[t])
+        #         * iscale.get_scaling_factor(self.inlet.conc_mass_comp[t, "S_PO4"])
+        #     )
+        #     iscale.set_scaling_factor(v, sf)
 
     @property
     def default_costing_method(self):

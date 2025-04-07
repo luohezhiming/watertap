@@ -14,6 +14,7 @@ import pyomo.environ as pyo
 from ..util import (
     register_costing_parameter_block,
     make_capital_cost_var,
+    make_fixed_operating_cost_var,
 )
 
 
@@ -86,11 +87,45 @@ def build_electroNP_cost_param_block(blk):
         units=pyo.units.kWh / pyo.units.m**3,
     )
 
-    # MgCl2
-    blk.sizing_cost_MgCl2 = pyo.Var(
-        initialize=445,
-        doc="MgCl2 sizing cost",
-        units=pyo.units.USD_2023 / pyo.units.m**2,
+    # Power equipments
+    blk.ac_dc_conversion_efficiency = pyo.Var(
+        initialize=0.9,
+        doc="AC to DC conversion efficiency",
+        units=pyo.units.dimensionless,
+    )
+    # USD_2021 embedded in equation
+    rectifier_cost_coeff = {0: 508.6, 1: 2810}
+    blk.rectifier_cost_coeff = pyo.Var(
+        rectifier_cost_coeff.keys(),
+        initialize=rectifier_cost_coeff,
+        units=pyo.units.dimensionless,
+        doc="Rectifier cost coefficients",
+    )
+
+    # # MgCl2
+    # blk.sizing_cost_MgCl2 = pyo.Var(
+    #     initialize=445,
+    #     doc="MgCl2 sizing cost",
+    #     units=pyo.units.USD_2023 / pyo.units.m**2,
+    # )
+
+    # Mg anode
+    blk.Mg_cost = pyo.Var(
+        initialize=5.9818,
+        doc="Mg alloy mix cost for anode",
+        units=pyo.units.USD_2023 / pyo.units.kg,
+    )
+
+    blk.factor_operation_time = pyo.Var(
+        initialize=0.95 * 8760,
+        doc="Hours of operation per year as the facility's uptime",
+        units=pyo.units.hr / pyo.units.year,
+    )
+
+    blk.K_anode = pyo.Var(
+        initialize=1.3 / 15.9,
+        doc="Anode conversion coefficient for replacement",
+        units=pyo.units.kg / pyo.units.m**3,
     )
 
     costing = blk.parent_block()
@@ -104,9 +139,9 @@ def build_electroNP_cost_param_block(blk):
 
     blk.phosphorus_recovery_value = pyo.Param(
         mutable=True,
-        initialize=-0.07,
+        initialize=-0.6521,
         doc="Phosphorus recovery value",
-        units=pyo.units.USD_2020 / pyo.units.kg,
+        units=pyo.units.USD_2015 / pyo.units.m**3,
     )
     costing.register_flow_type("phosphorus salt product", blk.phosphorus_recovery_value)
 
@@ -145,9 +180,8 @@ def cost_electroNP(blk, cost_electricity_flow=True, cost_phosphorus_flow=True):
     if cost_phosphorus_flow:
         blk.costing_package.cost_flow(
             pyo.units.convert(
-                blk.unit_model.byproduct.flow_vol[t0]
-                * blk.unit_model.byproduct.conc_mass_comp[t0, "S_PO4"],
-                to_units=pyo.units.kg / pyo.units.hr,
+                blk.unit_model.inlet.flow_vol[t0],
+                to_units=pyo.units.m**3 / pyo.units.hr,
             ),
             "phosphorus salt product",
         )
@@ -183,6 +217,7 @@ def cost_electroNP_capital(blk):
     Generic function for costing an ElectroNP system.
     """
     make_capital_cost_var(blk)
+    make_fixed_operating_cost_var(blk)
     cost_blk = blk.costing_package.electroNP
     blk.costing_package.add_cost_factor(blk, "TIC")
 
@@ -224,12 +259,31 @@ def cost_electroNP_capital(blk):
     )
     blk.pump_cost = pyo.Expression(expr=pump_cost_expr)
 
+    # power equipments
+    power_equipments_cost_expr = blk.cost_factor * pyo.units.convert(
+        pyo.units.USD_2021
+        * (
+            cost_blk.rectifier_cost_coeff[1]
+            + (
+                cost_blk.rectifier_cost_coeff[0]
+                * (
+                    blk.unit_model.electricity[t0]
+                    * pyo.units.kW**-1
+                    / cost_blk.ac_dc_conversion_efficiency
+                )
+            )
+        ),
+        to_units=blk.costing_package.base_currency,
+    )
+    blk.power_equipments_cost = pyo.Expression(expr=power_equipments_cost_expr)
+
     # Direct capital costs
     blk.DCC = pyo.Expression(
         expr=blk.electrolyzer_cost
         + blk.centrifuge_cost
         + blk.dryer_cost
         + blk.pump_cost
+        + blk.power_equipments_cost
     )
 
     # Permits & license
@@ -260,14 +314,26 @@ def cost_electroNP_capital(blk):
         + blk.contingency_fee
     )
 
-    # MgCl2
-    MgCl2_cost_expr = blk.cost_factor * pyo.units.convert(
-        blk.unit_model.area[t0] * cost_blk.sizing_cost_MgCl2,
-        to_units=blk.costing_package.base_currency,
-    )
-    blk.MgCl2_cost = pyo.Expression(expr=MgCl2_cost_expr)
+    # # MgCl2
+    # MgCl2_cost_expr = blk.cost_factor * pyo.units.convert(
+    #     blk.unit_model.area[t0] * cost_blk.sizing_cost_MgCl2,
+    #     to_units=blk.costing_package.base_currency,
+    # )
+    # blk.MgCl2_cost = pyo.Expression(expr=MgCl2_cost_expr)
 
     # Total capital cost
-    cap_total = blk.DCC + blk.IDC + blk.MgCl2_cost
+    cap_total = blk.DCC + blk.IDC
 
     blk.capital_cost_constraint = pyo.Constraint(expr=blk.capital_cost == cap_total)
+
+    blk.fixed_operating_cost_constraint = pyo.Constraint(
+        expr=blk.fixed_operating_cost
+        == pyo.units.convert(
+            flow_in
+            * cost_blk.K_anode
+            * cost_blk.factor_operation_time
+            * cost_blk.Mg_cost,
+            to_units=blk.costing_package.base_currency
+            / blk.costing_package.base_period,
+        )
+    )
