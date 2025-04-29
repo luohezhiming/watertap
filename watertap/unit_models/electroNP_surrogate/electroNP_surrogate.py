@@ -381,6 +381,30 @@ class ElectroNPdata(SeparatorData):
             doc="Electricity consumption of unit",
         )
 
+        self.electricity_intensity_dryer = Param(
+            within=NonNegativeReals,
+            mutable=True,
+            default=0.2647,
+            doc="Electricity intensity with respect to dryer",
+            units=pyunits.kWh / pyunits.kg,
+        )
+
+        self.electricity_intensity_pump = Param(
+            within=NonNegativeReals,
+            mutable=True,
+            initialize=109 / 3400,
+            doc="Electricity intensity with respect to pump",
+            units=pyunits.kWh / pyunits.m**3,
+        )
+
+        self.electricity_intensity_centrifuge = Param(
+            within=NonNegativeReals,
+            mutable=True,
+            initialize=0.03,
+            doc="Electricity intensity with respect to centrifuge",
+            units=pyunits.kWh / pyunits.m**3,
+        )
+
         self.energy_electric_flow_mass = Var(
             units=pyunits.kWh / pyunits.kg,
             doc="Electricity intensity with respect to phosphorus removal",
@@ -428,10 +452,21 @@ class ElectroNPdata(SeparatorData):
         )
         def electricity_consumption(b, t):
             return b.electricity[t] == (
-                b.energy_electric_flow_mass
+                (
+                    b.energy_electric_flow_mass
+                    # + b.electricity_intensity_dryer
+                )
                 * pyunits.convert(
                     b.properties_byproduct[t].get_material_flow_terms("Liq", "S_PO4"),
                     to_units=pyunits.kg / pyunits.hour,
+                )
+                + (
+                    3 * b.electricity_intensity_pump
+                    + b.electricity_intensity_centrifuge
+                )
+                * pyunits.convert(
+                    b.properties_in[t].flow_vol,
+                    to_units=pyunits.m**3 / pyunits.hour,
                 )
             )
 
