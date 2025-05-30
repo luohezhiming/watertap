@@ -138,13 +138,15 @@ def build_flowsheet():
 
     # Unit option
     # m.fs.unit.energy_electric_flow_mass.fix(0.044 * units.kWh / units.kg)
-    m.fs.unit.magnesium_chloride_dosage.fix(0.388)
+    # m.fs.unit.magnesium_chloride_dosage.fix(0.388)
 
     m.fs.unit.cathodic_potential.fix(-1.05 * units.V)
-    m.fs.unit.area_volume_ratio.fix(0.105)
+    m.fs.unit.area_volume_ratio.fix(0.105 * units.cm**-1)
     m.fs.unit.settling_time.fix(30 * units.min)
 
     m.fs.unit.frac_mass_H2O_treated[0].fix(0.9)
+
+    m.fs.unit.HRT.fix(0.5 * pyo.units.hr)
 
     # m.fs.unit.cathodic_potential.fix(-1.05)
     # m.fs.unit.area_volume_ratio.fix(0.105)

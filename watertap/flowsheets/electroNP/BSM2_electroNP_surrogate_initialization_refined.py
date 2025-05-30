@@ -146,16 +146,20 @@ def multi_run(
         for j in range(0, num):
             m = build_flowsheet(has_electroNP=has_electroNP)
             set_operating_conditions(m)
-            m.fs.electroNP.cathodic_potential.unfix()
-            m.fs.electroNP.area_volume_ratio.unfix()
-            m.fs.electroNP.cathodic_potential.fix(CP_list[i])
-            m.fs.electroNP.area_volume_ratio.fix(r_AV_list[j])
+            # m.fs.electroNP.cathodic_potential.unfix()
+            # m.fs.electroNP.area_volume_ratio.unfix()
+            # m.fs.electroNP.cathodic_potential.fix(CP_list[i])
+            # m.fs.electroNP.area_volume_ratio.fix(r_AV_list[j])
             set_scaling(m)
             try:
                 m, results = initialize_system(m)
                 add_costing(m)
                 m.fs.costing.initialize()
                 interval_initializer(m.fs.costing)
+                m.fs.electroNP.cathodic_potential.unfix()
+                m.fs.electroNP.area_volume_ratio.unfix()
+                m.fs.electroNP.cathodic_potential.fix(CP_list[i])
+                m.fs.electroNP.area_volume_ratio.fix(r_AV_list[j])
                 # results = solve(m)
                 setup_optimization(
                     m,
@@ -215,6 +219,12 @@ def main(
     m, results = initialize_system(m)
 
     add_costing(m)
+
+    # print("----------------   scaling V1  ----------------")
+    # badly_scaled_var_list = iscale.badly_scaled_var_generator(m, large=1e1, small=1e-1)
+    # for x in badly_scaled_var_list:
+    #     print(f"{x[0].name}\t{x[0].value}\tsf: {iscale.get_scaling_factor(x[0])}")
+
     m.fs.costing.initialize()
 
     interval_initializer(m.fs.costing)
@@ -256,12 +266,12 @@ def main(
     # # print_close_to_bounds(m)
     # # print_infeasible_constraints(m)
 
-    # results = solve(m)
-    # pyo.assert_optimal_termination(results)
+    results = solve(m)
+    pyo.assert_optimal_termination(results)
 
-    # dt = DiagnosticsToolbox(m)
-    # print("---Numerical Issues---")
-    # dt.report_numerical_issues()
+    dt = DiagnosticsToolbox(m)
+    print("---Numerical Issues---")
+    dt.report_numerical_issues()
     # # dt.display_variables_at_or_outside_bounds()
     # dt.display_variables_with_extreme_jacobians()
     # dt.display_constraints_with_extreme_jacobians()
@@ -623,6 +633,11 @@ def set_operating_conditions(m):
     m.fs.R6.outlet.conc_mass_comp[:, "S_O2"].fix(2.60e-3)
     m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].fix(3.20e-3)
 
+    # KLa
+    m.fs.R5.KLa = 11
+    m.fs.R6.KLa = 7
+    m.fs.R7.KLa = 6
+
     # Set fraction of outflow from reactor 7 that goes to recycle
     m.fs.SP1.split_fraction[:, "underflow"].fix(0.60)
 
@@ -674,9 +689,9 @@ def set_operating_conditions(m):
         #     0.044 * pyo.units.kWh / pyo.units.kg
         # )
         m.fs.electroNP.cathodic_potential.fix(-1.1 * pyo.units.V)
-        m.fs.electroNP.area_volume_ratio.fix(0.1)
+        m.fs.electroNP.area_volume_ratio.fix(0.1 * pyo.units.cm**-1)
         m.fs.electroNP.settling_time.fix(30 * pyo.units.min)
-        m.fs.electroNP.magnesium_chloride_dosage.fix(0.388)
+        # m.fs.electroNP.magnesium_chloride_dosage.fix(0.388)
         # m.fs.electroNP.P_removal = 0.95
         # m.fs.electroNP.N_removal = 0.3
         m.fs.electroNP.frac_mass_H2O_treated[0].fix(0.9)
@@ -729,10 +744,10 @@ def set_scaling(m):
         )
         iscale.set_scaling_factor(block.control_volume.material_balances, 1e3)
 
-    m.fs.aerobic_reactors = (m.fs.R5, m.fs.R6, m.fs.R7)
-    for R in m.fs.aerobic_reactors:
-        iscale.set_scaling_factor(R.KLa, 1e0)
-        # iscale.set_scaling_factor(R.hydraulic_retention_time[0], 1e-3)
+    # m.fs.aerobic_reactors = (m.fs.R5, m.fs.R6, m.fs.R7)
+    # for R in m.fs.aerobic_reactors:
+    #     iscale.set_scaling_factor(R.KLa, 1e0)
+    #     iscale.set_scaling_factor(R.hydraulic_retention_time[0], 1e-2)
 
     # scaling factor for low flowrate units
     if m.fs.has_electroNP is True:
@@ -763,8 +778,8 @@ def set_scaling(m):
                 iscale.set_scaling_factor(var, 1e3)
 
     # # scaling factor of AD
-    # iscale.set_scaling_factor(m.fs.AD.volume_AD[0.0], 1e-3)
-    # iscale.set_scaling_factor(m.fs.AD.KH_h2[0.0], 1e4)
+    iscale.set_scaling_factor(m.fs.AD.volume_AD[0.0], 1e-3)
+    iscale.set_scaling_factor(m.fs.AD.KH_h2[0.0], 1e4)
     # iscale.set_scaling_factor(m.fs.AD.liquid_phase.reactions[0.0].pKW, 1e-1)
     # iscale.set_scaling_factor(m.fs.AD.liquid_phase.reactions[0.0].S_H, 1e8)
     # iscale.set_scaling_factor(m.fs.AD.liquid_phase.reactions[0.0].conc_mol_Mg, 1e5)
@@ -775,7 +790,12 @@ def set_scaling(m):
     # scaling factor of electroNP
     if m.fs.has_electroNP is True:
         iscale.set_scaling_factor(m.fs.electroNP.inlet.flow_vol[0], 1e3)
-        iscale.set_scaling_factor(m.fs.electroNP.inlet.conc_mass_comp[0, "S_PO4"], 1e-2)
+        # iscale.set_scaling_factor(m.fs.electroNP.inlet.conc_mass_comp[0, "S_PO4"], 1e-2)
+
+        # iscale.set_scaling_factor(m.fs.electroNP.T_surrogate, 1e-1)
+        # iscale.set_scaling_factor(m.fs.electroNP.t_ss_surrogate, 1e-1)
+        # iscale.set_scaling_factor(m.fs.electroNP.P_removal_surrogate, 1e-2)
+        # iscale.set_scaling_factor(m.fs.electroNP.EI_surrogate, 1e1)
 
     # scaling factor of other units
     iscale.set_scaling_factor(m.fs.CL.surface_area, 1e-3)
@@ -853,12 +873,12 @@ def initialize_system(m):
     # seq.options.tear_set = [m.fs.stream1b, m.fs.stream2, m.fs.stream5, m.fs.stream10adm]
     seq.options.tear_set = [m.fs.stream2, m.fs.stream5, m.fs.stream10adm]
 
-    G = seq.create_graph(m)
-    # Uncomment this code to see tear set and initialization order
-    order = seq.calculation_order(G)
-    print("Initialization Order")
-    for o in order:
-        print(o[0].name)
+    # G = seq.create_graph(m)
+    # # Uncomment this code to see tear set and initialization order
+    # order = seq.calculation_order(G)
+    # print("Initialization Order")
+    # for o in order:
+    #     print(o[0].name)
 
     if m.fs.has_electroNP is True:
         # # with area specified
@@ -1020,14 +1040,90 @@ def initialize_system(m):
         }
 
     else:
+        # tear_guesses0 = {
+        #     "flow_vol": {0: 0.494},
+        #     "conc_mass_comp": {
+        #         (0, "S_A"): 0.082,
+        #         (0, "S_F"): 0.13,
+        #         (0, "S_I"): 0.057,
+        #         (0, "S_N2"): 0.039,
+        #         (0, "S_NH4"): 0.02,
+        #         (0, "S_NO3"): 0.0026,
+        #         (0, "S_O2"): 0.0016,
+        #         (0, "S_PO4"): 0.74,
+        #         (0, "S_K"): 0.37,
+        #         (0, "S_Mg"): 0.02,
+        #         (0, "S_IC"): 0.085,
+        #         (0, "X_AUT"): 0.11,
+        #         (0, "X_H"): 3.5,
+        #         (0, "X_I"): 3.1,
+        #         (0, "X_PAO"): 3.2,
+        #         (0, "X_PHA"): 0.0017,
+        #         (0, "X_PP"): 1.1,
+        #         (0, "X_S"): 0.080,
+        #     },
+        #     "temperature": {0: 308.15},
+        #     "pressure": {0: 101325},
+        # }
+        # tear_guesses = {
+        #     "flow_vol": {0: 1.2368},
+        #     "conc_mass_comp": {
+        #         (0, "S_A"): 0.0006,
+        #         (0, "S_F"): 0.0004,
+        #         (0, "S_I"): 0.057,
+        #         (0, "S_N2"): 0.047,
+        #         (0, "S_NH4"): 0.0075,
+        #         (0, "S_NO3"): 0.003,
+        #         (0, "S_O2"): 0.0019,
+        #         (0, "S_PO4"): 0.73,
+        #         (0, "S_K"): 0.37,
+        #         (0, "S_Mg"): 0.020,
+        #         (0, "S_IC"): 0.13,
+        #         (0, "X_AUT"): 0.11,
+        #         (0, "X_H"): 3.5,
+        #         (0, "X_I"): 3.2,
+        #         (0, "X_PAO"): 3.2,
+        #         (0, "X_PHA"): 0.084,
+        #         (0, "X_PP"): 1.07,
+        #         (0, "X_S"): 0.057,
+        #     },
+        #     "temperature": {0: 308.15},
+        #     "pressure": {0: 101325},
+        # }
+        #
+        # tear_guesses2 = {
+        #     "flow_vol": {0: 0.003},
+        #     "conc_mass_comp": {
+        #         (0, "S_A"): 0.097,
+        #         (0, "S_F"): 0.15,
+        #         (0, "S_I"): 0.057,
+        #         (0, "S_N2"): 0.036,
+        #         (0, "S_NH4"): 0.029,
+        #         (0, "S_NO3"): 0.002,
+        #         (0, "S_O2"): 0.0013,
+        #         (0, "S_PO4"): 0.74,
+        #         (0, "S_K"): 0.38,
+        #         (0, "S_Mg"): 0.024,
+        #         (0, "S_IC"): 0.075,
+        #         (0, "X_AUT"): 0.28,
+        #         (0, "X_H"): 23.4,
+        #         (0, "X_I"): 11.4,
+        #         (0, "X_PAO"): 10.1,
+        #         (0, "X_PHA"): 0.0044,
+        #         (0, "X_PP"): 2.7,
+        #         (0, "X_S"): 3.9,
+        #     },
+        #     "temperature": {0: 308.15},
+        #     "pressure": {0: 101325},
+        # }
         tear_guesses0 = {
-            "flow_vol": {0: 0.494},
+            "flow_vol": {0: 0.495},
             "conc_mass_comp": {
-                (0, "S_A"): 0.082,
+                (0, "S_A"): 0.08,
                 (0, "S_F"): 0.13,
                 (0, "S_I"): 0.057,
-                (0, "S_N2"): 0.039,
-                (0, "S_NH4"): 0.02,
+                (0, "S_N2"): 0.04,
+                (0, "S_NH4"): 0.025,
                 (0, "S_NO3"): 0.0026,
                 (0, "S_O2"): 0.0016,
                 (0, "S_PO4"): 0.74,
@@ -1040,18 +1136,19 @@ def initialize_system(m):
                 (0, "X_PAO"): 3.2,
                 (0, "X_PHA"): 0.0017,
                 (0, "X_PP"): 1.1,
-                (0, "X_S"): 0.080,
+                (0, "X_S"): 0.09,
             },
             "temperature": {0: 308.15},
             "pressure": {0: 101325},
         }
+
         tear_guesses = {
-            "flow_vol": {0: 1.2368},
+            "flow_vol": {0: 1.235},
             "conc_mass_comp": {
                 (0, "S_A"): 0.0006,
                 (0, "S_F"): 0.0004,
                 (0, "S_I"): 0.057,
-                (0, "S_N2"): 0.047,
+                (0, "S_N2"): 0.05,
                 (0, "S_NH4"): 0.0075,
                 (0, "S_NO3"): 0.003,
                 (0, "S_O2"): 0.0019,
@@ -1061,10 +1158,10 @@ def initialize_system(m):
                 (0, "S_IC"): 0.13,
                 (0, "X_AUT"): 0.11,
                 (0, "X_H"): 3.5,
-                (0, "X_I"): 3.2,
+                (0, "X_I"): 3.1,
                 (0, "X_PAO"): 3.2,
                 (0, "X_PHA"): 0.084,
-                (0, "X_PP"): 1.07,
+                (0, "X_PP"): 1.1,
                 (0, "X_S"): 0.057,
             },
             "temperature": {0: 308.15},
@@ -1074,21 +1171,21 @@ def initialize_system(m):
         tear_guesses2 = {
             "flow_vol": {0: 0.003},
             "conc_mass_comp": {
-                (0, "S_A"): 0.097,
+                (0, "S_A"): 0.1,
                 (0, "S_F"): 0.15,
                 (0, "S_I"): 0.057,
                 (0, "S_N2"): 0.036,
-                (0, "S_NH4"): 0.029,
+                (0, "S_NH4"): 0.03,
                 (0, "S_NO3"): 0.002,
                 (0, "S_O2"): 0.0013,
                 (0, "S_PO4"): 0.74,
-                (0, "S_K"): 0.38,
+                (0, "S_K"): 0.37,
                 (0, "S_Mg"): 0.024,
-                (0, "S_IC"): 0.075,
-                (0, "X_AUT"): 0.28,
-                (0, "X_H"): 23.4,
-                (0, "X_I"): 11.4,
-                (0, "X_PAO"): 10.1,
+                (0, "S_IC"): 0.073,
+                (0, "X_AUT"): 0.3,
+                (0, "X_H"): 23,
+                (0, "X_I"): 11,
+                (0, "X_PAO"): 10,
                 (0, "X_PHA"): 0.0044,
                 (0, "X_PP"): 2.7,
                 (0, "X_S"): 3.9,
@@ -1105,7 +1202,7 @@ def initialize_system(m):
 
     def function(unit):
         # unit.initialize(outlvl=idaeslog.INFO, solver="ipopt-watertap")
-        unit.initialize(solver="ipopt-watertap")
+        unit.initialize(solver="ipopt-watertap", outlvl=idaeslog.CRITICAL)
 
     results = seq.run(m, function)
 
@@ -1130,7 +1227,7 @@ def solve(m, solver=None):
 
 def add_costing(m):
     m.fs.costing = WaterTAPCosting()
-    m.fs.costing.base_currency = pyo.units.USD_2020
+    m.fs.costing.base_currency = pyo.units.USD_2023
 
     # Costing Blocks
     m.fs.R1.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
@@ -1167,11 +1264,11 @@ def add_costing(m):
     m.fs.costing.add_specific_energy_consumption(m.fs.FeedWater.properties[0].flow_vol)
 
     # Set scaling:
-    iscale.set_scaling_factor(m.fs.costing.total_capital_cost, 1e-5)
+    iscale.set_scaling_factor(m.fs.costing.total_capital_cost, 1e-6)
 
     for block in m.fs.component_objects(pyo.Block, descend_into=True):
         if isinstance(block, UnitModelBlockData) and hasattr(block, "costing"):
-            iscale.set_scaling_factor(block.costing.capital_cost, 1e-5)
+            iscale.set_scaling_factor(block.costing.capital_cost, 1e-6)
 
     # scaling constraints
     csb = CustomScalerBase()
@@ -1231,6 +1328,24 @@ def add_costing(m):
             expr=(
                 (
                     m.fs.electroNP.energy_electric_flow_mass
+                    * pyo.units.convert(
+                        m.fs.electroNP.properties_byproduct[0].get_material_flow_terms(
+                            "Liq", "S_PO4"
+                        ),
+                        to_units=pyo.units.kg / pyo.units.hour,
+                    )
+                )
+                / pyo.units.convert(
+                    m.fs.FeedWater.properties[0].flow_vol,
+                    to_units=pyo.units.m**3 / pyo.units.hr,
+                )
+            )
+        )
+
+        m.fs.costing.dryer_energy_consumption = Expression(
+            expr=(
+                (
+                    m.fs.electroNP.electricity_intensity_dryer
                     * pyo.units.convert(
                         m.fs.electroNP.properties_byproduct[0].get_material_flow_terms(
                             "Liq", "S_PO4"
@@ -1598,14 +1713,18 @@ def display_performance_metrics(m):
             "Specific energy consumption with respect to phosphorus removal: %.3f kWh/kg"
             % pyo.value(m.fs.costing.specific_energy_consumption_P_removal)
         )
-        print(
-            "ElectroNP energy consumption: %.3f kWh/m3"
-            % pyo.value(m.fs.costing.electroNP_energy_consumption)
-        )
-        print(
-            "Electrode energy consumption: %.3f kWh/m3"
-            % pyo.value(m.fs.costing.electrode_energy_consumption)
-        )
+        # print(
+        #     "ElectroNP energy consumption: %.3f kWh/m3"
+        #     % pyo.value(m.fs.costing.electroNP_energy_consumption)
+        # )
+        # print(
+        #     "Electrode energy consumption: %.3f kWh/m3"
+        #     % pyo.value(m.fs.costing.electrode_energy_consumption)
+        # )
+        # print(
+        #     "Dryer energy consumption: %.3f kWh/m3"
+        #     % pyo.value(m.fs.costing.dryer_energy_consumption)
+        # )
     print("Aeration energy: %.3f kWh/m3" % pyo.value(m.fs.costing.aeration_energy))
 
     # print(
@@ -1673,9 +1792,9 @@ if __name__ == "__main__":
     # This method builds and runs a steady state activated sludge flowsheet.
     m, results = main(
         has_electroNP=True,
-        has_optimization=False,
+        has_optimization=True,
         objective=objective_fun.LCOW,
-        has_effluent_constraints=False,
+        has_effluent_constraints=True,
     )
     if m.fs.has_electroNP is False:
         stream_table = create_stream_table_dataframe(
@@ -1704,25 +1823,25 @@ if __name__ == "__main__":
             {
                 "Feed": m.fs.FeedWater.outlet,
                 # "CL inlet": m.fs.CL.inlet,
-                # "R1 inlet": m.fs.R1.inlet,
-                # "R3 inlet": m.fs.R3.inlet,
-                # "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
-                "R1": m.fs.R1.outlet,
-                "R2": m.fs.R2.outlet,
-                "R3": m.fs.R3.outlet,
-                "R4": m.fs.R4.outlet,
-                "R5": m.fs.R5.outlet,
-                "R6": m.fs.R6.outlet,
-                "R7": m.fs.R7.outlet,
-                # "thickener inlet": m.fs.thickener.inlet,
-                "thickener outlet": m.fs.thickener.underflow,
+                "R1 inlet": m.fs.R1.inlet,
+                "R3 inlet": m.fs.R3.inlet,
                 "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
-                "ADM-ASM translator outlet": m.fs.translator_adm1_asm2d.outlet,
-                "dewater outlet": m.fs.dewater.overflow,
-                "electroNP inlet": m.fs.electroNP.inlet,
-                "electroNP treated": m.fs.electroNP.treated,
-                # "electroNP byproduct": m.fs.electroNP.byproduct,
-                # "electroNP byproduct": m.fs.electroNP.byproduct,
+                # "R1": m.fs.R1.outlet,
+                # "R2": m.fs.R2.outlet,
+                # "R3": m.fs.R3.outlet,
+                # "R4": m.fs.R4.outlet,
+                # "R5": m.fs.R5.outlet,
+                # "R6": m.fs.R6.outlet,
+                # "R7": m.fs.R7.outlet,
+                # # "thickener inlet": m.fs.thickener.inlet,
+                # "thickener outlet": m.fs.thickener.underflow,
+                # "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
+                # "ADM-ASM translator outlet": m.fs.translator_adm1_asm2d.outlet,
+                # "dewater outlet": m.fs.dewater.overflow,
+                # "electroNP inlet": m.fs.electroNP.inlet,
+                # "electroNP treated": m.fs.electroNP.treated,
+                # # "electroNP byproduct": m.fs.electroNP.byproduct,
+                # # "electroNP byproduct": m.fs.electroNP.byproduct,
                 "Treated water": m.fs.Treated.inlet,
                 "Sludge": m.fs.Sludge.inlet,
                 # "MX1": m.fs.MX1.outlet,
@@ -1732,8 +1851,9 @@ if __name__ == "__main__":
             },
             time_point=0,
         )
+    print(stream_table_dataframe_to_string(stream_table))
 
-    # m_min, obj_set, m_set, cp_opt, r_AV_opt = multi_run(has_electroNP=True, objective=objective_fun.LCOW, has_effluent_constraints=False, num=15)
+    # m_min, obj_set, m_set, cp_opt, r_AV_opt = multi_run(has_electroNP=True, objective=objective_fun.LCOP, has_effluent_constraints=True, num=10)
     # stream_table = create_stream_table_dataframe(
     #     {
     #         "Feed": m_min.fs.FeedWater.outlet,
@@ -1767,4 +1887,4 @@ if __name__ == "__main__":
     #     time_point=0,
     # )
     #
-    # print(stream_table_dataframe_to_string(stream_table))
+    # # print(stream_table_dataframe_to_string(stream_table))

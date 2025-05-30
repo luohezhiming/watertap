@@ -121,7 +121,7 @@ class ElectroNPdata(SeparatorData):
         self.area_volume_ratio = Var(
             initialize=0.105,
             domain=NonNegativeReals,
-            units=pyunits.dimensionless,
+            units=pyunits.cm**-1,
             bounds=(0, 1),
             doc="Area-volume ratio",
         )
@@ -179,7 +179,7 @@ class ElectroNPdata(SeparatorData):
         )
         def eq_r_AV_surrogate(b):
             return b.r_AV_surrogate == pyunits.convert(
-                b.area_volume_ratio, to_units=pyunits.dimensionless
+                (b.area_volume_ratio / pyunits.cm**-1), to_units=pyunits.dimensionless
             )
 
         self.T_surrogate = Var(
@@ -389,6 +389,14 @@ class ElectroNPdata(SeparatorData):
             units=pyunits.kWh / pyunits.kg,
         )
 
+        self.ratio_electricity_intensity_dryer = Param(
+            within=NonNegativeReals,
+            mutable=True,
+            default=0.78,
+            doc="Ratio of electricity intensity with respect to dryer",
+            units=pyunits.dimensionless,
+        )
+
         self.electricity_intensity_pump = Param(
             within=NonNegativeReals,
             mutable=True,
@@ -454,6 +462,7 @@ class ElectroNPdata(SeparatorData):
             return b.electricity[t] == (
                 (
                     b.energy_electric_flow_mass
+                    + b.ratio_electricity_intensity_dryer * b.energy_electric_flow_mass
                     # + b.electricity_intensity_dryer
                 )
                 * pyunits.convert(
@@ -522,7 +531,7 @@ class ElectroNPdata(SeparatorData):
         )
         def eq_volume(b, t):
             return b.volume[t] == pyunits.convert(
-                b.area[t] / b.area_volume_ratio * 1 * pyunits.m,
+                b.area[t] / b.area_volume_ratio,
                 to_units=pyunits.m**3,
             )
 
