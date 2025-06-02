@@ -109,6 +109,10 @@ def run_with_electricity_cost(CP=-1.1 * pyo.units.V, electricity_cost=0.07):
 def run_with_KLa(KLa_R5=11, KLa_R6=7, KLa_R7=6):
     m = build_flowsheet(has_electroNP=True)
     set_operating_conditions(m)
+    # KLa
+    m.fs.R5.KLa = 11
+    m.fs.R6.KLa = 7
+    m.fs.R7.KLa = 6
     # if pyo.value(CP) <= -1.1:
     #     m.fs.electroNP.cathodic_potential.fix(pyo.value(CP))
     # # # if pyo.value(CP) >= -0.9:
@@ -1279,6 +1283,18 @@ def plot_aeration_R5(num):
     P_out_list = np.zeros(num)
     P_out_list[:] = np.nan
 
+    # Injection - R5
+    Injection_R5_list = np.zeros(num)
+    Injection_R5_list[:] = np.nan
+
+    # Injection - R6
+    Injection_R6_list = np.zeros(num)
+    Injection_R6_list[:] = np.nan
+
+    # Injection - R7
+    Injection_R7_list = np.zeros(num)
+    Injection_R7_list[:] = np.nan
+
     for i in range(0, num):
         try:
             m, results = run_with_KLa(KLa_R5=KLa_R5_list[i], KLa_R6=7, KLa_R7=6)
@@ -1306,6 +1322,9 @@ def plot_aeration_R5(num):
             SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
             P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
             P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
+            Injection_R5_list[i] = pyo.value(m.fs.R5.injection[0, "Liq", "S_O2"])
+            Injection_R6_list[i] = pyo.value(m.fs.R6.injection[0, "Liq", "S_O2"])
+            Injection_R7_list[i] = pyo.value(m.fs.R7.injection[0, "Liq", "S_O2"])
         except:
             pass
 
@@ -1322,6 +1341,9 @@ def plot_aeration_R5(num):
     SNOX_out_list = interp_1d(SNOX_out_list)
     P_org_out_list = interp_1d(P_org_out_list)
     P_out_list = interp_1d(P_out_list)
+    Injection_R5_list = interp_1d(Injection_R5_list)
+    Injection_R6_list = interp_1d(Injection_R6_list)
+    Injection_R7_list = interp_1d(Injection_R7_list)
 
     # Figure a
     figa, axa = plt.subplots(figsize=(9, 5), layout="constrained")
@@ -1529,6 +1551,51 @@ def plot_aeration_R5(num):
     ax1g.tick_params(axis="y", colors="tab:red")
     plt.locator_params(axis="y", nbins=8)
 
+    # Figure 4
+    fig4, ax4 = plt.subplots(figsize=(9, 5), layout="constrained")
+    ax4.set_xlabel("R5 KLa (s$^{-1}$)", fontsize=12)
+
+    # R5 Injection
+    ax4.plot(KLa_R5_list, Injection_R5_list, color="k", label="_O2 Concentration")
+    # axb.set_ylim([0.86, 0.94])
+    ax4.set_ylabel("R5 Injection (kg/h)", fontsize=11)
+    ax4.tick_params(axis="x", labelsize=11)
+    ax4.tick_params(axis="y", labelsize=11)
+    plt.locator_params(axis="y", nbins=8)
+
+    # R6 Injection
+    ax4a = ax4.twinx()
+    ax4a.plot(
+        KLa_R5_list,
+        Injection_R6_list,
+        color="tab:blue",
+        label="_Organic P Concentration",
+    )
+    # ax4a.plot(KLa_R5_list, TP_max, color="tab:grey", linestyle='--', label='_TP Max')
+    # ax4a.set_ylim([5.3, 5.52])
+    ax4a.set_ylabel("R6 Injection (kg/h)", fontsize=11)
+    ax4a.tick_params(axis="x", labelsize=11)
+    ax4a.tick_params(axis="y", labelsize=11)
+    ax4a.yaxis.label.set_color("tab:blue")
+    ax4a.spines["right"].set_color("tab:blue")
+    ax4a.tick_params(axis="y", colors="tab:blue")
+    plt.locator_params(axis="y", nbins=8)
+
+    # R7 Injection
+    ax4b = ax4.twinx()
+    ax4b.spines.right.set_position(("axes", 1.15))
+    ax4b.plot(
+        KLa_R5_list, Injection_R7_list, color="tab:red", label="_PO4 Concentration"
+    )
+    # ax4b.set_ylim([0, 240])
+    ax4b.set_ylabel("R7 Injection (kg/h)", fontsize=11)
+    ax4b.tick_params(axis="x", labelsize=11)
+    ax4b.tick_params(axis="y", labelsize=11)
+    ax4b.yaxis.label.set_color("tab:red")
+    ax4b.spines["right"].set_color("tab:red")
+    ax4b.tick_params(axis="y", colors="tab:red")
+    plt.locator_params(axis="y", nbins=8)
+
     plt.show(block=True)
 
 
@@ -1588,6 +1655,18 @@ def plot_aeration_R6(num):
     P_out_list = np.zeros(num)
     P_out_list[:] = np.nan
 
+    # Injection - R5
+    Injection_R5_list = np.zeros(num)
+    Injection_R5_list[:] = np.nan
+
+    # Injection - R6
+    Injection_R6_list = np.zeros(num)
+    Injection_R6_list[:] = np.nan
+
+    # Injection - R7
+    Injection_R7_list = np.zeros(num)
+    Injection_R7_list[:] = np.nan
+
     for i in range(0, num):
         try:
             m, results = run_with_KLa(KLa_R5=11, KLa_R6=KLa_R6_list[i], KLa_R7=6)
@@ -1615,6 +1694,9 @@ def plot_aeration_R6(num):
             SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
             P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
             P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
+            Injection_R5_list[i] = pyo.value(m.fs.R5.injection[0, "Liq", "S_O2"])
+            Injection_R6_list[i] = pyo.value(m.fs.R6.injection[0, "Liq", "S_O2"])
+            Injection_R7_list[i] = pyo.value(m.fs.R7.injection[0, "Liq", "S_O2"])
         except:
             pass
 
@@ -1631,6 +1713,9 @@ def plot_aeration_R6(num):
     SNOX_out_list = interp_1d(SNOX_out_list)
     P_org_out_list = interp_1d(P_org_out_list)
     P_out_list = interp_1d(P_out_list)
+    Injection_R5_list = interp_1d(Injection_R5_list)
+    Injection_R6_list = interp_1d(Injection_R6_list)
+    Injection_R7_list = interp_1d(Injection_R7_list)
 
     # Figure 1
     figa, axa = plt.subplots(figsize=(9, 5), layout="constrained")
@@ -1837,6 +1922,51 @@ def plot_aeration_R6(num):
     ax1g.tick_params(axis="y", colors="tab:red")
     plt.locator_params(axis="y", nbins=8)
 
+    # Figure 4
+    fig4, ax4 = plt.subplots(figsize=(9, 5), layout="constrained")
+    ax4.set_xlabel("R6 KLa (s$^{-1}$)", fontsize=12)
+
+    # R5 Injection
+    ax4.plot(KLa_R6_list, Injection_R5_list, color="k", label="_O2 Concentration")
+    # axb.set_ylim([0.86, 0.94])
+    ax4.set_ylabel("R5 Injection (kg/h)", fontsize=11)
+    ax4.tick_params(axis="x", labelsize=11)
+    ax4.tick_params(axis="y", labelsize=11)
+    plt.locator_params(axis="y", nbins=8)
+
+    # R6 Injection
+    ax4a = ax4.twinx()
+    ax4a.plot(
+        KLa_R6_list,
+        Injection_R6_list,
+        color="tab:blue",
+        label="_Organic P Concentration",
+    )
+    # ax4a.plot(KLa_R5_list, TP_max, color="tab:grey", linestyle='--', label='_TP Max')
+    # ax4a.set_ylim([5.3, 5.52])
+    ax4a.set_ylabel("R6 Injection (kg/h)", fontsize=11)
+    ax4a.tick_params(axis="x", labelsize=11)
+    ax4a.tick_params(axis="y", labelsize=11)
+    ax4a.yaxis.label.set_color("tab:blue")
+    ax4a.spines["right"].set_color("tab:blue")
+    ax4a.tick_params(axis="y", colors="tab:blue")
+    plt.locator_params(axis="y", nbins=8)
+
+    # R7 Injection
+    ax4b = ax4.twinx()
+    ax4b.spines.right.set_position(("axes", 1.15))
+    ax4b.plot(
+        KLa_R6_list, Injection_R7_list, color="tab:red", label="_PO4 Concentration"
+    )
+    # ax4b.set_ylim([0, 240])
+    ax4b.set_ylabel("R7 Injection (kg/h)", fontsize=11)
+    ax4b.tick_params(axis="x", labelsize=11)
+    ax4b.tick_params(axis="y", labelsize=11)
+    ax4b.yaxis.label.set_color("tab:red")
+    ax4b.spines["right"].set_color("tab:red")
+    ax4b.tick_params(axis="y", colors="tab:red")
+    plt.locator_params(axis="y", nbins=8)
+
     plt.show(block=True)
 
 
@@ -1896,6 +2026,18 @@ def plot_aeration_R7(num):
     P_out_list = np.zeros(num)
     P_out_list[:] = np.nan
 
+    # Injection - R5
+    Injection_R5_list = np.zeros(num)
+    Injection_R5_list[:] = np.nan
+
+    # Injection - R6
+    Injection_R6_list = np.zeros(num)
+    Injection_R6_list[:] = np.nan
+
+    # Injection - R7
+    Injection_R7_list = np.zeros(num)
+    Injection_R7_list[:] = np.nan
+
     for i in range(0, num):
         try:
             m, results = run_with_KLa(KLa_R5=11, KLa_R6=7, KLa_R7=KLa_R7_list[i])
@@ -1923,6 +2065,9 @@ def plot_aeration_R7(num):
             SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
             P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
             P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
+            Injection_R5_list[i] = pyo.value(m.fs.R5.injection[0, "Liq", "S_O2"])
+            Injection_R6_list[i] = pyo.value(m.fs.R6.injection[0, "Liq", "S_O2"])
+            Injection_R7_list[i] = pyo.value(m.fs.R7.injection[0, "Liq", "S_O2"])
         except:
             pass
 
@@ -1939,6 +2084,9 @@ def plot_aeration_R7(num):
     SNOX_out_list = interp_1d(SNOX_out_list)
     P_org_out_list = interp_1d(P_org_out_list)
     P_out_list = interp_1d(P_out_list)
+    Injection_R5_list = interp_1d(Injection_R5_list)
+    Injection_R6_list = interp_1d(Injection_R6_list)
+    Injection_R7_list = interp_1d(Injection_R7_list)
 
     # Figure 1
     figa, axa = plt.subplots(figsize=(9, 5), layout="constrained")
@@ -2142,6 +2290,51 @@ def plot_aeration_R7(num):
     ax1g.yaxis.label.set_color("tab:red")
     ax1g.spines["right"].set_color("tab:red")
     ax1g.tick_params(axis="y", colors="tab:red")
+    plt.locator_params(axis="y", nbins=8)
+
+    # Figure 4
+    fig4, ax4 = plt.subplots(figsize=(9, 5), layout="constrained")
+    ax4.set_xlabel("R7 KLa (s$^{-1}$)", fontsize=12)
+
+    # R5 Injection
+    ax4.plot(KLa_R7_list, Injection_R5_list, color="k", label="_O2 Concentration")
+    # axb.set_ylim([0.86, 0.94])
+    ax4.set_ylabel("R5 Injection (kg/h)", fontsize=11)
+    ax4.tick_params(axis="x", labelsize=11)
+    ax4.tick_params(axis="y", labelsize=11)
+    plt.locator_params(axis="y", nbins=8)
+
+    # R6 Injection
+    ax4a = ax4.twinx()
+    ax4a.plot(
+        KLa_R7_list,
+        Injection_R6_list,
+        color="tab:blue",
+        label="_Organic P Concentration",
+    )
+    # ax4a.plot(KLa_R5_list, TP_max, color="tab:grey", linestyle='--', label='_TP Max')
+    # ax4a.set_ylim([5.3, 5.52])
+    ax4a.set_ylabel("R6 Injection (kg/h)", fontsize=11)
+    ax4a.tick_params(axis="x", labelsize=11)
+    ax4a.tick_params(axis="y", labelsize=11)
+    ax4a.yaxis.label.set_color("tab:blue")
+    ax4a.spines["right"].set_color("tab:blue")
+    ax4a.tick_params(axis="y", colors="tab:blue")
+    plt.locator_params(axis="y", nbins=8)
+
+    # R7 Injection
+    ax4b = ax4.twinx()
+    ax4b.spines.right.set_position(("axes", 1.15))
+    ax4b.plot(
+        KLa_R7_list, Injection_R7_list, color="tab:red", label="_PO4 Concentration"
+    )
+    # ax4b.set_ylim([0, 240])
+    ax4b.set_ylabel("R7 Injection (kg/h)", fontsize=11)
+    ax4b.tick_params(axis="x", labelsize=11)
+    ax4b.tick_params(axis="y", labelsize=11)
+    ax4b.yaxis.label.set_color("tab:red")
+    ax4b.spines["right"].set_color("tab:red")
+    ax4b.tick_params(axis="y", colors="tab:red")
     plt.locator_params(axis="y", nbins=8)
 
     plt.show(block=True)
@@ -2565,6 +2758,6 @@ if __name__ == "__main__":
 
     # plot_aeration_R5(num=15)
     # plot_aeration_R6(num=15)
-    # plot_aeration_R7(num=15)
+    plot_aeration_R7(num=15)
 
-    plot_COD_max(num=15)
+    # plot_COD_max(num=15)

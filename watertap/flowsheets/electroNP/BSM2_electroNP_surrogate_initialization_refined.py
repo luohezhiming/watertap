@@ -634,9 +634,9 @@ def set_operating_conditions(m):
     m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].fix(3.20e-3)
 
     # KLa
-    m.fs.R5.KLa = 11
-    m.fs.R6.KLa = 7
-    m.fs.R7.KLa = 6
+    # m.fs.R5.KLa = 11
+    # m.fs.R6.KLa = 7
+    # m.fs.R7.KLa = 6
 
     # Set fraction of outflow from reactor 7 that goes to recycle
     m.fs.SP1.split_fraction[:, "underflow"].fix(0.60)
@@ -1792,7 +1792,7 @@ if __name__ == "__main__":
     # This method builds and runs a steady state activated sludge flowsheet.
     m, results = main(
         has_electroNP=True,
-        has_optimization=True,
+        has_optimization=False,
         objective=objective_fun.LCOW,
         has_effluent_constraints=True,
     )
