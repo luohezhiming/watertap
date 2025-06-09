@@ -1504,13 +1504,13 @@ def add_effluent_violations(m):
     m.fs.total_P_max = pyo.Var(initialize=0.005, units=pyo.units.kg / pyo.units.m**3)
     m.fs.total_P_max.fix()
 
-    # @m.fs.Constraint(m.fs.time)
-    # def eq_total_P_max(self, t):
-    #     return (
-    #         m.fs.Treated.properties[0].SP_organic
-    #         + m.fs.Treated.properties[0].SP_inorganic
-    #         <= m.fs.total_P_max
-    #     )
+    @m.fs.Constraint(m.fs.time)
+    def eq_total_P_max(self, t):
+        return (
+            m.fs.Treated.properties[0].SP_organic
+            + m.fs.Treated.properties[0].SP_inorganic
+            <= m.fs.total_P_max
+        )
 
 
 def display_costing(m):
