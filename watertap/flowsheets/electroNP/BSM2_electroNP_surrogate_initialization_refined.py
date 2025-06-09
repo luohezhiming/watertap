@@ -230,16 +230,21 @@ def main(
     interval_initializer(m.fs.costing)
     assert_degrees_of_freedom(m, 0)
 
-    results = solve(m)
+    # results = solve(m)
+    # pyo.assert_optimal_termination(results)
 
-    pyo.assert_optimal_termination(results)
-
-    check_solve(
-        results,
-        checkpoint="re-solve with controls in place",
-        logger=_log,
-        fail_flag=True,
-    )
+    # # resolve with oxygen fixed
+    # m.fs.R5.outlet.conc_mass_comp[:, "S_O2"].unfix()
+    # m.fs.R5.injection[0, "Liq", "S_O2"].fix(0.05332)
+    #
+    # m.fs.R6.outlet.conc_mass_comp[:, "S_O2"].unfix()
+    # m.fs.R6.injection[0, "Liq", "S_O2"].fix(0.03025)
+    #
+    # m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].unfix()
+    # m.fs.R7.injection[0, "Liq", "S_O2"].fix(0.02351)
+    #
+    # results = solve(m)
+    # pyo.assert_optimal_termination(results)
 
     if has_optimization:
         setup_optimization(
@@ -268,6 +273,13 @@ def main(
 
     results = solve(m)
     pyo.assert_optimal_termination(results)
+
+    check_solve(
+        results,
+        checkpoint="re-solve with controls in place",
+        logger=_log,
+        fail_flag=True,
+    )
 
     dt = DiagnosticsToolbox(m)
     print("---Numerical Issues---")
@@ -1492,13 +1504,13 @@ def add_effluent_violations(m):
     m.fs.total_P_max = pyo.Var(initialize=0.005, units=pyo.units.kg / pyo.units.m**3)
     m.fs.total_P_max.fix()
 
-    @m.fs.Constraint(m.fs.time)
-    def eq_total_P_max(self, t):
-        return (
-            m.fs.Treated.properties[0].SP_organic
-            + m.fs.Treated.properties[0].SP_inorganic
-            <= m.fs.total_P_max
-        )
+    # @m.fs.Constraint(m.fs.time)
+    # def eq_total_P_max(self, t):
+    #     return (
+    #         m.fs.Treated.properties[0].SP_organic
+    #         + m.fs.Treated.properties[0].SP_inorganic
+    #         <= m.fs.total_P_max
+    #     )
 
 
 def display_costing(m):
@@ -1791,7 +1803,7 @@ def display_design(m):
 if __name__ == "__main__":
     # This method builds and runs a steady state activated sludge flowsheet.
     m, results = main(
-        has_electroNP=True,
+        has_electroNP=False,
         has_optimization=False,
         objective=objective_fun.LCOW,
         has_effluent_constraints=True,
