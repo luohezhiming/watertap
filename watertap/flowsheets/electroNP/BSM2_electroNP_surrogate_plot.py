@@ -303,7 +303,7 @@ def run_optimization_vary_max(
         m.fs.electroNP.cathodic_potential.fix(-0.96)
         m.fs.electroNP.area_volume_ratio.fix(0.1)
 
-    # results = solve(m)
+    results = solve(m)
 
     if has_optimization:
         if has_electroNP is True:
@@ -385,7 +385,7 @@ def setup_optimization_vary_max(
     m.fs.total_P_max.unfix()
     m.fs.total_P_max.fix(TP_max)
 
-    # m.fs.Constraint.eq_total_P_max[0].deactivate()
+    m.fs.eq_total_P_max[0].deactivate()
 
 
 def setup_optimization_no_electroNP_vary_max(
@@ -420,24 +420,24 @@ def setup_optimization_no_electroNP_vary_max(
 
     m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].unfix()
     m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].setlb(0)
-    m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].setub(10e-3)
+    m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].setub(8e-3)
 
     # # Unfix fraction of outflow from reactor 7 that goes to recycle
     # m.fs.SP1.split_fraction[:, "underflow"].unfix()
     # # m.fs.SP1.split_fraction[:, "underflow"].setlb(0.45)
     # m.fs.SP2.split_fraction[:, "recycle"].unfix()
 
-    # add_effluent_violations(m)
-    # m.fs.COD_max.unfix()
-    # m.fs.COD_max.fix(COD_max)
-    # m.fs.BOD5_max.unfix()
-    # m.fs.BOD5_max.fix(BOD5_max)
-    # m.fs.TKN_max.unfix()
-    # m.fs.TKN_max.fix(TKN_max)
-    # m.fs.total_P_max.unfix()
-    # m.fs.total_P_max.fix(TP_max)
+    add_effluent_violations(m)
+    m.fs.COD_max.unfix()
+    m.fs.COD_max.fix(COD_max)
+    m.fs.BOD5_max.unfix()
+    m.fs.BOD5_max.fix(BOD5_max)
+    m.fs.TKN_max.unfix()
+    m.fs.TKN_max.fix(TKN_max)
+    m.fs.total_P_max.unfix()
+    m.fs.total_P_max.fix(TP_max)
 
-    # m.fs.Constraint.eq_total_P_max.deactivate()
+    m.fs.eq_total_P_max[0].deactivate()
 
 
 def run_optimization_with_aeration_tank_volume(
@@ -2661,7 +2661,7 @@ def plot_aeration_R7(num):
 
 def plot_COD_max(num):
     # 1D plot
-    COD_max_list = np.linspace(0.095, 0.0978, num)
+    COD_max_list = np.linspace(0.0955, 0.0978, num)
     # COD_max_list = np.linspace(0.095, 0.0975, num)
 
     # O2 -- R5
@@ -2780,6 +2780,368 @@ def plot_COD_max(num):
     P_out_list = interp_1d(P_out_list)
     LCOW_list = interp_1d(LCOW_list)
     SEC_list = interp_1d(SEC_list)
+
+    COD_max_list = 1000 * COD_max_list
+
+    # Figure a
+    figa, axa = plt.subplots(figsize=(9, 5), layout="constrained")
+    # CP_base = -1.1
+    # axa.axvline(x=CP_base, color='b', linestyle='--', label="Base case")
+    # axa.legend(loc="lower left")
+
+    # O2 -- R5
+    axa.plot(COD_max_list, S_O2_out_R5_list, color="k", label="_R5 O2 Concentration")
+    # axa.set_ylim([0.86, 0.94])
+    axa.set_xlabel("COD Max Concentration (mg/L)", fontsize=11)
+    axa.set_ylabel("R5 O2 Concentration  (mg/L)", fontsize=11)
+    axa.tick_params(axis="x", labelsize=11)
+    axa.tick_params(axis="y", labelsize=11)
+    plt.locator_params(axis="y", nbins=8)
+
+    # O2 -- R6
+    axa1 = axa.twinx()
+    axa1.plot(
+        COD_max_list, S_O2_out_R6_list, color="tab:blue", label="_R6 O2 Concentration"
+    )
+    # axa1.plot(CP_list, TSS_max, color="tab:blue", linestyle='--', label='_TSS Max')
+    # axa1.set_ylim([45.15, 45.25])
+    axa1.set_ylabel("R6 O2 Concentration (mg/L)", fontsize=11)
+    axa1.tick_params(axis="x", labelsize=11)
+    axa1.tick_params(axis="y", labelsize=11)
+    axa1.yaxis.label.set_color("tab:blue")
+    axa1.spines["right"].set_color("tab:blue")
+    axa1.tick_params(axis="y", colors="tab:blue")
+    plt.locator_params(axis="y", nbins=8)
+
+    # O2 -- R7
+    axa2 = axa.twinx()
+    axa2.spines.right.set_position(("axes", 1.15))
+    axa2.plot(
+        COD_max_list, S_O2_out_R7_list, color="tab:orange", label="_R7 O2 Concentration"
+    )
+    # axa2.plot(CP_list, COD_max, color="tab:orange", linestyle='--', label='_COD Max')
+    # axa2.set_ylim([96.44, 96.46])
+    axa2.set_ylabel("R7 O2 Concentration (mg/L)", fontsize=11)
+    axa2.tick_params(axis="x", labelsize=11)
+    axa2.tick_params(axis="y", labelsize=11)
+    axa2.yaxis.label.set_color("tab:orange")
+    axa2.spines["right"].set_color("tab:orange")
+    axa2.tick_params(axis="y", colors="tab:orange")
+    plt.locator_params(axis="y", nbins=8)
+
+    # Figure b
+    figb, axb = plt.subplots(figsize=(9, 5), layout="constrained")
+    axb.plot(COD_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
+    # axb.set_ylim([0.86, 0.94])
+    axb.set_xlabel("COD Max Concentration (mg/L)", fontsize=11)
+    axb.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
+    axb.tick_params(axis="x", labelsize=11)
+    axb.tick_params(axis="y", labelsize=11)
+    plt.locator_params(axis="y", nbins=8)
+
+    # aeration energy
+    axb1 = axb.twinx()
+    axb1.plot(
+        COD_max_list, Ener_aeration_out, color="tab:brown", label="_Aeration energy"
+    )
+    # axb1.plot(CP_list, TKN_max, color="tab:brown", linestyle='--', label='_TKN Max')
+    # axb1.set_ylim([6.72, 6.74])
+    axb1.set_ylabel("Aeration energy (kWh/m$^3$)", fontsize=11)
+    axb1.tick_params(axis="x", labelsize=11)
+    axb1.tick_params(axis="y", labelsize=11)
+    axb1.yaxis.label.set_color("tab:brown")
+    axb1.spines["right"].set_color("tab:brown")
+    axb1.tick_params(axis="y", colors="tab:brown")
+    plt.locator_params(axis="y", nbins=8)
+
+    # Figure 1
+    fig1, ax1 = plt.subplots(figsize=(9, 5), layout="constrained")
+    ax1.set_xlabel("COD Max Concentration (mg/L)", fontsize=11)
+
+    # O2
+    ax1.plot(COD_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
+    # axb.set_ylim([0.86, 0.94])
+    ax1.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
+    ax1.tick_params(axis="x", labelsize=11)
+    ax1.tick_params(axis="y", labelsize=11)
+    plt.locator_params(axis="y", nbins=8)
+
+    # TSS
+    ax1a = ax1.twinx()
+    ax1a.plot(COD_max_list, TSS_out_list, color="tab:blue", label="_TSS Concentration")
+    # ax1a.plot(CP_list, TSS_max, color="tab:blue", linestyle='--', label='_TSS Max')
+    # ax1a.set_ylim([44.95, 45.25])
+    ax1a.set_ylabel("TSS Concentration (mg/L)", fontsize=11)
+    ax1a.tick_params(axis="x", labelsize=11)
+    ax1a.tick_params(axis="y", labelsize=11)
+    ax1a.yaxis.label.set_color("tab:blue")
+    ax1a.spines["right"].set_color("tab:blue")
+    ax1a.tick_params(axis="y", colors="tab:blue")
+    plt.locator_params(axis="y", nbins=8)
+
+    # COD
+    ax1b = ax1.twinx()
+    ax1b.spines.right.set_position(("axes", 1.15))
+    ax1b.plot(
+        COD_max_list, COD_out_list, color="tab:orange", label="_COD Concentration"
+    )
+    # ax1b.plot(CP_list, COD_max, color="tab:orange", linestyle='--', label='_COD Max')
+    # ax1b.set_ylim([96.2, 96.7])
+    ax1b.set_ylabel("COD Concentration (mg/L)", fontsize=11)
+    ax1b.tick_params(axis="x", labelsize=11)
+    ax1b.tick_params(axis="y", labelsize=11)
+    ax1b.yaxis.label.set_color("tab:orange")
+    ax1b.spines["right"].set_color("tab:orange")
+    ax1b.tick_params(axis="y", colors="tab:orange")
+    plt.locator_params(axis="y", nbins=8)
+
+    # BOD
+    ax1c = ax1.twinx()
+    ax1c.spines.right.set_position(("axes", 1.35))
+    ax1c.plot(
+        COD_max_list, BOD_out_list, color="tab:purple", label="_BOD Concentration"
+    )
+    # ax1c.plot(CP_list, BOD_max, color="tab:purple", linestyle='--', label='_BOD Max')
+    # ax1c.set_ylim([6.054, 6.074])
+    ax1c.set_ylabel("BOD Concentration (mg/L)", fontsize=11)
+    ax1c.tick_params(axis="x", labelsize=11)
+    ax1c.tick_params(axis="y", labelsize=11)
+    ax1c.yaxis.label.set_color("tab:purple")
+    ax1c.spines["right"].set_color("tab:purple")
+    ax1c.tick_params(axis="y", colors="tab:purple")
+    plt.locator_params(axis="y", nbins=8)
+
+    # Figure 2
+    fig2, ax2 = plt.subplots(figsize=(9, 5), layout="constrained")
+    ax2.set_xlabel("COD Max Concentration (mg/L)", fontsize=12)
+
+    # O2
+    ax2.plot(COD_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
+    # axb.set_ylim([0.86, 0.94])
+    ax2.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
+    ax2.tick_params(axis="x", labelsize=11)
+    ax2.tick_params(axis="y", labelsize=11)
+    plt.locator_params(axis="y", nbins=8)
+
+    # TKN
+    ax1d = ax2.twinx()
+    ax1d.plot(COD_max_list, TKN_out_list, color="tab:brown", label="_TKN Concentration")
+    # ax1d.plot(CP_list, TKN_max, color="tab:brown", linestyle='--', label='_TKN Max')
+    # ax1d.set_ylim([6.7, 6.74])
+    ax1d.set_ylabel("TKN Concentration (mg/L)", fontsize=11)
+    ax1d.tick_params(axis="x", labelsize=11)
+    ax1d.tick_params(axis="y", labelsize=11)
+    ax1d.yaxis.label.set_color("tab:brown")
+    ax1d.spines["right"].set_color("tab:brown")
+    ax1d.tick_params(axis="y", colors="tab:brown")
+    plt.locator_params(axis="y", nbins=8)
+
+    # SNOx
+    ax1e = ax2.twinx()
+    ax1e.spines.right.set_position(("axes", 1.15))
+    ax1e.plot(
+        COD_max_list, SNOX_out_list, color="tab:green", label="_SNOX Concentration"
+    )
+    # ax1e.set_ylim([2.95, 3.5])
+    ax1e.set_ylabel("SNOx Concentration (mg/L)", fontsize=11)
+    ax1e.tick_params(axis="x", labelsize=11)
+    ax1e.tick_params(axis="y", labelsize=11)
+    ax1e.yaxis.label.set_color("tab:green")
+    ax1e.spines["right"].set_color("tab:green")
+    ax1e.tick_params(axis="y", colors="tab:green")
+    plt.locator_params(axis="y", nbins=8)
+
+    # Figure 3
+    fig3, ax3 = plt.subplots(figsize=(9, 5), layout="constrained")
+    ax3.set_xlabel("COD Max Concentration (mg/L)", fontsize=12)
+
+    # O2
+    ax3.plot(COD_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
+    # axb.set_ylim([0.86, 0.94])
+    ax3.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
+    ax3.tick_params(axis="x", labelsize=11)
+    ax3.tick_params(axis="y", labelsize=11)
+    plt.locator_params(axis="y", nbins=8)
+
+    # organic P
+    ax1f = ax3.twinx()
+    ax1f.plot(
+        COD_max_list, P_org_out_list, color="tab:pink", label="_Organic P Concentration"
+    )
+    TP_max = 5 * np.ones(num)
+    ax1f.plot(COD_max_list, TP_max, color="tab:grey", linestyle="--", label="_TP Max")
+    # ax1f.set_ylim([5.3, 5.52])
+    ax1f.set_xlabel("COD Max Concentration (mg/L)", fontsize=11)
+    ax1f.set_ylabel("Organic Phosphorus Concentration (mg/L)", fontsize=11)
+    ax1f.tick_params(axis="x", labelsize=11)
+    ax1f.tick_params(axis="y", labelsize=11)
+    ax1f.yaxis.label.set_color("tab:pink")
+    ax1f.spines["right"].set_color("tab:pink")
+    ax1f.tick_params(axis="y", colors="tab:pink")
+    ax1f.legend()
+    plt.locator_params(axis="y", nbins=8)
+
+    # PO4
+    ax1g = ax3.twinx()
+    ax1g.spines.right.set_position(("axes", 1.15))
+    ax1g.plot(COD_max_list, P_out_list, color="tab:red", label="_PO4 Concentration")
+    # ax1g.set_ylim([0, 240])
+    ax1g.set_xlabel("COD Max Concentration (mg/L)", fontsize=11)
+    ax1g.set_ylabel("PO4 Concentration (mg/L)", fontsize=11)
+    ax1g.tick_params(axis="x", labelsize=11)
+    ax1g.tick_params(axis="y", labelsize=11)
+    ax1g.yaxis.label.set_color("tab:red")
+    ax1g.spines["right"].set_color("tab:red")
+    ax1g.tick_params(axis="y", colors="tab:red")
+    plt.locator_params(axis="y", nbins=8)
+
+    # Figure i
+    figi, axi = plt.subplots(figsize=(9, 5), layout="constrained")
+    axi.plot(COD_max_list, LCOW_list, color="k", label="_LCOW")
+    # axb.set_ylim([0.86, 0.94])
+    axi.set_xlabel("COD Max Concentration (mg/L)", fontsize=11)
+    axi.set_ylabel("Levelized Cost of Water (/$/m$^3$ (2023))", fontsize=11)
+    axi.tick_params(axis="x", labelsize=11)
+    axi.tick_params(axis="y", labelsize=11)
+    plt.locator_params(axis="y", nbins=8)
+
+    # SEC
+    axi1 = axi.twinx()
+    axi1.plot(COD_max_list, SEC_list, color="tab:brown", label="_SEC")
+    # axb1.plot(CP_list, TKN_max, color="tab:brown", linestyle='--', label='_TKN Max')
+    # axb1.set_ylim([6.72, 6.74])
+    axi1.set_ylabel("Specific Energy Consumption (kWh/m$^3$)", fontsize=11)
+    axi1.tick_params(axis="x", labelsize=11)
+    axi1.tick_params(axis="y", labelsize=11)
+    axi1.yaxis.label.set_color("tab:brown")
+    axi1.spines["right"].set_color("tab:brown")
+    axi1.tick_params(axis="y", colors="tab:brown")
+    plt.locator_params(axis="y", nbins=8)
+
+    plt.show(block=True)
+
+
+def plot_COD_max_no_electroNP(num):
+    # 1D plot
+    COD_max_list = np.linspace(0.97, 0.1, num)
+    # COD_max_list = np.linspace(0.095, 0.0975, num)
+
+    # O2 -- R5
+    S_O2_out_R5_list = np.zeros(num)
+    S_O2_out_R5_list[:] = np.nan
+
+    # O2 -- R6
+    S_O2_out_R6_list = np.zeros(num)
+    S_O2_out_R6_list[:] = np.nan
+
+    # O2 -- R7
+    S_O2_out_R7_list = np.zeros(num)
+    S_O2_out_R7_list[:] = np.nan
+
+    # O2 -- effluent
+    S_O2_out_list = np.zeros(num)
+    S_O2_out_list[:] = np.nan
+
+    # aeration energy
+    Ener_aeration_out = np.zeros(num)
+    Ener_aeration_out[:] = np.nan
+
+    # P removal
+    P_removal_list = np.zeros(num)
+    P_removal_list[:] = np.nan
+
+    # TSS
+    TSS_out_list = np.zeros(num)
+    TSS_out_list[:] = np.nan
+
+    # COD
+    COD_out_list = np.zeros(num)
+    COD_out_list[:] = np.nan
+
+    # BOD
+    BOD_out_list = np.zeros(num)
+    BOD_out_list[:] = np.nan
+
+    # TKN
+    TKN_out_list = np.zeros(num)
+    TKN_out_list[:] = np.nan
+
+    # SNOx
+    SNOX_out_list = np.zeros(num)
+    SNOX_out_list[:] = np.nan
+
+    # organic P
+    P_org_out_list = np.zeros(num)
+    P_org_out_list[:] = np.nan
+
+    # PO4 - inorganic P
+    P_out_list = np.zeros(num)
+    P_out_list[:] = np.nan
+
+    # LCOW
+    LCOW_list = np.zeros(num)
+    LCOW_list[:] = np.nan
+
+    # SEC
+    SEC_list = np.zeros(num)
+    SEC_list[:] = np.nan
+
+    for i in range(0, num):
+        try:
+            m, results = run_optimization_vary_max(
+                COD_max=COD_max_list[i],
+                BOD5_max=0.01,
+                TKN_max=0.007,
+                TP_max=0.005,
+                has_electroNP=False,
+                has_optimization=True,
+            )
+
+            S_O2_out_R5_list[i] = pyo.value(
+                m.fs.R5.outlet.conc_mass_comp[0, "S_O2"] * 1e3
+            )
+            S_O2_out_R6_list[i] = pyo.value(
+                m.fs.R6.outlet.conc_mass_comp[0, "S_O2"] * 1e3
+            )
+            S_O2_out_R7_list[i] = pyo.value(
+                m.fs.R7.outlet.conc_mass_comp[0, "S_O2"] * 1e3
+            )
+            S_O2_out_list[i] = pyo.value(
+                m.fs.Treated.properties[0].conc_mass_comp["S_O2"] * 1e3
+            )
+            Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
+            P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
+            TSS_out_list[i] = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
+            COD_out_list[i] = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
+            BOD_out_list[i] = pyo.value(
+                m.fs.Treated.properties[0].BOD5["effluent"] * 1e3
+            )
+            TKN_out_list[i] = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
+            SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
+            P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
+            P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
+
+            LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
+            SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+
+        except:
+            pass
+
+    # S_O2_out_R5_list = interp_1d(S_O2_out_R5_list)
+    # S_O2_out_R6_list = interp_1d(S_O2_out_R6_list)
+    # S_O2_out_R7_list = interp_1d(S_O2_out_R7_list)
+    # S_O2_out_list = interp_1d(S_O2_out_list)
+    # Ener_aeration_out = interp_1d(Ener_aeration_out)
+    # P_removal_list = interp_1d(P_removal_list)
+    # TSS_out_list = interp_1d(TSS_out_list)
+    # COD_out_list = interp_1d(COD_out_list)
+    # BOD_out_list = interp_1d(BOD_out_list)
+    # TKN_out_list = interp_1d(TKN_out_list)
+    # SNOX_out_list = interp_1d(SNOX_out_list)
+    # P_org_out_list = interp_1d(P_org_out_list)
+    # P_out_list = interp_1d(P_out_list)
+    # LCOW_list = interp_1d(LCOW_list)
+    # SEC_list = interp_1d(SEC_list)
 
     COD_max_list = 1000 * COD_max_list
 
@@ -3141,6 +3503,375 @@ def plot_BOD5_max(num):
     P_out_list = interp_1d(P_out_list)
     LCOW_list = interp_1d(LCOW_list)
     SEC_list = interp_1d(SEC_list)
+
+    BOD5_max_list = 1000 * BOD5_max_list
+
+    # Figure a
+    figa, axa = plt.subplots(figsize=(9, 5), layout="constrained")
+    # CP_base = -1.1
+    # axa.axvline(x=CP_base, color='b', linestyle='--', label="Base case")
+    # axa.legend(loc="lower left")
+
+    # O2 -- R5
+    axa.plot(BOD5_max_list, S_O2_out_R5_list, color="k", label="_R5 O2 Concentration")
+    # axa.set_ylim([0.86, 0.94])
+    axa.set_xlabel("BOD Max Concentration (mg/L)", fontsize=11)
+    axa.set_ylabel("R5 O2 Concentration  (mg/L)", fontsize=11)
+    axa.tick_params(axis="x", labelsize=11)
+    axa.tick_params(axis="y", labelsize=11)
+    plt.locator_params(axis="y", nbins=8)
+
+    # O2 -- R6
+    axa1 = axa.twinx()
+    axa1.plot(
+        BOD5_max_list, S_O2_out_R6_list, color="tab:blue", label="_R6 O2 Concentration"
+    )
+    # axa1.plot(CP_list, TSS_max, color="tab:blue", linestyle='--', label='_TSS Max')
+    # axa1.set_ylim([45.15, 45.25])
+    axa1.set_ylabel("R6 O2 Concentration (mg/L)", fontsize=11)
+    axa1.tick_params(axis="x", labelsize=11)
+    axa1.tick_params(axis="y", labelsize=11)
+    axa1.yaxis.label.set_color("tab:blue")
+    axa1.spines["right"].set_color("tab:blue")
+    axa1.tick_params(axis="y", colors="tab:blue")
+    plt.locator_params(axis="y", nbins=8)
+
+    # O2 -- R7
+    axa2 = axa.twinx()
+    axa2.spines.right.set_position(("axes", 1.15))
+    axa2.plot(
+        BOD5_max_list,
+        S_O2_out_R7_list,
+        color="tab:orange",
+        label="_R7 O2 Concentration",
+    )
+    # axa2.plot(CP_list, COD_max, color="tab:orange", linestyle='--', label='_COD Max')
+    # axa2.set_ylim([96.44, 96.46])
+    axa2.set_ylabel("R7 O2 Concentration (mg/L)", fontsize=11)
+    axa2.tick_params(axis="x", labelsize=11)
+    axa2.tick_params(axis="y", labelsize=11)
+    axa2.yaxis.label.set_color("tab:orange")
+    axa2.spines["right"].set_color("tab:orange")
+    axa2.tick_params(axis="y", colors="tab:orange")
+    plt.locator_params(axis="y", nbins=8)
+
+    # Figure b
+    figb, axb = plt.subplots(figsize=(9, 5), layout="constrained")
+    axb.plot(BOD5_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
+    # axb.set_ylim([0.86, 0.94])
+    axb.set_xlabel("BOD Max Concentration (mg/L)", fontsize=11)
+    axb.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
+    axb.tick_params(axis="x", labelsize=11)
+    axb.tick_params(axis="y", labelsize=11)
+    plt.locator_params(axis="y", nbins=8)
+
+    # aeration energy
+    axb1 = axb.twinx()
+    axb1.plot(
+        BOD5_max_list, Ener_aeration_out, color="tab:brown", label="_Aeration energy"
+    )
+    # axb1.plot(CP_list, TKN_max, color="tab:brown", linestyle='--', label='_TKN Max')
+    # axb1.set_ylim([6.72, 6.74])
+    axb1.set_ylabel("Aeration energy (kWh/m$^3$)", fontsize=11)
+    axb1.tick_params(axis="x", labelsize=11)
+    axb1.tick_params(axis="y", labelsize=11)
+    axb1.yaxis.label.set_color("tab:brown")
+    axb1.spines["right"].set_color("tab:brown")
+    axb1.tick_params(axis="y", colors="tab:brown")
+    plt.locator_params(axis="y", nbins=8)
+
+    # Figure 1
+    fig1, ax1 = plt.subplots(figsize=(9, 5), layout="constrained")
+    ax1.set_xlabel("BOD Max Concentration (mg/L)", fontsize=11)
+
+    # O2
+    ax1.plot(BOD5_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
+    # axb.set_ylim([0.86, 0.94])
+    ax1.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
+    ax1.tick_params(axis="x", labelsize=11)
+    ax1.tick_params(axis="y", labelsize=11)
+    plt.locator_params(axis="y", nbins=8)
+
+    # TSS
+    ax1a = ax1.twinx()
+    ax1a.plot(BOD5_max_list, TSS_out_list, color="tab:blue", label="_TSS Concentration")
+    # ax1a.plot(CP_list, TSS_max, color="tab:blue", linestyle='--', label='_TSS Max')
+    # ax1a.set_ylim([44.95, 45.25])
+    ax1a.set_ylabel("TSS Concentration (mg/L)", fontsize=11)
+    ax1a.tick_params(axis="x", labelsize=11)
+    ax1a.tick_params(axis="y", labelsize=11)
+    ax1a.yaxis.label.set_color("tab:blue")
+    ax1a.spines["right"].set_color("tab:blue")
+    ax1a.tick_params(axis="y", colors="tab:blue")
+    plt.locator_params(axis="y", nbins=8)
+
+    # COD
+    ax1b = ax1.twinx()
+    ax1b.spines.right.set_position(("axes", 1.15))
+    ax1b.plot(
+        BOD5_max_list, COD_out_list, color="tab:orange", label="_COD Concentration"
+    )
+    # ax1b.plot(CP_list, COD_max, color="tab:orange", linestyle='--', label='_COD Max')
+    # ax1b.set_ylim([96.2, 96.7])
+    ax1b.set_ylabel("COD Concentration (mg/L)", fontsize=11)
+    ax1b.tick_params(axis="x", labelsize=11)
+    ax1b.tick_params(axis="y", labelsize=11)
+    ax1b.yaxis.label.set_color("tab:orange")
+    ax1b.spines["right"].set_color("tab:orange")
+    ax1b.tick_params(axis="y", colors="tab:orange")
+    plt.locator_params(axis="y", nbins=8)
+
+    # BOD
+    ax1c = ax1.twinx()
+    ax1c.spines.right.set_position(("axes", 1.35))
+    ax1c.plot(
+        BOD5_max_list, BOD_out_list, color="tab:purple", label="_BOD Concentration"
+    )
+    # ax1c.plot(CP_list, BOD_max, color="tab:purple", linestyle='--', label='_BOD Max')
+    # ax1c.set_ylim([6.054, 6.074])
+    ax1c.set_ylabel("BOD Concentration (mg/L)", fontsize=11)
+    ax1c.tick_params(axis="x", labelsize=11)
+    ax1c.tick_params(axis="y", labelsize=11)
+    ax1c.yaxis.label.set_color("tab:purple")
+    ax1c.spines["right"].set_color("tab:purple")
+    ax1c.tick_params(axis="y", colors="tab:purple")
+    plt.locator_params(axis="y", nbins=8)
+
+    # Figure 2
+    fig2, ax2 = plt.subplots(figsize=(9, 5), layout="constrained")
+    ax2.set_xlabel("BOD Max Concentration (mg/L)", fontsize=12)
+
+    # O2
+    ax2.plot(BOD5_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
+    # axb.set_ylim([0.86, 0.94])
+    ax2.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
+    ax2.tick_params(axis="x", labelsize=11)
+    ax2.tick_params(axis="y", labelsize=11)
+    plt.locator_params(axis="y", nbins=8)
+
+    # TKN
+    ax1d = ax2.twinx()
+    ax1d.plot(
+        BOD5_max_list, TKN_out_list, color="tab:brown", label="_TKN Concentration"
+    )
+    # ax1d.plot(CP_list, TKN_max, color="tab:brown", linestyle='--', label='_TKN Max')
+    # ax1d.set_ylim([6.7, 6.74])
+    ax1d.set_ylabel("TKN Concentration (mg/L)", fontsize=11)
+    ax1d.tick_params(axis="x", labelsize=11)
+    ax1d.tick_params(axis="y", labelsize=11)
+    ax1d.yaxis.label.set_color("tab:brown")
+    ax1d.spines["right"].set_color("tab:brown")
+    ax1d.tick_params(axis="y", colors="tab:brown")
+    plt.locator_params(axis="y", nbins=8)
+
+    # SNOx
+    ax1e = ax2.twinx()
+    ax1e.spines.right.set_position(("axes", 1.15))
+    ax1e.plot(
+        BOD5_max_list, SNOX_out_list, color="tab:green", label="_SNOX Concentration"
+    )
+    # ax1e.set_ylim([2.95, 3.5])
+    ax1e.set_ylabel("SNOx Concentration (mg/L)", fontsize=11)
+    ax1e.tick_params(axis="x", labelsize=11)
+    ax1e.tick_params(axis="y", labelsize=11)
+    ax1e.yaxis.label.set_color("tab:green")
+    ax1e.spines["right"].set_color("tab:green")
+    ax1e.tick_params(axis="y", colors="tab:green")
+    plt.locator_params(axis="y", nbins=8)
+
+    # Figure 3
+    fig3, ax3 = plt.subplots(figsize=(9, 5), layout="constrained")
+    ax3.set_xlabel("BOD Max Concentration (mg/L)", fontsize=12)
+
+    # O2
+    ax3.plot(BOD5_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
+    # axb.set_ylim([0.86, 0.94])
+    ax3.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
+    ax3.tick_params(axis="x", labelsize=11)
+    ax3.tick_params(axis="y", labelsize=11)
+    plt.locator_params(axis="y", nbins=8)
+
+    # organic P
+    ax1f = ax3.twinx()
+    ax1f.plot(
+        BOD5_max_list,
+        P_org_out_list,
+        color="tab:pink",
+        label="_Organic P Concentration",
+    )
+    TP_max = 5 * np.ones(num)
+    ax1f.plot(BOD5_max_list, TP_max, color="tab:grey", linestyle="--", label="TP Max")
+    # ax1f.set_ylim([5.3, 5.52])
+    ax1f.set_xlabel("BOD Max Concentration (mg/L)", fontsize=11)
+    ax1f.set_ylabel("Organic Phosphorus Concentration (mg/L)", fontsize=11)
+    ax1f.tick_params(axis="x", labelsize=11)
+    ax1f.tick_params(axis="y", labelsize=11)
+    ax1f.yaxis.label.set_color("tab:pink")
+    ax1f.spines["right"].set_color("tab:pink")
+    ax1f.tick_params(axis="y", colors="tab:pink")
+    ax1f.legend()
+    plt.locator_params(axis="y", nbins=8)
+
+    # PO4
+    ax1g = ax3.twinx()
+    ax1g.spines.right.set_position(("axes", 1.15))
+    ax1g.plot(BOD5_max_list, P_out_list, color="tab:red", label="_PO4 Concentration")
+    # ax1g.set_ylim([0, 240])
+    ax1g.set_xlabel("BOD Max Concentration (mg/L)", fontsize=11)
+    ax1g.set_ylabel("PO4 Concentration (mg/L)", fontsize=11)
+    ax1g.tick_params(axis="x", labelsize=11)
+    ax1g.tick_params(axis="y", labelsize=11)
+    ax1g.yaxis.label.set_color("tab:red")
+    ax1g.spines["right"].set_color("tab:red")
+    ax1g.tick_params(axis="y", colors="tab:red")
+    plt.locator_params(axis="y", nbins=8)
+
+    # Figure i
+    figi, axi = plt.subplots(figsize=(9, 5), layout="constrained")
+    axi.plot(BOD5_max_list, LCOW_list, color="k", label="_LCOW")
+    # axb.set_ylim([0.86, 0.94])
+    axi.set_xlabel("BOD Max Concentration (mg/L)", fontsize=11)
+    axi.set_ylabel("Levelized Cost of Water (/$/m$^3$ (2023))", fontsize=11)
+    axi.tick_params(axis="x", labelsize=11)
+    axi.tick_params(axis="y", labelsize=11)
+    plt.locator_params(axis="y", nbins=8)
+
+    # SEC
+    axi1 = axi.twinx()
+    axi1.plot(BOD5_max_list, SEC_list, color="tab:brown", label="_SEC")
+    # axb1.plot(CP_list, TKN_max, color="tab:brown", linestyle='--', label='_TKN Max')
+    # axb1.set_ylim([6.72, 6.74])
+    axi1.set_ylabel("Specific Energy Consumption (kWh/m$^3$)", fontsize=11)
+    axi1.tick_params(axis="x", labelsize=11)
+    axi1.tick_params(axis="y", labelsize=11)
+    axi1.yaxis.label.set_color("tab:brown")
+    axi1.spines["right"].set_color("tab:brown")
+    axi1.tick_params(axis="y", colors="tab:brown")
+    plt.locator_params(axis="y", nbins=8)
+
+    plt.show(block=True)
+
+
+def plot_BOD5_max_no_electroNP(num):
+    # 1D plot
+    BOD5_max_list = np.linspace(0.007, 0.01, num)
+
+    # O2 -- R5
+    S_O2_out_R5_list = np.zeros(num)
+    S_O2_out_R5_list[:] = np.nan
+
+    # O2 -- R6
+    S_O2_out_R6_list = np.zeros(num)
+    S_O2_out_R6_list[:] = np.nan
+
+    # O2 -- R7
+    S_O2_out_R7_list = np.zeros(num)
+    S_O2_out_R7_list[:] = np.nan
+
+    # O2 -- effluent
+    S_O2_out_list = np.zeros(num)
+    S_O2_out_list[:] = np.nan
+
+    # aeration energy
+    Ener_aeration_out = np.zeros(num)
+    Ener_aeration_out[:] = np.nan
+
+    # P removal
+    P_removal_list = np.zeros(num)
+    P_removal_list[:] = np.nan
+
+    # TSS
+    TSS_out_list = np.zeros(num)
+    TSS_out_list[:] = np.nan
+
+    # COD
+    COD_out_list = np.zeros(num)
+    COD_out_list[:] = np.nan
+
+    # BOD
+    BOD_out_list = np.zeros(num)
+    BOD_out_list[:] = np.nan
+
+    # TKN
+    TKN_out_list = np.zeros(num)
+    TKN_out_list[:] = np.nan
+
+    # SNOx
+    SNOX_out_list = np.zeros(num)
+    SNOX_out_list[:] = np.nan
+
+    # organic P
+    P_org_out_list = np.zeros(num)
+    P_org_out_list[:] = np.nan
+
+    # PO4 - inorganic P
+    P_out_list = np.zeros(num)
+    P_out_list[:] = np.nan
+
+    # LCOW
+    LCOW_list = np.zeros(num)
+    LCOW_list[:] = np.nan
+
+    # SEC
+    SEC_list = np.zeros(num)
+    SEC_list[:] = np.nan
+
+    for i in range(0, num):
+        try:
+            m, results = run_optimization_vary_max(
+                COD_max=0.1,
+                BOD5_max=BOD5_max_list[i],
+                TKN_max=0.007,
+                TP_max=0.005,
+                has_electroNP=False,
+                has_optimization=True,
+            )
+
+            S_O2_out_R5_list[i] = pyo.value(
+                m.fs.R5.outlet.conc_mass_comp[0, "S_O2"] * 1e3
+            )
+            S_O2_out_R6_list[i] = pyo.value(
+                m.fs.R6.outlet.conc_mass_comp[0, "S_O2"] * 1e3
+            )
+            S_O2_out_R7_list[i] = pyo.value(
+                m.fs.R7.outlet.conc_mass_comp[0, "S_O2"] * 1e3
+            )
+            S_O2_out_list[i] = pyo.value(
+                m.fs.Treated.properties[0].conc_mass_comp["S_O2"] * 1e3
+            )
+            Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
+            P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
+            TSS_out_list[i] = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
+            COD_out_list[i] = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
+            BOD_out_list[i] = pyo.value(
+                m.fs.Treated.properties[0].BOD5["effluent"] * 1e3
+            )
+            TKN_out_list[i] = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
+            SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
+            P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
+            P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
+
+            LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
+            SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+
+        except:
+            pass
+
+    # S_O2_out_R5_list = interp_1d(S_O2_out_R5_list)
+    # S_O2_out_R6_list = interp_1d(S_O2_out_R6_list)
+    # S_O2_out_R7_list = interp_1d(S_O2_out_R7_list)
+    # S_O2_out_list = interp_1d(S_O2_out_list)
+    # Ener_aeration_out = interp_1d(Ener_aeration_out)
+    # P_removal_list = interp_1d(P_removal_list)
+    # TSS_out_list = interp_1d(TSS_out_list)
+    # COD_out_list = interp_1d(COD_out_list)
+    # BOD_out_list = interp_1d(BOD_out_list)
+    # TKN_out_list = interp_1d(TKN_out_list)
+    # SNOX_out_list = interp_1d(SNOX_out_list)
+    # P_org_out_list = interp_1d(P_org_out_list)
+    # P_out_list = interp_1d(P_out_list)
+    # LCOW_list = interp_1d(LCOW_list)
+    # SEC_list = interp_1d(SEC_list)
 
     BOD5_max_list = 1000 * BOD5_max_list
 
@@ -4564,7 +5295,7 @@ if __name__ == "__main__":
 
     # m,results = run_optimization_vary_max(
     #     COD_max=0.1,
-    #     BOD5_max=0.01,
+    #     BOD5_max=0.005,
     #     TKN_max=0.007,
     #     TP_max=0.005,
     #     has_electroNP=False,
@@ -4583,8 +5314,11 @@ if __name__ == "__main__":
     # plot_aeration_R6(num=15)
     # plot_aeration_R7(num=15)
 
-    plot_COD_max(num=35)
+    # plot_COD_max(num=15)
     # plot_BOD5_max(num=15)
     # plot_TKN_max(num=15)
     # plot_TP_max(num=15)
     # plot_aeration_tank_volume(num=15)
+
+    # plot_COD_max_no_electroNP(num=15)
+    plot_BOD5_max_no_electroNP(num=15)
