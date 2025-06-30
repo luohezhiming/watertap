@@ -303,7 +303,7 @@ def run_optimization_vary_max(
         m.fs.electroNP.cathodic_potential.fix(-0.96)
         m.fs.electroNP.area_volume_ratio.fix(0.1)
 
-    results = solve(m)
+    # results = solve(m)
 
     if has_optimization:
         if has_electroNP is True:
@@ -385,7 +385,7 @@ def setup_optimization_vary_max(
     m.fs.total_P_max.unfix()
     m.fs.total_P_max.fix(TP_max)
 
-    m.fs.eq_total_P_max[0].deactivate()
+    # m.fs.eq_total_P_max[0].deactivate()
 
 
 def setup_optimization_no_electroNP_vary_max(
@@ -2664,6 +2664,75 @@ def plot_COD_max(num):
     COD_max_list = np.linspace(0.0955, 0.0978, num)
     # COD_max_list = np.linspace(0.095, 0.0975, num)
 
+    # No electroNP flowsheet
+    m, results = run_optimization_vary_max(
+        COD_max=0.1,
+        BOD5_max=0.01,
+        TKN_max=0.007,
+        TP_max=0.005,
+        has_electroNP=False,
+        has_optimization=True,
+    )
+
+    Ne_S_O2_out_R5 = pyo.value(m.fs.R5.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+    Ne_S_O2_out_R6 = pyo.value(m.fs.R6.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+    Ne_S_O2_out_R7 = pyo.value(m.fs.R7.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+    Ne_S_O2_out = pyo.value(m.fs.Treated.properties[0].conc_mass_comp["S_O2"] * 1e3)
+    Ne_Ener_aeration = pyo.value(m.fs.costing.aeration_energy)
+    Ne_TSS_out = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
+    Ne_COD_out = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
+    Ne_BOD_out = pyo.value(m.fs.Treated.properties[0].BOD5["effluent"] * 1e3)
+    Ne_TKN_out = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
+    Ne_SNOX_out = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
+    Ne_P_org_out = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
+    Ne_P_out = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
+
+    Ne_LCOW = pyo.value(m.fs.costing.LCOW)
+    Ne_SEC = pyo.value(m.fs.costing.specific_energy_consumption)
+
+    # O2 -- R5
+    Ne_S_O2_out_R5_list = Ne_S_O2_out_R5 * np.ones(num)
+
+    # O2 -- R6
+    Ne_S_O2_out_R6_list = Ne_S_O2_out_R6 * np.ones(num)
+
+    # O2 -- R7
+    Ne_S_O2_out_R7_list = Ne_S_O2_out_R7 * np.ones(num)
+
+    # O2 -- effluent
+    Ne_S_O2_out_list = Ne_S_O2_out * np.ones(num)
+
+    # aeration energy
+    Ne_Ener_aeration_out = Ne_Ener_aeration * np.ones(num)
+
+    # TSS
+    Ne_TSS_out_list = Ne_TSS_out * np.ones(num)
+
+    # COD
+    Ne_COD_out_list = Ne_COD_out * np.ones(num)
+
+    # BOD
+    Ne_BOD_out_list = Ne_BOD_out * np.ones(num)
+
+    # TKN
+    Ne_TKN_out_list = Ne_TKN_out * np.ones(num)
+
+    # SNOx
+    Ne_SNOX_out_list = Ne_SNOX_out * np.ones(num)
+
+    # organic P
+    Ne_P_org_out_list = Ne_P_org_out * np.ones(num)
+
+    # PO4 - inorganic P
+    Ne_P_out_list = Ne_P_out * np.ones(num)
+
+    # LCOW
+    Ne_LCOW_list = Ne_LCOW * np.ones(num)
+
+    # SEC
+    Ne_SEC_list = Ne_SEC * np.ones(num)
+
+    # electroNP flowsheet
     # O2 -- R5
     S_O2_out_R5_list = np.zeros(num)
     S_O2_out_R5_list[:] = np.nan
@@ -2791,6 +2860,13 @@ def plot_COD_max(num):
 
     # O2 -- R5
     axa.plot(COD_max_list, S_O2_out_R5_list, color="k", label="_R5 O2 Concentration")
+    axa.plot(
+        COD_max_list,
+        Ne_S_O2_out_R5_list,
+        color="k",
+        linestyle="-.",
+        label="_R5 O2 Concentration no electroNP",
+    )
     # axa.set_ylim([0.86, 0.94])
     axa.set_xlabel("COD Max Concentration (mg/L)", fontsize=11)
     axa.set_ylabel("R5 O2 Concentration  (mg/L)", fontsize=11)
@@ -2802,6 +2878,13 @@ def plot_COD_max(num):
     axa1 = axa.twinx()
     axa1.plot(
         COD_max_list, S_O2_out_R6_list, color="tab:blue", label="_R6 O2 Concentration"
+    )
+    axa1.plot(
+        COD_max_list,
+        Ne_S_O2_out_R6_list,
+        color="tab:blue",
+        linestyle="-.",
+        label="_R6 O2 Concentration no electroNP",
     )
     # axa1.plot(CP_list, TSS_max, color="tab:blue", linestyle='--', label='_TSS Max')
     # axa1.set_ylim([45.15, 45.25])
@@ -2819,6 +2902,13 @@ def plot_COD_max(num):
     axa2.plot(
         COD_max_list, S_O2_out_R7_list, color="tab:orange", label="_R7 O2 Concentration"
     )
+    axa2.plot(
+        COD_max_list,
+        Ne_S_O2_out_R7_list,
+        color="tab:orange",
+        linestyle="-.",
+        label="_R7 O2 Concentration no electroNP",
+    )
     # axa2.plot(CP_list, COD_max, color="tab:orange", linestyle='--', label='_COD Max')
     # axa2.set_ylim([96.44, 96.46])
     axa2.set_ylabel("R7 O2 Concentration (mg/L)", fontsize=11)
@@ -2832,6 +2922,13 @@ def plot_COD_max(num):
     # Figure b
     figb, axb = plt.subplots(figsize=(9, 5), layout="constrained")
     axb.plot(COD_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
+    axb.plot(
+        COD_max_list,
+        Ne_S_O2_out_list,
+        color="k",
+        linestyle="-.",
+        label="_O2 Concentration no electroNP",
+    )
     # axb.set_ylim([0.86, 0.94])
     axb.set_xlabel("COD Max Concentration (mg/L)", fontsize=11)
     axb.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
@@ -2843,6 +2940,13 @@ def plot_COD_max(num):
     axb1 = axb.twinx()
     axb1.plot(
         COD_max_list, Ener_aeration_out, color="tab:brown", label="_Aeration energy"
+    )
+    axb1.plot(
+        COD_max_list,
+        Ne_S_O2_out_list,
+        color="tab:brown",
+        linestyle="-.",
+        label="_Aeration energy no electroNP",
     )
     # axb1.plot(CP_list, TKN_max, color="tab:brown", linestyle='--', label='_TKN Max')
     # axb1.set_ylim([6.72, 6.74])
@@ -2860,6 +2964,13 @@ def plot_COD_max(num):
 
     # O2
     ax1.plot(COD_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
+    ax1.plot(
+        COD_max_list,
+        Ne_S_O2_out_list,
+        color="k",
+        linestyle="-.",
+        label="_O2 Concentration no electroNP",
+    )
     # axb.set_ylim([0.86, 0.94])
     ax1.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
     ax1.tick_params(axis="x", labelsize=11)
@@ -2869,6 +2980,13 @@ def plot_COD_max(num):
     # TSS
     ax1a = ax1.twinx()
     ax1a.plot(COD_max_list, TSS_out_list, color="tab:blue", label="_TSS Concentration")
+    ax1a.plot(
+        COD_max_list,
+        Ne_TSS_out_list,
+        color="tab:blue",
+        linestyle="-.",
+        label="_TSS Concentration no electroNP",
+    )
     # ax1a.plot(CP_list, TSS_max, color="tab:blue", linestyle='--', label='_TSS Max')
     # ax1a.set_ylim([44.95, 45.25])
     ax1a.set_ylabel("TSS Concentration (mg/L)", fontsize=11)
@@ -2884,6 +3002,13 @@ def plot_COD_max(num):
     ax1b.spines.right.set_position(("axes", 1.15))
     ax1b.plot(
         COD_max_list, COD_out_list, color="tab:orange", label="_COD Concentration"
+    )
+    ax1b.plot(
+        COD_max_list,
+        Ne_COD_out_list,
+        color="tab:orange",
+        linestyle="-.",
+        label="_COD Concentration no electroNP",
     )
     # ax1b.plot(CP_list, COD_max, color="tab:orange", linestyle='--', label='_COD Max')
     # ax1b.set_ylim([96.2, 96.7])
@@ -2901,6 +3026,13 @@ def plot_COD_max(num):
     ax1c.plot(
         COD_max_list, BOD_out_list, color="tab:purple", label="_BOD Concentration"
     )
+    ax1c.plot(
+        COD_max_list,
+        Ne_BOD_out_list,
+        color="tab:purple",
+        linestyle="-.",
+        label="_BOD Concentration no electroNP",
+    )
     # ax1c.plot(CP_list, BOD_max, color="tab:purple", linestyle='--', label='_BOD Max')
     # ax1c.set_ylim([6.054, 6.074])
     ax1c.set_ylabel("BOD Concentration (mg/L)", fontsize=11)
@@ -2917,6 +3049,13 @@ def plot_COD_max(num):
 
     # O2
     ax2.plot(COD_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
+    ax2.plot(
+        COD_max_list,
+        Ne_S_O2_out_list,
+        color="k",
+        linestyle="-.",
+        label="_O2 Concentration no electroNP",
+    )
     # axb.set_ylim([0.86, 0.94])
     ax2.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
     ax2.tick_params(axis="x", labelsize=11)
@@ -2926,6 +3065,13 @@ def plot_COD_max(num):
     # TKN
     ax1d = ax2.twinx()
     ax1d.plot(COD_max_list, TKN_out_list, color="tab:brown", label="_TKN Concentration")
+    ax1d.plot(
+        COD_max_list,
+        Ne_TKN_out_list,
+        color="tab:brown",
+        linestyle="-.",
+        label="_TKN Concentration no electroNP",
+    )
     # ax1d.plot(CP_list, TKN_max, color="tab:brown", linestyle='--', label='_TKN Max')
     # ax1d.set_ylim([6.7, 6.74])
     ax1d.set_ylabel("TKN Concentration (mg/L)", fontsize=11)
@@ -2942,6 +3088,13 @@ def plot_COD_max(num):
     ax1e.plot(
         COD_max_list, SNOX_out_list, color="tab:green", label="_SNOX Concentration"
     )
+    ax1e.plot(
+        COD_max_list,
+        Ne_SNOX_out_list,
+        color="tab:green",
+        linestyle="-.",
+        label="_SNOX Concentration no electroNP",
+    )
     # ax1e.set_ylim([2.95, 3.5])
     ax1e.set_ylabel("SNOx Concentration (mg/L)", fontsize=11)
     ax1e.tick_params(axis="x", labelsize=11)
@@ -2957,6 +3110,13 @@ def plot_COD_max(num):
 
     # O2
     ax3.plot(COD_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
+    ax3.plot(
+        COD_max_list,
+        Ne_S_O2_out_list,
+        color="k",
+        linestyle="-.",
+        label="_O2 Concentration no electroNP",
+    )
     # axb.set_ylim([0.86, 0.94])
     ax3.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
     ax3.tick_params(axis="x", labelsize=11)
@@ -2967,6 +3127,13 @@ def plot_COD_max(num):
     ax1f = ax3.twinx()
     ax1f.plot(
         COD_max_list, P_org_out_list, color="tab:pink", label="_Organic P Concentration"
+    )
+    ax1f.plot(
+        COD_max_list,
+        Ne_P_org_out_list,
+        color="tab:pink",
+        linestyle="-.",
+        label="_Organic P no electroNP",
     )
     TP_max = 5 * np.ones(num)
     ax1f.plot(COD_max_list, TP_max, color="tab:grey", linestyle="--", label="_TP Max")
@@ -2985,6 +3152,13 @@ def plot_COD_max(num):
     ax1g = ax3.twinx()
     ax1g.spines.right.set_position(("axes", 1.15))
     ax1g.plot(COD_max_list, P_out_list, color="tab:red", label="_PO4 Concentration")
+    ax1g.plot(
+        COD_max_list,
+        Ne_P_out_list,
+        color="tab:red",
+        linestyle="-.",
+        label="_PO4 no electroNP",
+    )
     # ax1g.set_ylim([0, 240])
     ax1g.set_xlabel("COD Max Concentration (mg/L)", fontsize=11)
     ax1g.set_ylabel("PO4 Concentration (mg/L)", fontsize=11)
@@ -2998,6 +3172,13 @@ def plot_COD_max(num):
     # Figure i
     figi, axi = plt.subplots(figsize=(9, 5), layout="constrained")
     axi.plot(COD_max_list, LCOW_list, color="k", label="_LCOW")
+    axi.plot(
+        COD_max_list,
+        Ne_LCOW_list,
+        color="k",
+        linestyle="-.",
+        label="_LCOW no electroNP",
+    )
     # axb.set_ylim([0.86, 0.94])
     axi.set_xlabel("COD Max Concentration (mg/L)", fontsize=11)
     axi.set_ylabel("Levelized Cost of Water (/$/m$^3$ (2023))", fontsize=11)
@@ -3008,6 +3189,13 @@ def plot_COD_max(num):
     # SEC
     axi1 = axi.twinx()
     axi1.plot(COD_max_list, SEC_list, color="tab:brown", label="_SEC")
+    axi1.plot(
+        COD_max_list,
+        Ne_SEC_list,
+        color="tab:brown",
+        linestyle="-.",
+        label="_SEC no electroNP",
+    )
     # axb1.plot(CP_list, TKN_max, color="tab:brown", linestyle='--', label='_TKN Max')
     # axb1.set_ylim([6.72, 6.74])
     axi1.set_ylabel("Specific Energy Consumption (kWh/m$^3$)", fontsize=11)
@@ -3385,8 +3573,78 @@ def plot_COD_max_no_electroNP(num):
 
 def plot_BOD5_max(num):
     # 1D plot
-    BOD5_max_list = np.linspace(0.006, 0.0065, num)
+    BOD5_max_list = np.linspace(0.006, 0.0075, num)
+    # BOD5_max_list = np.linspace(0.006, 0.0065, num)
 
+    # No electroNP flowsheet
+    m, results = run_optimization_vary_max(
+        COD_max=0.1,
+        BOD5_max=0.01,
+        TKN_max=0.007,
+        TP_max=0.005,
+        has_electroNP=False,
+        has_optimization=True,
+    )
+
+    Ne_S_O2_out_R5 = pyo.value(m.fs.R5.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+    Ne_S_O2_out_R6 = pyo.value(m.fs.R6.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+    Ne_S_O2_out_R7 = pyo.value(m.fs.R7.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+    Ne_S_O2_out = pyo.value(m.fs.Treated.properties[0].conc_mass_comp["S_O2"] * 1e3)
+    Ne_Ener_aeration = pyo.value(m.fs.costing.aeration_energy)
+    Ne_TSS_out = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
+    Ne_COD_out = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
+    Ne_BOD_out = pyo.value(m.fs.Treated.properties[0].BOD5["effluent"] * 1e3)
+    Ne_TKN_out = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
+    Ne_SNOX_out = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
+    Ne_P_org_out = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
+    Ne_P_out = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
+
+    Ne_LCOW = pyo.value(m.fs.costing.LCOW)
+    Ne_SEC = pyo.value(m.fs.costing.specific_energy_consumption)
+
+    # O2 -- R5
+    Ne_S_O2_out_R5_list = Ne_S_O2_out_R5 * np.ones(num)
+
+    # O2 -- R6
+    Ne_S_O2_out_R6_list = Ne_S_O2_out_R6 * np.ones(num)
+
+    # O2 -- R7
+    Ne_S_O2_out_R7_list = Ne_S_O2_out_R7 * np.ones(num)
+
+    # O2 -- effluent
+    Ne_S_O2_out_list = Ne_S_O2_out * np.ones(num)
+
+    # aeration energy
+    Ne_Ener_aeration_out = Ne_Ener_aeration * np.ones(num)
+
+    # TSS
+    Ne_TSS_out_list = Ne_TSS_out * np.ones(num)
+
+    # COD
+    Ne_COD_out_list = Ne_COD_out * np.ones(num)
+
+    # BOD
+    Ne_BOD_out_list = Ne_BOD_out * np.ones(num)
+
+    # TKN
+    Ne_TKN_out_list = Ne_TKN_out * np.ones(num)
+
+    # SNOx
+    Ne_SNOX_out_list = Ne_SNOX_out * np.ones(num)
+
+    # organic P
+    Ne_P_org_out_list = Ne_P_org_out * np.ones(num)
+
+    # PO4 - inorganic P
+    Ne_P_out_list = Ne_P_out * np.ones(num)
+
+    # LCOW
+    Ne_LCOW_list = Ne_LCOW * np.ones(num)
+
+    # SEC
+    Ne_SEC_list = Ne_SEC * np.ones(num)
+
+    # electroNP
     # O2 -- R5
     S_O2_out_R5_list = np.zeros(num)
     S_O2_out_R5_list[:] = np.nan
@@ -3514,6 +3772,13 @@ def plot_BOD5_max(num):
 
     # O2 -- R5
     axa.plot(BOD5_max_list, S_O2_out_R5_list, color="k", label="_R5 O2 Concentration")
+    axa.plot(
+        BOD5_max_list,
+        Ne_S_O2_out_R5_list,
+        color="k",
+        linestyle="-.",
+        label="_R5 O2 Concentration no electroNP",
+    )
     # axa.set_ylim([0.86, 0.94])
     axa.set_xlabel("BOD Max Concentration (mg/L)", fontsize=11)
     axa.set_ylabel("R5 O2 Concentration  (mg/L)", fontsize=11)
@@ -3525,6 +3790,13 @@ def plot_BOD5_max(num):
     axa1 = axa.twinx()
     axa1.plot(
         BOD5_max_list, S_O2_out_R6_list, color="tab:blue", label="_R6 O2 Concentration"
+    )
+    axa1.plot(
+        BOD5_max_list,
+        Ne_S_O2_out_R6_list,
+        color="tab:blue",
+        linestyle="-.",
+        label="_R6 O2 Concentration no electroNP",
     )
     # axa1.plot(CP_list, TSS_max, color="tab:blue", linestyle='--', label='_TSS Max')
     # axa1.set_ylim([45.15, 45.25])
@@ -3545,6 +3817,13 @@ def plot_BOD5_max(num):
         color="tab:orange",
         label="_R7 O2 Concentration",
     )
+    axa2.plot(
+        BOD5_max_list,
+        Ne_S_O2_out_R7_list,
+        color="tab:orange",
+        linestyle="-.",
+        label="_R7 O2 Concentration no electroNP",
+    )
     # axa2.plot(CP_list, COD_max, color="tab:orange", linestyle='--', label='_COD Max')
     # axa2.set_ylim([96.44, 96.46])
     axa2.set_ylabel("R7 O2 Concentration (mg/L)", fontsize=11)
@@ -3558,6 +3837,13 @@ def plot_BOD5_max(num):
     # Figure b
     figb, axb = plt.subplots(figsize=(9, 5), layout="constrained")
     axb.plot(BOD5_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
+    axb.plot(
+        BOD5_max_list,
+        Ne_S_O2_out_list,
+        color="k",
+        linestyle="-.",
+        label="_O2 Concentration no electroNP",
+    )
     # axb.set_ylim([0.86, 0.94])
     axb.set_xlabel("BOD Max Concentration (mg/L)", fontsize=11)
     axb.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
@@ -3569,6 +3855,13 @@ def plot_BOD5_max(num):
     axb1 = axb.twinx()
     axb1.plot(
         BOD5_max_list, Ener_aeration_out, color="tab:brown", label="_Aeration energy"
+    )
+    axb1.plot(
+        BOD5_max_list,
+        Ne_Ener_aeration_out,
+        color="tab:brown",
+        linestyle="-.",
+        label="_Aeration energy no electroNP",
     )
     # axb1.plot(CP_list, TKN_max, color="tab:brown", linestyle='--', label='_TKN Max')
     # axb1.set_ylim([6.72, 6.74])
@@ -3586,6 +3879,13 @@ def plot_BOD5_max(num):
 
     # O2
     ax1.plot(BOD5_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
+    ax1.plot(
+        BOD5_max_list,
+        Ne_S_O2_out_list,
+        color="k",
+        linestyle="-.",
+        label="_O2 Concentration no electroNP",
+    )
     # axb.set_ylim([0.86, 0.94])
     ax1.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
     ax1.tick_params(axis="x", labelsize=11)
@@ -3595,6 +3895,13 @@ def plot_BOD5_max(num):
     # TSS
     ax1a = ax1.twinx()
     ax1a.plot(BOD5_max_list, TSS_out_list, color="tab:blue", label="_TSS Concentration")
+    ax1a.plot(
+        BOD5_max_list,
+        Ne_TSS_out_list,
+        color="tab:blue",
+        linestyle="-.",
+        label="_TSS Concentration no electroNP",
+    )
     # ax1a.plot(CP_list, TSS_max, color="tab:blue", linestyle='--', label='_TSS Max')
     # ax1a.set_ylim([44.95, 45.25])
     ax1a.set_ylabel("TSS Concentration (mg/L)", fontsize=11)
@@ -3610,6 +3917,13 @@ def plot_BOD5_max(num):
     ax1b.spines.right.set_position(("axes", 1.15))
     ax1b.plot(
         BOD5_max_list, COD_out_list, color="tab:orange", label="_COD Concentration"
+    )
+    ax1b.plot(
+        BOD5_max_list,
+        Ne_COD_out_list,
+        color="tab:orange",
+        linestyle="-.",
+        label="_COD Concentration no electroNP",
     )
     # ax1b.plot(CP_list, COD_max, color="tab:orange", linestyle='--', label='_COD Max')
     # ax1b.set_ylim([96.2, 96.7])
@@ -3627,6 +3941,13 @@ def plot_BOD5_max(num):
     ax1c.plot(
         BOD5_max_list, BOD_out_list, color="tab:purple", label="_BOD Concentration"
     )
+    ax1c.plot(
+        BOD5_max_list,
+        Ne_BOD_out_list,
+        color="tab:purple",
+        linestyle="-.",
+        label="_BOD Concentration no electroNP",
+    )
     # ax1c.plot(CP_list, BOD_max, color="tab:purple", linestyle='--', label='_BOD Max')
     # ax1c.set_ylim([6.054, 6.074])
     ax1c.set_ylabel("BOD Concentration (mg/L)", fontsize=11)
@@ -3643,6 +3964,13 @@ def plot_BOD5_max(num):
 
     # O2
     ax2.plot(BOD5_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
+    ax2.plot(
+        BOD5_max_list,
+        Ne_S_O2_out_list,
+        color="k",
+        linestyle="-.",
+        label="_O2 Concentration no electroNP",
+    )
     # axb.set_ylim([0.86, 0.94])
     ax2.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
     ax2.tick_params(axis="x", labelsize=11)
@@ -3653,6 +3981,13 @@ def plot_BOD5_max(num):
     ax1d = ax2.twinx()
     ax1d.plot(
         BOD5_max_list, TKN_out_list, color="tab:brown", label="_TKN Concentration"
+    )
+    ax1d.plot(
+        BOD5_max_list,
+        Ne_TKN_out_list,
+        color="tab:brown",
+        linestyle="-.",
+        label="_TKN Concentration no electroNP",
     )
     # ax1d.plot(CP_list, TKN_max, color="tab:brown", linestyle='--', label='_TKN Max')
     # ax1d.set_ylim([6.7, 6.74])
@@ -3670,6 +4005,13 @@ def plot_BOD5_max(num):
     ax1e.plot(
         BOD5_max_list, SNOX_out_list, color="tab:green", label="_SNOX Concentration"
     )
+    ax1e.plot(
+        BOD5_max_list,
+        Ne_SNOX_out_list,
+        color="tab:green",
+        linestyle="-.",
+        label="_SNOX Concentration no electroNP",
+    )
     # ax1e.set_ylim([2.95, 3.5])
     ax1e.set_ylabel("SNOx Concentration (mg/L)", fontsize=11)
     ax1e.tick_params(axis="x", labelsize=11)
@@ -3685,6 +4027,13 @@ def plot_BOD5_max(num):
 
     # O2
     ax3.plot(BOD5_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
+    ax3.plot(
+        BOD5_max_list,
+        Ne_S_O2_out_list,
+        color="k",
+        linestyle="-.",
+        label="_O2 Concentration no electroNP",
+    )
     # axb.set_ylim([0.86, 0.94])
     ax3.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
     ax3.tick_params(axis="x", labelsize=11)
@@ -3698,6 +4047,13 @@ def plot_BOD5_max(num):
         P_org_out_list,
         color="tab:pink",
         label="_Organic P Concentration",
+    )
+    ax1f.plot(
+        BOD5_max_list,
+        Ne_P_org_out_list,
+        color="tab:pink",
+        linestyle="-.",
+        label="_Organic P Concentration no electroNP",
     )
     TP_max = 5 * np.ones(num)
     ax1f.plot(BOD5_max_list, TP_max, color="tab:grey", linestyle="--", label="TP Max")
@@ -3716,6 +4072,14 @@ def plot_BOD5_max(num):
     ax1g = ax3.twinx()
     ax1g.spines.right.set_position(("axes", 1.15))
     ax1g.plot(BOD5_max_list, P_out_list, color="tab:red", label="_PO4 Concentration")
+    ax1g.plot(
+        BOD5_max_list,
+        Ne_P_out_list,
+        color="tab:red",
+        linestyle="-.",
+        label="_PO4 Concentration no electroNP",
+    )
+
     # ax1g.set_ylim([0, 240])
     ax1g.set_xlabel("BOD Max Concentration (mg/L)", fontsize=11)
     ax1g.set_ylabel("PO4 Concentration (mg/L)", fontsize=11)
@@ -3729,6 +4093,13 @@ def plot_BOD5_max(num):
     # Figure i
     figi, axi = plt.subplots(figsize=(9, 5), layout="constrained")
     axi.plot(BOD5_max_list, LCOW_list, color="k", label="_LCOW")
+    axi.plot(
+        BOD5_max_list,
+        Ne_LCOW_list,
+        color="k",
+        linestyle="-.",
+        label="_LCOW no electroNP",
+    )
     # axb.set_ylim([0.86, 0.94])
     axi.set_xlabel("BOD Max Concentration (mg/L)", fontsize=11)
     axi.set_ylabel("Levelized Cost of Water (/$/m$^3$ (2023))", fontsize=11)
@@ -3739,6 +4110,13 @@ def plot_BOD5_max(num):
     # SEC
     axi1 = axi.twinx()
     axi1.plot(BOD5_max_list, SEC_list, color="tab:brown", label="_SEC")
+    axi1.plot(
+        BOD5_max_list,
+        Ne_SEC_list,
+        color="tab:brown",
+        linestyle="-.",
+        label="_SEC no electroNP",
+    )
     # axb1.plot(CP_list, TKN_max, color="tab:brown", linestyle='--', label='_TKN Max')
     # axb1.set_ylim([6.72, 6.74])
     axi1.set_ylabel("Specific Energy Consumption (kWh/m$^3$)", fontsize=11)
@@ -4123,8 +4501,77 @@ def plot_BOD5_max_no_electroNP(num):
 
 def plot_TKN_max(num):
     # 1D plot
-    TKN_max_list = np.linspace(0.0065, 0.008, num)
+    TKN_max_list = np.linspace(0.0066, 0.008, num)
 
+    # No electroNP flowsheet
+    m, results = run_optimization_vary_max(
+        COD_max=0.1,
+        BOD5_max=0.01,
+        TKN_max=0.007,
+        TP_max=0.005,
+        has_electroNP=False,
+        has_optimization=True,
+    )
+
+    Ne_S_O2_out_R5 = pyo.value(m.fs.R5.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+    Ne_S_O2_out_R6 = pyo.value(m.fs.R6.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+    Ne_S_O2_out_R7 = pyo.value(m.fs.R7.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+    Ne_S_O2_out = pyo.value(m.fs.Treated.properties[0].conc_mass_comp["S_O2"] * 1e3)
+    Ne_Ener_aeration = pyo.value(m.fs.costing.aeration_energy)
+    Ne_TSS_out = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
+    Ne_COD_out = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
+    Ne_BOD_out = pyo.value(m.fs.Treated.properties[0].BOD5["effluent"] * 1e3)
+    Ne_TKN_out = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
+    Ne_SNOX_out = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
+    Ne_P_org_out = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
+    Ne_P_out = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
+
+    Ne_LCOW = pyo.value(m.fs.costing.LCOW)
+    Ne_SEC = pyo.value(m.fs.costing.specific_energy_consumption)
+
+    # O2 -- R5
+    Ne_S_O2_out_R5_list = Ne_S_O2_out_R5 * np.ones(num)
+
+    # O2 -- R6
+    Ne_S_O2_out_R6_list = Ne_S_O2_out_R6 * np.ones(num)
+
+    # O2 -- R7
+    Ne_S_O2_out_R7_list = Ne_S_O2_out_R7 * np.ones(num)
+
+    # O2 -- effluent
+    Ne_S_O2_out_list = Ne_S_O2_out * np.ones(num)
+
+    # aeration energy
+    Ne_Ener_aeration_out = Ne_Ener_aeration * np.ones(num)
+
+    # TSS
+    Ne_TSS_out_list = Ne_TSS_out * np.ones(num)
+
+    # COD
+    Ne_COD_out_list = Ne_COD_out * np.ones(num)
+
+    # BOD
+    Ne_BOD_out_list = Ne_BOD_out * np.ones(num)
+
+    # TKN
+    Ne_TKN_out_list = Ne_TKN_out * np.ones(num)
+
+    # SNOx
+    Ne_SNOX_out_list = Ne_SNOX_out * np.ones(num)
+
+    # organic P
+    Ne_P_org_out_list = Ne_P_org_out * np.ones(num)
+
+    # PO4 - inorganic P
+    Ne_P_out_list = Ne_P_out * np.ones(num)
+
+    # LCOW
+    Ne_LCOW_list = Ne_LCOW * np.ones(num)
+
+    # SEC
+    Ne_SEC_list = Ne_SEC * np.ones(num)
+
+    # electroNP
     # O2 -- R5
     S_O2_out_R5_list = np.zeros(num)
     S_O2_out_R5_list[:] = np.nan
@@ -4251,6 +4698,13 @@ def plot_TKN_max(num):
 
     # O2 -- R5
     axa.plot(TKN_max_list, S_O2_out_R5_list, color="k", label="_R5 O2 Concentration")
+    axa.plot(
+        TKN_max_list,
+        Ne_S_O2_out_R5_list,
+        color="k",
+        linestyle="-.",
+        label="_R5 O2 Concentration no electroNP",
+    )
     # axa.set_ylim([0.86, 0.94])
     axa.set_xlabel("TKN Max Concentration (mg/L)", fontsize=11)
     axa.set_ylabel("R5 O2 Concentration  (mg/L)", fontsize=11)
@@ -4262,6 +4716,13 @@ def plot_TKN_max(num):
     axa1 = axa.twinx()
     axa1.plot(
         TKN_max_list, S_O2_out_R6_list, color="tab:blue", label="_R6 O2 Concentration"
+    )
+    axa1.plot(
+        TKN_max_list,
+        Ne_S_O2_out_R6_list,
+        color="tab:blue",
+        linestyle="-.",
+        label="_R6 O2 Concentration no electroNP",
     )
     # axa1.plot(CP_list, TSS_max, color="tab:blue", linestyle='--', label='_TSS Max')
     # axa1.set_ylim([45.15, 45.25])
@@ -4279,6 +4740,13 @@ def plot_TKN_max(num):
     axa2.plot(
         TKN_max_list, S_O2_out_R7_list, color="tab:orange", label="_R7 O2 Concentration"
     )
+    axa2.plot(
+        TKN_max_list,
+        Ne_S_O2_out_R7_list,
+        color="tab:orange",
+        linestyle="-.",
+        label="_R7 O2 Concentration no electroNP",
+    )
     # axa2.plot(CP_list, COD_max, color="tab:orange", linestyle='--', label='_COD Max')
     # axa2.set_ylim([96.44, 96.46])
     axa2.set_ylabel("R7 O2 Concentration (mg/L)", fontsize=11)
@@ -4292,6 +4760,13 @@ def plot_TKN_max(num):
     # Figure b
     figb, axb = plt.subplots(figsize=(9, 5), layout="constrained")
     axb.plot(TKN_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
+    axb.plot(
+        TKN_max_list,
+        Ne_S_O2_out_list,
+        color="k",
+        linestyle="-.",
+        label="_O2 Concentration no electroNP",
+    )
     # axb.set_ylim([0.86, 0.94])
     axb.set_xlabel("TKN Max Concentration (mg/L)", fontsize=11)
     axb.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
@@ -4303,6 +4778,13 @@ def plot_TKN_max(num):
     axb1 = axb.twinx()
     axb1.plot(
         TKN_max_list, Ener_aeration_out, color="tab:brown", label="_Aeration energy"
+    )
+    axb1.plot(
+        TKN_max_list,
+        Ne_Ener_aeration_out,
+        color="tab:brown",
+        linestyle="-.",
+        label="_Aeration energy no electroNP",
     )
     # axb1.plot(CP_list, TKN_max, color="tab:brown", linestyle='--', label='_TKN Max')
     # axb1.set_ylim([6.72, 6.74])
@@ -4320,6 +4802,13 @@ def plot_TKN_max(num):
 
     # O2
     ax1.plot(TKN_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
+    ax1.plot(
+        TKN_max_list,
+        Ne_S_O2_out_list,
+        color="k",
+        linestyle="-.",
+        label="_O2 Concentration no electroNP",
+    )
     # axb.set_ylim([0.86, 0.94])
     ax1.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
     ax1.tick_params(axis="x", labelsize=11)
@@ -4329,6 +4818,13 @@ def plot_TKN_max(num):
     # TSS
     ax1a = ax1.twinx()
     ax1a.plot(TKN_max_list, TSS_out_list, color="tab:blue", label="_TSS Concentration")
+    ax1a.plot(
+        TKN_max_list,
+        Ne_TSS_out_list,
+        color="tab:blue",
+        linestyle="-.",
+        label="_TSS Concentration no electroNP",
+    )
     # ax1a.plot(CP_list, TSS_max, color="tab:blue", linestyle='--', label='_TSS Max')
     # ax1a.set_ylim([44.95, 45.25])
     ax1a.set_ylabel("TSS Concentration (mg/L)", fontsize=11)
@@ -4344,6 +4840,13 @@ def plot_TKN_max(num):
     ax1b.spines.right.set_position(("axes", 1.15))
     ax1b.plot(
         TKN_max_list, COD_out_list, color="tab:orange", label="_COD Concentration"
+    )
+    ax1b.plot(
+        TKN_max_list,
+        Ne_COD_out_list,
+        color="tab:orange",
+        linestyle="-.",
+        label="_COD Concentration no electroNP",
     )
     # ax1b.plot(CP_list, COD_max, color="tab:orange", linestyle='--', label='_COD Max')
     # ax1b.set_ylim([96.2, 96.7])
@@ -4361,6 +4864,13 @@ def plot_TKN_max(num):
     ax1c.plot(
         TKN_max_list, BOD_out_list, color="tab:purple", label="_BOD Concentration"
     )
+    ax1c.plot(
+        TKN_max_list,
+        Ne_BOD_out_list,
+        color="tab:purple",
+        linestyle="-.",
+        label="_BOD Concentration no electroNP",
+    )
     # ax1c.plot(CP_list, BOD_max, color="tab:purple", linestyle='--', label='_BOD Max')
     # ax1c.set_ylim([6.054, 6.074])
     ax1c.set_ylabel("BOD Concentration (mg/L)", fontsize=11)
@@ -4377,6 +4887,13 @@ def plot_TKN_max(num):
 
     # O2
     ax2.plot(TKN_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
+    ax2.plot(
+        TKN_max_list,
+        Ne_S_O2_out_list,
+        color="k",
+        linestyle="-.",
+        label="_O2 Concentration no electroNP",
+    )
     # axb.set_ylim([0.86, 0.94])
     ax2.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
     ax2.tick_params(axis="x", labelsize=11)
@@ -4386,6 +4903,13 @@ def plot_TKN_max(num):
     # TKN
     ax1d = ax2.twinx()
     ax1d.plot(TKN_max_list, TKN_out_list, color="tab:brown", label="_TKN Concentration")
+    ax1d.plot(
+        TKN_max_list,
+        Ne_TKN_out_list,
+        color="tab:brown",
+        linestyle="-.",
+        label="_TKN Concentration no electroNP",
+    )
     # ax1d.plot(CP_list, TKN_max, color="tab:brown", linestyle='--', label='_TKN Max')
     # ax1d.set_ylim([6.7, 6.74])
     ax1d.set_ylabel("TKN Concentration (mg/L)", fontsize=11)
@@ -4402,6 +4926,13 @@ def plot_TKN_max(num):
     ax1e.plot(
         TKN_max_list, SNOX_out_list, color="tab:green", label="_SNOX Concentration"
     )
+    ax1e.plot(
+        TKN_max_list,
+        Ne_SNOX_out_list,
+        color="tab:green",
+        linestyle="-.",
+        label="_SNOX Concentration no electroNP",
+    )
     # ax1e.set_ylim([2.95, 3.5])
     ax1e.set_ylabel("SNOx Concentration (mg/L)", fontsize=11)
     ax1e.tick_params(axis="x", labelsize=11)
@@ -4417,6 +4948,13 @@ def plot_TKN_max(num):
 
     # O2
     ax3.plot(TKN_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
+    ax3.plot(
+        TKN_max_list,
+        Ne_S_O2_out_list,
+        color="k",
+        linestyle="-.",
+        label="_O2 Concentration no electroNP",
+    )
     # axb.set_ylim([0.86, 0.94])
     ax3.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
     ax3.tick_params(axis="x", labelsize=11)
@@ -4427,6 +4965,13 @@ def plot_TKN_max(num):
     ax1f = ax3.twinx()
     ax1f.plot(
         TKN_max_list, P_org_out_list, color="tab:pink", label="_Organic P Concentration"
+    )
+    ax1f.plot(
+        TKN_max_list,
+        Ne_P_org_out_list,
+        color="tab:pink",
+        linestyle="-.",
+        label="_Organic P Concentration no electroNP",
     )
     TP_max = 5 * np.ones(num)
     ax1f.plot(TKN_max_list, TP_max, color="tab:grey", linestyle="--", label="TP Max")
@@ -4445,6 +4990,13 @@ def plot_TKN_max(num):
     ax1g = ax3.twinx()
     ax1g.spines.right.set_position(("axes", 1.15))
     ax1g.plot(TKN_max_list, P_out_list, color="tab:red", label="_PO4 Concentration")
+    ax1g.plot(
+        TKN_max_list,
+        Ne_P_out_list,
+        color="tab:red",
+        linestyle="-.",
+        label="_PO4 Concentration no electroNP",
+    )
     # ax1g.set_ylim([0, 240])
     ax1g.set_xlabel("TKN Max Concentration (mg/L)", fontsize=11)
     ax1g.set_ylabel("PO4 Concentration (mg/L)", fontsize=11)
@@ -4458,6 +5010,13 @@ def plot_TKN_max(num):
     # Figure i
     figi, axi = plt.subplots(figsize=(9, 5), layout="constrained")
     axi.plot(TKN_max_list, LCOW_list, color="k", label="_LCOW")
+    axi.plot(
+        TKN_max_list,
+        Ne_LCOW_list,
+        color="k",
+        linestyle="-.",
+        label="_LCOW no electroNP",
+    )
     # axb.set_ylim([0.86, 0.94])
     axi.set_xlabel("TKN Max Concentration (mg/L)", fontsize=11)
     axi.set_ylabel("Levelized Cost of Water (/$/m$^3$ (2023))", fontsize=11)
@@ -4468,6 +5027,13 @@ def plot_TKN_max(num):
     # SEC
     axi1 = axi.twinx()
     axi1.plot(TKN_max_list, SEC_list, color="tab:brown", label="_SEC")
+    axi1.plot(
+        TKN_max_list,
+        Ne_SEC_list,
+        color="tab:brown",
+        linestyle="-.",
+        label="_SEC no electroNP",
+    )
     # axb1.plot(CP_list, TKN_max, color="tab:brown", linestyle='--', label='_TKN Max')
     # axb1.set_ylim([6.72, 6.74])
     axi1.set_ylabel("Specific Energy Consumption (kWh/m$^3$)", fontsize=11)
@@ -5293,14 +5859,14 @@ if __name__ == "__main__":
     #     has_optimization=True,
     # )
 
-    # m,results = run_optimization_vary_max(
-    #     COD_max=0.1,
-    #     BOD5_max=0.005,
-    #     TKN_max=0.007,
-    #     TP_max=0.005,
-    #     has_electroNP=False,
-    #     has_optimization=True,
-    # )
+    m, results = run_optimization_vary_max(
+        COD_max=0.1,
+        BOD5_max=0.01,
+        TKN_max=0.007,
+        TP_max=0.005,
+        has_electroNP=False,
+        has_optimization=True,
+    )
 
     # plot_CP(num=5)
     # plot_CP_effluent(num=25)
@@ -5314,11 +5880,11 @@ if __name__ == "__main__":
     # plot_aeration_R6(num=15)
     # plot_aeration_R7(num=15)
 
-    # plot_COD_max(num=15)
-    # plot_BOD5_max(num=15)
+    # plot_COD_max(num=19)
+    plot_BOD5_max(num=30)
     # plot_TKN_max(num=15)
     # plot_TP_max(num=15)
     # plot_aeration_tank_volume(num=15)
 
     # plot_COD_max_no_electroNP(num=15)
-    plot_BOD5_max_no_electroNP(num=15)
+    # plot_BOD5_max_no_electroNP(num=15)
