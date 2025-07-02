@@ -31,6 +31,7 @@ from watertap.flowsheets.electroNP.BSM2_electroNP_surrogate_initialization_refin
     add_effluent_violations,
 )
 import matplotlib.pyplot as plt
+from brokenaxes import brokenaxes
 from scipy import interpolate
 
 
@@ -437,7 +438,7 @@ def setup_optimization_no_electroNP_vary_max(
     m.fs.total_P_max.unfix()
     m.fs.total_P_max.fix(TP_max)
 
-    m.fs.eq_total_P_max[0].deactivate()
+    # m.fs.eq_total_P_max[0].deactivate()
 
 
 def run_optimization_with_aeration_tank_volume(
@@ -2662,6 +2663,7 @@ def plot_aeration_R7(num):
 def plot_COD_max(num):
     # 1D plot
     COD_max_list = np.linspace(0.0955, 0.0978, num)
+    # COD_max_list = np.linspace(0.096, 0.1, num)
     # COD_max_list = np.linspace(0.095, 0.0975, num)
 
     # No electroNP flowsheet
@@ -2669,7 +2671,7 @@ def plot_COD_max(num):
         COD_max=0.1,
         BOD5_max=0.01,
         TKN_max=0.007,
-        TP_max=0.005,
+        TP_max=0.68,
         has_electroNP=False,
         has_optimization=True,
     )
@@ -3104,70 +3106,114 @@ def plot_COD_max(num):
     ax1e.tick_params(axis="y", colors="tab:green")
     plt.locator_params(axis="y", nbins=8)
 
-    # Figure 3
-    fig3, ax3 = plt.subplots(figsize=(9, 5), layout="constrained")
-    ax3.set_xlabel("COD Max Concentration (mg/L)", fontsize=12)
+    # # Figure 3
+    # fig3, ax3 = plt.subplots(figsize=(9, 5), layout="constrained")
+    # ax3.set_xlabel("COD Max Concentration (mg/L)", fontsize=12)
+    #
+    # # O2
+    # ax3.plot(COD_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
+    # ax3.plot(
+    #     COD_max_list,
+    #     Ne_S_O2_out_list,
+    #     color="k",
+    #     linestyle="-.",
+    #     label="_O2 Concentration no electroNP",
+    # )
+    # # axb.set_ylim([0.86, 0.94])
+    # ax3.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
+    # ax3.tick_params(axis="x", labelsize=11)
+    # ax3.tick_params(axis="y", labelsize=11)
+    # plt.locator_params(axis="y", nbins=8)
+    #
+    # # organic P
+    # ax1f = ax3.twinx()
+    # ax1f.plot(
+    #     COD_max_list, P_org_out_list, color="tab:pink", label="_Organic P Concentration"
+    # )
+    # ax1f.plot(
+    #     COD_max_list,
+    #     Ne_P_org_out_list,
+    #     color="tab:pink",
+    #     linestyle="-.",
+    #     label="_Organic P no electroNP",
+    # )
+    # TP_max = 5 * np.ones(num)
+    # ax1f.plot(COD_max_list, TP_max, color="tab:grey", linestyle="--", label="_TP Max")
+    # # ax1f.set_ylim([5.3, 5.52])
+    # ax1f.set_xlabel("COD Max Concentration (mg/L)", fontsize=11)
+    # ax1f.set_ylabel("Organic Phosphorus Concentration (mg/L)", fontsize=11)
+    # ax1f.tick_params(axis="x", labelsize=11)
+    # ax1f.tick_params(axis="y", labelsize=11)
+    # ax1f.yaxis.label.set_color("tab:pink")
+    # ax1f.spines["right"].set_color("tab:pink")
+    # ax1f.tick_params(axis="y", colors="tab:pink")
+    # ax1f.legend()
+    # plt.locator_params(axis="y", nbins=8)
+    #
+    # # PO4
+    # ax1g = ax3.twinx()
+    # ax1g.spines.right.set_position(("axes", 1.15))
+    # # ax1g = brokenaxes(ylims=((0, 10), (700, 800)), hspace=0.25)
+    # ax1g.plot(COD_max_list, P_out_list, color="tab:red", label="_PO4 Concentration")
+    # ax1g.plot(
+    #     COD_max_list,
+    #     Ne_P_out_list,
+    #     color="tab:red",
+    #     linestyle="-.",
+    #     label="_PO4 no electroNP",
+    # )
+    # # ax1g.set_ylim([0, 240])
+    # ax1g.set_xlabel("COD Max Concentration (mg/L)", fontsize=11)
+    # ax1g.set_ylabel("PO4 Concentration (mg/L)", fontsize=11)
+    # ax1g.tick_params(axis="x", labelsize=11)
+    # ax1g.tick_params(axis="y", labelsize=11)
+    # ax1g.yaxis.label.set_color("tab:red")
+    # ax1g.spines["right"].set_color("tab:red")
+    # ax1g.tick_params(axis="y", colors="tab:red")
+    # plt.locator_params(axis="y", nbins=8)
 
-    # O2
-    ax3.plot(COD_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
-    ax3.plot(
-        COD_max_list,
-        Ne_S_O2_out_list,
-        color="k",
-        linestyle="-.",
-        label="_O2 Concentration no electroNP",
-    )
-    # axb.set_ylim([0.86, 0.94])
-    ax3.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
-    ax3.tick_params(axis="x", labelsize=11)
-    ax3.tick_params(axis="y", labelsize=11)
-    plt.locator_params(axis="y", nbins=8)
+    # Figure 3 - v3
+    fig3, ax3 = plt.subplots(figsize=(9, 5))
+    plt.gca().axes.get_yaxis().set_visible(False)
+    ax3.set_xlabel("COD Max Concentration (mg/L)", fontsize=11)
 
-    # organic P
-    ax1f = ax3.twinx()
-    ax1f.plot(
-        COD_max_list, P_org_out_list, color="tab:pink", label="_Organic P Concentration"
-    )
-    ax1f.plot(
-        COD_max_list,
-        Ne_P_org_out_list,
-        color="tab:pink",
-        linestyle="-.",
-        label="_Organic P no electroNP",
-    )
-    TP_max = 5 * np.ones(num)
-    ax1f.plot(COD_max_list, TP_max, color="tab:grey", linestyle="--", label="_TP Max")
-    # ax1f.set_ylim([5.3, 5.52])
-    ax1f.set_xlabel("COD Max Concentration (mg/L)", fontsize=11)
-    ax1f.set_ylabel("Organic Phosphorus Concentration (mg/L)", fontsize=11)
-    ax1f.tick_params(axis="x", labelsize=11)
-    ax1f.tick_params(axis="y", labelsize=11)
-    ax1f.yaxis.label.set_color("tab:pink")
-    ax1f.spines["right"].set_color("tab:pink")
-    ax1f.tick_params(axis="y", colors="tab:pink")
-    ax1f.legend()
-    plt.locator_params(axis="y", nbins=8)
-
-    # PO4
-    ax1g = ax3.twinx()
-    ax1g.spines.right.set_position(("axes", 1.15))
-    ax1g.plot(COD_max_list, P_out_list, color="tab:red", label="_PO4 Concentration")
-    ax1g.plot(
+    bax = brokenaxes(ylims=((0, 1), (675, 676)), hspace=0.15)
+    bax.plot(COD_max_list, P_out_list, color="tab:red", label="_PO4 Concentration")
+    bax.plot(
         COD_max_list,
         Ne_P_out_list,
         color="tab:red",
         linestyle="-.",
         label="_PO4 no electroNP",
     )
-    # ax1g.set_ylim([0, 240])
-    ax1g.set_xlabel("COD Max Concentration (mg/L)", fontsize=11)
-    ax1g.set_ylabel("PO4 Concentration (mg/L)", fontsize=11)
-    ax1g.tick_params(axis="x", labelsize=11)
-    ax1g.tick_params(axis="y", labelsize=11)
-    ax1g.yaxis.label.set_color("tab:red")
-    ax1g.spines["right"].set_color("tab:red")
-    ax1g.tick_params(axis="y", colors="tab:red")
+    # bax.set_xlabel("COD Max Concentration (mg/L)", fontsize=11)
+    bax.set_ylabel(
+        "PO4 Concentration (mg/L)", fontsize=11, color="tab:red", labelpad=40
+    )
+    # bax.tick_params(axis="x", labelsize=11)
+    bax.tick_params(axis="y", labelsize=11)
+    ax3.spines["left"].set_color("tab:red")
+    bax.tick_params(axis="y", colors="tab:red")
     plt.locator_params(axis="y", nbins=8)
+
+    ax3i = ax3.twinx()
+    ax3i.plot(
+        COD_max_list, P_org_out_list, color="tab:pink", label="_Organic P Concentration"
+    )
+    ax3i.plot(
+        COD_max_list,
+        Ne_P_org_out_list,
+        color="tab:pink",
+        linestyle="-.",
+        label="_Organic P no electroNP",
+    )
+    ax3i.set_ylabel("Organic Phosphorus Concentration (mg/L)", fontsize=11)
+    ax3i.tick_params(axis="y", labelsize=11)
+    ax3i.yaxis.label.set_color("tab:pink")
+    ax3i.spines["right"].set_color("tab:pink")
+    ax3i.tick_params(axis="y", colors="tab:pink")
+    plt.locator_params(axis="y", nbins=8)
+    ax3i.spines["left"].set_color("tab:red")
 
     # Figure i
     figi, axi = plt.subplots(figsize=(9, 5), layout="constrained")
@@ -3180,7 +3226,6 @@ def plot_COD_max(num):
         label="_LCOW no electroNP",
     )
     # axb.set_ylim([0.86, 0.94])
-    axi.set_xlabel("COD Max Concentration (mg/L)", fontsize=11)
     axi.set_ylabel("Levelized Cost of Water (/$/m$^3$ (2023))", fontsize=11)
     axi.tick_params(axis="x", labelsize=11)
     axi.tick_params(axis="y", labelsize=11)
@@ -3581,7 +3626,7 @@ def plot_BOD5_max(num):
         COD_max=0.1,
         BOD5_max=0.01,
         TKN_max=0.007,
-        TP_max=0.005,
+        TP_max=0.68,
         has_electroNP=False,
         has_optimization=True,
     )
@@ -4021,74 +4066,120 @@ def plot_BOD5_max(num):
     ax1e.tick_params(axis="y", colors="tab:green")
     plt.locator_params(axis="y", nbins=8)
 
-    # Figure 3
-    fig3, ax3 = plt.subplots(figsize=(9, 5), layout="constrained")
-    ax3.set_xlabel("BOD Max Concentration (mg/L)", fontsize=12)
+    # # Figure 3
+    # fig3, ax3 = plt.subplots(figsize=(9, 5), layout="constrained")
+    # ax3.set_xlabel("BOD Max Concentration (mg/L)", fontsize=12)
+    #
+    # # O2
+    # ax3.plot(BOD5_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
+    # ax3.plot(
+    #     BOD5_max_list,
+    #     Ne_S_O2_out_list,
+    #     color="k",
+    #     linestyle="-.",
+    #     label="_O2 Concentration no electroNP",
+    # )
+    # # axb.set_ylim([0.86, 0.94])
+    # ax3.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
+    # ax3.tick_params(axis="x", labelsize=11)
+    # ax3.tick_params(axis="y", labelsize=11)
+    # plt.locator_params(axis="y", nbins=8)
+    #
+    # # organic P
+    # ax1f = ax3.twinx()
+    # ax1f.plot(
+    #     BOD5_max_list,
+    #     P_org_out_list,
+    #     color="tab:pink",
+    #     label="_Organic P Concentration",
+    # )
+    # ax1f.plot(
+    #     BOD5_max_list,
+    #     Ne_P_org_out_list,
+    #     color="tab:pink",
+    #     linestyle="-.",
+    #     label="_Organic P Concentration no electroNP",
+    # )
+    # TP_max = 5 * np.ones(num)
+    # ax1f.plot(BOD5_max_list, TP_max, color="tab:grey", linestyle="--", label="TP Max")
+    # # ax1f.set_ylim([5.3, 5.52])
+    # ax1f.set_xlabel("BOD Max Concentration (mg/L)", fontsize=11)
+    # ax1f.set_ylabel("Organic Phosphorus Concentration (mg/L)", fontsize=11)
+    # ax1f.tick_params(axis="x", labelsize=11)
+    # ax1f.tick_params(axis="y", labelsize=11)
+    # ax1f.yaxis.label.set_color("tab:pink")
+    # ax1f.spines["right"].set_color("tab:pink")
+    # ax1f.tick_params(axis="y", colors="tab:pink")
+    # ax1f.legend()
+    # plt.locator_params(axis="y", nbins=8)
+    #
+    # # PO4
+    # ax1g = ax3.twinx()
+    # ax1g.spines.right.set_position(("axes", 1.15))
+    # ax1g.plot(BOD5_max_list, P_out_list, color="tab:red", label="_PO4 Concentration")
+    # ax1g.plot(
+    #     BOD5_max_list,
+    #     Ne_P_out_list,
+    #     color="tab:red",
+    #     linestyle="-.",
+    #     label="_PO4 Concentration no electroNP",
+    # )
+    #
+    # # ax1g.set_ylim([0, 240])
+    # ax1g.set_xlabel("BOD Max Concentration (mg/L)", fontsize=11)
+    # ax1g.set_ylabel("PO4 Concentration (mg/L)", fontsize=11)
+    # ax1g.tick_params(axis="x", labelsize=11)
+    # ax1g.tick_params(axis="y", labelsize=11)
+    # ax1g.yaxis.label.set_color("tab:red")
+    # ax1g.spines["right"].set_color("tab:red")
+    # ax1g.tick_params(axis="y", colors="tab:red")
+    # plt.locator_params(axis="y", nbins=8)
 
-    # O2
-    ax3.plot(BOD5_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
-    ax3.plot(
+    # Figure 3 - v3
+    fig3, ax3 = plt.subplots(figsize=(9, 5))
+    plt.gca().axes.get_yaxis().set_visible(False)
+    ax3.set_xlabel("BOD5 Max Concentration (mg/L)", fontsize=11)
+
+    bax = brokenaxes(ylims=((0, 1), (675, 676)), hspace=0.15)
+    bax.plot(BOD5_max_list, P_out_list, color="tab:red", label="_PO4 Concentration")
+    bax.plot(
         BOD5_max_list,
-        Ne_S_O2_out_list,
-        color="k",
+        Ne_P_out_list,
+        color="tab:red",
         linestyle="-.",
-        label="_O2 Concentration no electroNP",
+        label="_PO4 no electroNP",
     )
-    # axb.set_ylim([0.86, 0.94])
-    ax3.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
-    ax3.tick_params(axis="x", labelsize=11)
-    ax3.tick_params(axis="y", labelsize=11)
+    # bax.set_xlabel("COD Max Concentration (mg/L)", fontsize=11)
+    bax.set_ylabel(
+        "PO4 Concentration (mg/L)", fontsize=11, color="tab:red", labelpad=40
+    )
+    # bax.tick_params(axis="x", labelsize=11)
+    bax.tick_params(axis="y", labelsize=11)
+    ax3.spines["left"].set_color("tab:red")
+    bax.tick_params(axis="y", colors="tab:red")
     plt.locator_params(axis="y", nbins=8)
 
-    # organic P
-    ax1f = ax3.twinx()
-    ax1f.plot(
+    ax3i = ax3.twinx()
+    ax3i.plot(
         BOD5_max_list,
         P_org_out_list,
         color="tab:pink",
         label="_Organic P Concentration",
     )
-    ax1f.plot(
+    ax3i.plot(
         BOD5_max_list,
         Ne_P_org_out_list,
         color="tab:pink",
         linestyle="-.",
-        label="_Organic P Concentration no electroNP",
+        label="_Organic P no electroNP",
     )
-    TP_max = 5 * np.ones(num)
-    ax1f.plot(BOD5_max_list, TP_max, color="tab:grey", linestyle="--", label="TP Max")
-    # ax1f.set_ylim([5.3, 5.52])
-    ax1f.set_xlabel("BOD Max Concentration (mg/L)", fontsize=11)
-    ax1f.set_ylabel("Organic Phosphorus Concentration (mg/L)", fontsize=11)
-    ax1f.tick_params(axis="x", labelsize=11)
-    ax1f.tick_params(axis="y", labelsize=11)
-    ax1f.yaxis.label.set_color("tab:pink")
-    ax1f.spines["right"].set_color("tab:pink")
-    ax1f.tick_params(axis="y", colors="tab:pink")
-    ax1f.legend()
+    ax3i.set_ylabel("Organic Phosphorus Concentration (mg/L)", fontsize=11)
+    ax3i.tick_params(axis="y", labelsize=11)
+    ax3i.yaxis.label.set_color("tab:pink")
+    ax3i.spines["right"].set_color("tab:pink")
+    ax3i.tick_params(axis="y", colors="tab:pink")
     plt.locator_params(axis="y", nbins=8)
-
-    # PO4
-    ax1g = ax3.twinx()
-    ax1g.spines.right.set_position(("axes", 1.15))
-    ax1g.plot(BOD5_max_list, P_out_list, color="tab:red", label="_PO4 Concentration")
-    ax1g.plot(
-        BOD5_max_list,
-        Ne_P_out_list,
-        color="tab:red",
-        linestyle="-.",
-        label="_PO4 Concentration no electroNP",
-    )
-
-    # ax1g.set_ylim([0, 240])
-    ax1g.set_xlabel("BOD Max Concentration (mg/L)", fontsize=11)
-    ax1g.set_ylabel("PO4 Concentration (mg/L)", fontsize=11)
-    ax1g.tick_params(axis="x", labelsize=11)
-    ax1g.tick_params(axis="y", labelsize=11)
-    ax1g.yaxis.label.set_color("tab:red")
-    ax1g.spines["right"].set_color("tab:red")
-    ax1g.tick_params(axis="y", colors="tab:red")
-    plt.locator_params(axis="y", nbins=8)
+    ax3i.spines["left"].set_color("tab:red")
 
     # Figure i
     figi, axi = plt.subplots(figsize=(9, 5), layout="constrained")
@@ -4508,7 +4599,7 @@ def plot_TKN_max(num):
         COD_max=0.1,
         BOD5_max=0.01,
         TKN_max=0.007,
-        TP_max=0.005,
+        TP_max=0.68,
         has_electroNP=False,
         has_optimization=True,
     )
@@ -4942,70 +5033,113 @@ def plot_TKN_max(num):
     ax1e.tick_params(axis="y", colors="tab:green")
     plt.locator_params(axis="y", nbins=8)
 
-    # Figure 3
-    fig3, ax3 = plt.subplots(figsize=(9, 5), layout="constrained")
-    ax3.set_xlabel("TKN Max Concentration (mg/L)", fontsize=12)
+    # # Figure 3
+    # fig3, ax3 = plt.subplots(figsize=(9, 5), layout="constrained")
+    # ax3.set_xlabel("TKN Max Concentration (mg/L)", fontsize=12)
+    #
+    # # O2
+    # ax3.plot(TKN_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
+    # ax3.plot(
+    #     TKN_max_list,
+    #     Ne_S_O2_out_list,
+    #     color="k",
+    #     linestyle="-.",
+    #     label="_O2 Concentration no electroNP",
+    # )
+    # # axb.set_ylim([0.86, 0.94])
+    # ax3.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
+    # ax3.tick_params(axis="x", labelsize=11)
+    # ax3.tick_params(axis="y", labelsize=11)
+    # plt.locator_params(axis="y", nbins=8)
+    #
+    # # organic P
+    # ax1f = ax3.twinx()
+    # ax1f.plot(
+    #     TKN_max_list, P_org_out_list, color="tab:pink", label="_Organic P Concentration"
+    # )
+    # ax1f.plot(
+    #     TKN_max_list,
+    #     Ne_P_org_out_list,
+    #     color="tab:pink",
+    #     linestyle="-.",
+    #     label="_Organic P Concentration no electroNP",
+    # )
+    # TP_max = 5 * np.ones(num)
+    # ax1f.plot(TKN_max_list, TP_max, color="tab:grey", linestyle="--", label="TP Max")
+    # # ax1f.set_ylim([5.3, 5.52])
+    # ax1f.set_xlabel("TKN Max Concentration (mg/L)", fontsize=11)
+    # ax1f.set_ylabel("Organic Phosphorus Concentration (mg/L)", fontsize=11)
+    # ax1f.tick_params(axis="x", labelsize=11)
+    # ax1f.tick_params(axis="y", labelsize=11)
+    # ax1f.yaxis.label.set_color("tab:pink")
+    # ax1f.spines["right"].set_color("tab:pink")
+    # ax1f.tick_params(axis="y", colors="tab:pink")
+    # ax1f.legend()
+    # plt.locator_params(axis="y", nbins=8)
+    #
+    # # PO4
+    # ax1g = ax3.twinx()
+    # ax1g.spines.right.set_position(("axes", 1.15))
+    # ax1g.plot(TKN_max_list, P_out_list, color="tab:red", label="_PO4 Concentration")
+    # ax1g.plot(
+    #     TKN_max_list,
+    #     Ne_P_out_list,
+    #     color="tab:red",
+    #     linestyle="-.",
+    #     label="_PO4 Concentration no electroNP",
+    # )
+    # # ax1g.set_ylim([0, 240])
+    # ax1g.set_xlabel("TKN Max Concentration (mg/L)", fontsize=11)
+    # ax1g.set_ylabel("PO4 Concentration (mg/L)", fontsize=11)
+    # ax1g.tick_params(axis="x", labelsize=11)
+    # ax1g.tick_params(axis="y", labelsize=11)
+    # ax1g.yaxis.label.set_color("tab:red")
+    # ax1g.spines["right"].set_color("tab:red")
+    # ax1g.tick_params(axis="y", colors="tab:red")
+    # plt.locator_params(axis="y", nbins=8)
 
-    # O2
-    ax3.plot(TKN_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
-    ax3.plot(
-        TKN_max_list,
-        Ne_S_O2_out_list,
-        color="k",
-        linestyle="-.",
-        label="_O2 Concentration no electroNP",
-    )
-    # axb.set_ylim([0.86, 0.94])
-    ax3.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
-    ax3.tick_params(axis="x", labelsize=11)
-    ax3.tick_params(axis="y", labelsize=11)
-    plt.locator_params(axis="y", nbins=8)
+    # Figure 3 - v3
+    fig3, ax3 = plt.subplots(figsize=(9, 5))
+    plt.gca().axes.get_yaxis().set_visible(False)
+    ax3.set_xlabel("TKN Max Concentration (mg/L)", fontsize=11)
 
-    # organic P
-    ax1f = ax3.twinx()
-    ax1f.plot(
-        TKN_max_list, P_org_out_list, color="tab:pink", label="_Organic P Concentration"
-    )
-    ax1f.plot(
-        TKN_max_list,
-        Ne_P_org_out_list,
-        color="tab:pink",
-        linestyle="-.",
-        label="_Organic P Concentration no electroNP",
-    )
-    TP_max = 5 * np.ones(num)
-    ax1f.plot(TKN_max_list, TP_max, color="tab:grey", linestyle="--", label="TP Max")
-    # ax1f.set_ylim([5.3, 5.52])
-    ax1f.set_xlabel("TKN Max Concentration (mg/L)", fontsize=11)
-    ax1f.set_ylabel("Organic Phosphorus Concentration (mg/L)", fontsize=11)
-    ax1f.tick_params(axis="x", labelsize=11)
-    ax1f.tick_params(axis="y", labelsize=11)
-    ax1f.yaxis.label.set_color("tab:pink")
-    ax1f.spines["right"].set_color("tab:pink")
-    ax1f.tick_params(axis="y", colors="tab:pink")
-    ax1f.legend()
-    plt.locator_params(axis="y", nbins=8)
-
-    # PO4
-    ax1g = ax3.twinx()
-    ax1g.spines.right.set_position(("axes", 1.15))
-    ax1g.plot(TKN_max_list, P_out_list, color="tab:red", label="_PO4 Concentration")
-    ax1g.plot(
+    bax = brokenaxes(ylims=((0, 1), (675, 676)), hspace=0.15)
+    bax.plot(TKN_max_list, P_out_list, color="tab:red", label="_PO4 Concentration")
+    bax.plot(
         TKN_max_list,
         Ne_P_out_list,
         color="tab:red",
         linestyle="-.",
-        label="_PO4 Concentration no electroNP",
+        label="_PO4 no electroNP",
     )
-    # ax1g.set_ylim([0, 240])
-    ax1g.set_xlabel("TKN Max Concentration (mg/L)", fontsize=11)
-    ax1g.set_ylabel("PO4 Concentration (mg/L)", fontsize=11)
-    ax1g.tick_params(axis="x", labelsize=11)
-    ax1g.tick_params(axis="y", labelsize=11)
-    ax1g.yaxis.label.set_color("tab:red")
-    ax1g.spines["right"].set_color("tab:red")
-    ax1g.tick_params(axis="y", colors="tab:red")
+    # bax.set_xlabel("COD Max Concentration (mg/L)", fontsize=11)
+    bax.set_ylabel(
+        "PO4 Concentration (mg/L)", fontsize=11, color="tab:red", labelpad=40
+    )
+    # bax.tick_params(axis="x", labelsize=11)
+    bax.tick_params(axis="y", labelsize=11)
+    ax3.spines["left"].set_color("tab:red")
+    bax.tick_params(axis="y", colors="tab:red")
     plt.locator_params(axis="y", nbins=8)
+
+    ax3i = ax3.twinx()
+    ax3i.plot(
+        TKN_max_list, P_org_out_list, color="tab:pink", label="_Organic P Concentration"
+    )
+    ax3i.plot(
+        TKN_max_list,
+        Ne_P_org_out_list,
+        color="tab:pink",
+        linestyle="-.",
+        label="_Organic P no electroNP",
+    )
+    ax3i.set_ylabel("Organic Phosphorus Concentration (mg/L)", fontsize=11)
+    ax3i.tick_params(axis="y", labelsize=11)
+    ax3i.yaxis.label.set_color("tab:pink")
+    ax3i.spines["right"].set_color("tab:pink")
+    ax3i.tick_params(axis="y", colors="tab:pink")
+    plt.locator_params(axis="y", nbins=8)
+    ax3i.spines["left"].set_color("tab:red")
 
     # Figure i
     figi, axi = plt.subplots(figsize=(9, 5), layout="constrained")
@@ -5859,14 +5993,14 @@ if __name__ == "__main__":
     #     has_optimization=True,
     # )
 
-    m, results = run_optimization_vary_max(
-        COD_max=0.1,
-        BOD5_max=0.01,
-        TKN_max=0.007,
-        TP_max=0.005,
-        has_electroNP=False,
-        has_optimization=True,
-    )
+    # m, results = run_optimization_vary_max(
+    #     COD_max=0.1,
+    #     BOD5_max=0.01,
+    #     TKN_max=0.007,
+    #     TP_max=0.68,
+    #     has_electroNP=False,
+    #     has_optimization=True,
+    # )
 
     # plot_CP(num=5)
     # plot_CP_effluent(num=25)
@@ -5881,8 +6015,8 @@ if __name__ == "__main__":
     # plot_aeration_R7(num=15)
 
     # plot_COD_max(num=19)
-    plot_BOD5_max(num=30)
-    # plot_TKN_max(num=15)
+    # plot_BOD5_max(num=30)
+    plot_TKN_max(num=15)
     # plot_TP_max(num=15)
     # plot_aeration_tank_volume(num=15)
 
