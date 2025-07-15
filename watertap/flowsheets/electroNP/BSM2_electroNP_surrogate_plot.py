@@ -6002,7 +6002,7 @@ if __name__ == "__main__":
     #     has_optimization=True,
     # )
 
-    # plot_CP(num=5)
+    plot_CP(num=5)
     # plot_CP_effluent(num=25)
     # plot_rAV(num=5)
     # plot_rAV_effluent(num=25)
@@ -6016,7 +6016,7 @@ if __name__ == "__main__":
 
     # plot_COD_max(num=19)
     # plot_BOD5_max(num=30)
-    plot_TKN_max(num=15)
+    # plot_TKN_max(num=15)
     # plot_TP_max(num=15)
     # plot_aeration_tank_volume(num=15)
 
