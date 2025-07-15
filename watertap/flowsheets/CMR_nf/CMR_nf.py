@@ -225,28 +225,28 @@ def solve(m):
 
 def display_performance_metrics(m):
     print("---- System Performance Metrics ----")
-    f_in = pyo.units.convert(
-        m.fs.unit.properties_in[0].flow_vol, to_units=pyo.units.m**3 / pyo.units.hr
-    )
-    print(f"Influent flow: " f"{pyo.value(f_in):.3g}" f"{pyo.units.get_units(f_in)}")
-    f_permeate = pyo.units.convert(
-        m.fs.unit.properties_permeate[0].flow_vol,
-        to_units=pyo.units.m**3 / pyo.units.hr,
-    )
-    print(
-        f"Permeate flow: "
-        f"{pyo.value(f_permeate):.3g}"
-        f"{pyo.units.get_units(f_permeate)}"
-    )
-    f_retentate = pyo.units.convert(
-        m.fs.unit.properties_retentate[0].flow_vol,
-        to_units=pyo.units.m**3 / pyo.units.hr,
-    )
-    print(
-        f"Retentate flow: "
-        f"{pyo.value(f_retentate):.3g}"
-        f"{pyo.units.get_units(f_retentate)}"
-    )
+    # f_in = pyo.units.convert(
+    #     m.fs.unit.properties_in[0].flow_vol, to_units=pyo.units.m**3 / pyo.units.hr
+    # )
+    # print(f"Influent flow: " f"{pyo.value(f_in):.3g}" f"{pyo.units.get_units(f_in)}")
+    # f_permeate = pyo.units.convert(
+    #     m.fs.unit.properties_permeate[0].flow_vol,
+    #     to_units=pyo.units.m**3 / pyo.units.hr,
+    # )
+    # print(
+    #     f"Permeate flow: "
+    #     f"{pyo.value(f_permeate):.3g}"
+    #     f"{pyo.units.get_units(f_permeate)}"
+    # )
+    # f_retentate = pyo.units.convert(
+    #     m.fs.unit.properties_retentate[0].flow_vol,
+    #     to_units=pyo.units.m**3 / pyo.units.hr,
+    # )
+    # print(
+    #     f"Retentate flow: "
+    #     f"{pyo.value(f_retentate):.3g}"
+    #     f"{pyo.units.get_units(f_retentate)}"
+    # )
     water_recovery = m.fs.unit.recovery_vol_phase[0, "Liq"]
     print(f"Volumetric-based recovery: " f"{pyo.value(water_recovery):.3g}")
     Co_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Co_2+"]
@@ -404,14 +404,14 @@ def display_performance_metrics(m):
     )
 
     print("\n---- Permeate Metrics ----")
-    f_retentate = pyo.units.convert(
-        m.fs.unit.properties_retentate[0].flow_vol,
+    f_permeate = pyo.units.convert(
+        m.fs.unit.properties_permeate[0].flow_vol,
         to_units=pyo.units.m**3 / pyo.units.hr,
     )
     print(
-        f"Retentate flow: "
-        f"{pyo.value(f_retentate):.3g}"
-        f"{pyo.units.get_units(f_retentate)}"
+        f"Permeate flow: "
+        f"{pyo.value(f_permeate):.3g}"
+        f"{pyo.units.get_units(f_permeate)}"
     )
     Co_permeate = pyo.units.convert(
         m.fs.unit.properties_permeate[0].conc_mass_phase_comp["Liq", "Co_2+"],
