@@ -2923,32 +2923,34 @@ def plot_COD_max(num):
 
     # Figure b
     figb, axb = plt.subplots(figsize=(9, 5), layout="constrained")
-    axb.plot(COD_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
+    axb.plot(COD_max_list, S_O2_out_list, color="k", label="O2 Concentration")
     axb.plot(
         COD_max_list,
         Ne_S_O2_out_list,
         color="k",
         linestyle="-.",
-        label="_O2 Concentration no electroNP",
+        label="O2 Concentration (no electroNP)",
     )
     # axb.set_ylim([0.86, 0.94])
+    axb.set_xlim([95.62, 97.8])
     axb.set_xlabel("COD Max Concentration (mg/L)", fontsize=11)
     axb.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
     axb.tick_params(axis="x", labelsize=11)
     axb.tick_params(axis="y", labelsize=11)
+    axb.legend(loc="upper right", bbox_to_anchor=(1, 1))
     plt.locator_params(axis="y", nbins=8)
 
     # aeration energy
     axb1 = axb.twinx()
     axb1.plot(
-        COD_max_list, Ener_aeration_out, color="tab:brown", label="_Aeration energy"
+        COD_max_list, Ener_aeration_out, color="tab:brown", label="Aeration energy"
     )
     axb1.plot(
         COD_max_list,
         Ne_S_O2_out_list,
         color="tab:brown",
         linestyle="-.",
-        label="_Aeration energy no electroNP",
+        label="Aeration energy (no electroNP)",
     )
     # axb1.plot(CP_list, TKN_max, color="tab:brown", linestyle='--', label='_TKN Max')
     # axb1.set_ylim([6.72, 6.74])
@@ -2958,6 +2960,7 @@ def plot_COD_max(num):
     axb1.yaxis.label.set_color("tab:brown")
     axb1.spines["right"].set_color("tab:brown")
     axb1.tick_params(axis="y", colors="tab:brown")
+    axb1.legend(loc="upper right", bbox_to_anchor=(1, 0.85))
     plt.locator_params(axis="y", nbins=8)
 
     # Figure 1
@@ -3217,38 +3220,42 @@ def plot_COD_max(num):
 
     # Figure i
     figi, axi = plt.subplots(figsize=(9, 5), layout="constrained")
-    axi.plot(COD_max_list, LCOW_list, color="k", label="_LCOW")
+    axi.set_xlabel("COD Max Concentration (mg/L)", fontsize=11)
+    axi.plot(COD_max_list, LCOW_list, color="k", label="LCOW")
     axi.plot(
         COD_max_list,
         Ne_LCOW_list,
         color="k",
         linestyle="-.",
-        label="_LCOW no electroNP",
+        label="LCOW (no electroNP)",
     )
-    # axb.set_ylim([0.86, 0.94])
+    axi.set_ylim([0.6, 0.9])
+    axi.set_xlim([95.62, 97.8])
     axi.set_ylabel("Levelized Cost of Water (/$/m$^3$ (2023))", fontsize=11)
     axi.tick_params(axis="x", labelsize=11)
     axi.tick_params(axis="y", labelsize=11)
+    axi.legend(loc="upper right", bbox_to_anchor=(1, 1))
     plt.locator_params(axis="y", nbins=8)
 
     # SEC
     axi1 = axi.twinx()
-    axi1.plot(COD_max_list, SEC_list, color="tab:brown", label="_SEC")
+    axi1.plot(COD_max_list, SEC_list, color="tab:blue", label="SEC")
     axi1.plot(
         COD_max_list,
         Ne_SEC_list,
-        color="tab:brown",
+        color="tab:blue",
         linestyle="-.",
-        label="_SEC no electroNP",
+        label="SEC (no electroNP)",
     )
     # axb1.plot(CP_list, TKN_max, color="tab:brown", linestyle='--', label='_TKN Max')
-    # axb1.set_ylim([6.72, 6.74])
+    axb1.set_ylim([0, 3])
     axi1.set_ylabel("Specific Energy Consumption (kWh/m$^3$)", fontsize=11)
     axi1.tick_params(axis="x", labelsize=11)
     axi1.tick_params(axis="y", labelsize=11)
-    axi1.yaxis.label.set_color("tab:brown")
-    axi1.spines["right"].set_color("tab:brown")
-    axi1.tick_params(axis="y", colors="tab:brown")
+    axi1.yaxis.label.set_color("tab:blue")
+    axi1.spines["right"].set_color("tab:blue")
+    axi1.tick_params(axis="y", colors="tab:blue")
+    axi1.legend(loc="upper right", bbox_to_anchor=(1, 0.85))
     plt.locator_params(axis="y", nbins=8)
 
     plt.show(block=True)
@@ -4850,32 +4857,34 @@ def plot_TKN_max(num):
 
     # Figure b
     figb, axb = plt.subplots(figsize=(9, 5), layout="constrained")
-    axb.plot(TKN_max_list, S_O2_out_list, color="k", label="_O2 Concentration")
+    axb.plot(TKN_max_list, S_O2_out_list, color="k", label="O2 Concentration")
     axb.plot(
         TKN_max_list,
         Ne_S_O2_out_list,
         color="k",
         linestyle="-.",
-        label="_O2 Concentration no electroNP",
+        label="O2 Concentration (no electroNP)",
     )
+    axb.set_xlim([6.7, 8])
     # axb.set_ylim([0.86, 0.94])
     axb.set_xlabel("TKN Max Concentration (mg/L)", fontsize=11)
     axb.set_ylabel("O2 Concentration (mg/L)", fontsize=11)
     axb.tick_params(axis="x", labelsize=11)
     axb.tick_params(axis="y", labelsize=11)
+    axb.legend(loc="upper right", bbox_to_anchor=(1, 0.9))
     plt.locator_params(axis="y", nbins=8)
 
     # aeration energy
     axb1 = axb.twinx()
     axb1.plot(
-        TKN_max_list, Ener_aeration_out, color="tab:brown", label="_Aeration energy"
+        TKN_max_list, Ener_aeration_out, color="tab:brown", label="Aeration energy"
     )
     axb1.plot(
         TKN_max_list,
         Ne_Ener_aeration_out,
         color="tab:brown",
         linestyle="-.",
-        label="_Aeration energy no electroNP",
+        label="Aeration energy (no electroNP)",
     )
     # axb1.plot(CP_list, TKN_max, color="tab:brown", linestyle='--', label='_TKN Max')
     # axb1.set_ylim([6.72, 6.74])
@@ -4885,6 +4894,7 @@ def plot_TKN_max(num):
     axb1.yaxis.label.set_color("tab:brown")
     axb1.spines["right"].set_color("tab:brown")
     axb1.tick_params(axis="y", colors="tab:brown")
+    axb1.legend(loc="upper right", bbox_to_anchor=(1, 0.75))
     plt.locator_params(axis="y", nbins=8)
 
     # Figure 1
@@ -5143,39 +5153,43 @@ def plot_TKN_max(num):
 
     # Figure i
     figi, axi = plt.subplots(figsize=(9, 5), layout="constrained")
-    axi.plot(TKN_max_list, LCOW_list, color="k", label="_LCOW")
+    axi.set_xlabel("TKN Max Concentration (mg/L)", fontsize=11)
+    axi.plot(TKN_max_list, LCOW_list, color="k", label="LCOW")
     axi.plot(
         TKN_max_list,
         Ne_LCOW_list,
         color="k",
         linestyle="-.",
-        label="_LCOW no electroNP",
+        label="LCOW (no electroNP)",
     )
+    axi.set_xlim([6.7, 8])
     # axb.set_ylim([0.86, 0.94])
     axi.set_xlabel("TKN Max Concentration (mg/L)", fontsize=11)
     axi.set_ylabel("Levelized Cost of Water (/$/m$^3$ (2023))", fontsize=11)
     axi.tick_params(axis="x", labelsize=11)
     axi.tick_params(axis="y", labelsize=11)
+    axi.legend(loc="upper right", bbox_to_anchor=(1, 0.9))
     plt.locator_params(axis="y", nbins=8)
 
     # SEC
     axi1 = axi.twinx()
-    axi1.plot(TKN_max_list, SEC_list, color="tab:brown", label="_SEC")
+    axi1.plot(TKN_max_list, SEC_list, color="tab:blue", label="SEC")
     axi1.plot(
         TKN_max_list,
         Ne_SEC_list,
-        color="tab:brown",
+        color="tab:blue",
         linestyle="-.",
-        label="_SEC no electroNP",
+        label="SEC (no electroNP)",
     )
     # axb1.plot(CP_list, TKN_max, color="tab:brown", linestyle='--', label='_TKN Max')
     # axb1.set_ylim([6.72, 6.74])
     axi1.set_ylabel("Specific Energy Consumption (kWh/m$^3$)", fontsize=11)
     axi1.tick_params(axis="x", labelsize=11)
     axi1.tick_params(axis="y", labelsize=11)
-    axi1.yaxis.label.set_color("tab:brown")
-    axi1.spines["right"].set_color("tab:brown")
-    axi1.tick_params(axis="y", colors="tab:brown")
+    axi1.yaxis.label.set_color("tab:blue")
+    axi1.spines["right"].set_color("tab:blue")
+    axi1.tick_params(axis="y", colors="tab:blue")
+    axi1.legend(loc="upper right", bbox_to_anchor=(1, 0.75))
     plt.locator_params(axis="y", nbins=8)
 
     plt.show(block=True)
@@ -5939,6 +5953,100 @@ def plot_aeration_tank_volume(num):
     plt.show(block=True)
 
 
+def stackplot_COD_max(num):
+    # 1D plot
+    COD_max_list = np.linspace(0.0955, 0.0978, num)
+    # COD_max_list = np.linspace(0.096, 0.1, num)
+    # COD_max_list = np.linspace(0.095, 0.0975, num)
+
+    # No electroNP flowsheet
+    m, results = run_optimization_vary_max(
+        COD_max=0.1,
+        BOD5_max=0.01,
+        TKN_max=0.007,
+        TP_max=0.68,
+        has_electroNP=False,
+        has_optimization=True,
+    )
+
+    Ne_Ener_aeration = pyo.value(m.fs.costing.aeration_energy)
+    Ne_LCOW = pyo.value(m.fs.costing.LCOW)
+    Ne_SEC = pyo.value(m.fs.costing.specific_energy_consumption)
+
+    # aeration energy
+    Ne_Ener_aeration_list = Ne_Ener_aeration * np.ones(num)
+
+    # LCOW
+    Ne_LCOW_list = Ne_LCOW * np.ones(num)
+
+    # SEC
+    Ne_SEC_list = Ne_SEC * np.ones(num)
+
+    # electroNP flowsheet
+    # LCOW
+    LCOW_list = np.zeros(num)
+    LCOW_list[:] = np.nan
+
+    # SEC
+    SEC_list = np.zeros(num)
+    SEC_list[:] = np.nan
+
+    # aeration energy
+    Ener_aeration_list = np.zeros(num)
+    Ener_aeration_list[:] = np.nan
+
+    # electroNP SEC
+    SEC_electroNP_list = np.zeros(num)
+    SEC_electroNP_list[:] = np.nan
+
+    for i in range(0, num):
+        try:
+            m, results = run_optimization_vary_max(
+                COD_max=COD_max_list[i],
+                BOD5_max=0.01,
+                TKN_max=0.007,
+                TP_max=0.005,
+                has_electroNP=True,
+                has_optimization=True,
+            )
+
+            LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
+            SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+            Ener_aeration_list[i] = pyo.value(m.fs.costing.aeration_energy)
+            SEC_electroNP_list[i] = pyo.value(m.fs.costing.electroNP_energy_consumption)
+        except:
+            pass
+
+    LCOW_list = interp_1d(LCOW_list)
+    SEC_list = interp_1d(SEC_list)
+    Ener_aeration_list = interp_1d(Ener_aeration_list)
+    SEC_electroNP_list = interp_1d(SEC_electroNP_list)
+
+    COD_max_list = 1000 * COD_max_list
+
+    # Figure 1
+    fig1, ax1 = plt.subplots(figsize=(7, 5), layout="constrained")
+    stacked_1 = [a + b for a, b in zip(Ener_aeration_list, SEC_electroNP_list)]
+    SEC_other = [a - b for a, b in zip(SEC_list, stacked_1)]
+    stacked_cols = [Ener_aeration_list, SEC_electroNP_list, SEC_other]
+    labels = ["Aeration energy", "electroN-P", "other"]
+    hatches = ["/", "\\", "|", "-", "+", "x", "o", "O", ".", "*"]
+    ax1.stackplot(COD_max_list, stacked_cols, labels=labels, hatch=hatches)
+    ax1.plot(
+        COD_max_list,
+        Ne_SEC_list,
+        color="k",
+        linestyle="-.",
+        label="SEC (no electroNP)",
+    )
+    ax1.set_xlim(95.62, 97.8)
+    ax1.set_xlabel("COD Max Concentration (mg/L)", fontsize=14)
+    ax1.set_ylabel("SEC (kWh/m3)", fontsize=14)
+    ax1.legend()
+
+    plt.show(block=True)
+
+
 def interp_1d(array):
     # Making sequences for interp
     ok = ~np.isnan(array)
@@ -6002,7 +6110,7 @@ if __name__ == "__main__":
     #     has_optimization=True,
     # )
 
-    plot_CP(num=5)
+    # plot_CP(num=5)
     # plot_CP_effluent(num=25)
     # plot_rAV(num=5)
     # plot_rAV_effluent(num=25)
@@ -6022,3 +6130,5 @@ if __name__ == "__main__":
 
     # plot_COD_max_no_electroNP(num=15)
     # plot_BOD5_max_no_electroNP(num=15)
+
+    stackplot_COD_max(num=19)

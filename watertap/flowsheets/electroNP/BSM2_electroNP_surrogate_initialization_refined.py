@@ -93,6 +93,7 @@ from watertap.costing.unit_models.clarifier import (
 
 from pyomo.environ import *
 from watertap.unit_models.aeration_tank import AerationTank, ElectricityConsumption
+from watertap.costing.unit_models.pump import cost_pump, PumpType
 
 from idaes.core.util.model_diagnostics import DegeneracyHunter
 from idaes.core.util.model_diagnostics import DiagnosticsToolbox
@@ -1258,6 +1259,11 @@ def add_costing(m):
         flowsheet_costing_block=m.fs.costing,
         costing_method=cost_circular_clarifier,
     )
+    m.fs.P1.costing = UnitModelCostingBlock(
+        flowsheet_costing_block=m.fs.costing,
+        costing_method=cost_pump,
+        costing_method_arguments={"pump_type": PumpType.low_pressure},
+    )
 
     m.fs.AD.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
     m.fs.dewater.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
@@ -1803,7 +1809,7 @@ def display_design(m):
 if __name__ == "__main__":
     # This method builds and runs a steady state activated sludge flowsheet.
     m, results = main(
-        has_electroNP=False,
+        has_electroNP=True,
         has_optimization=False,
         objective=objective_fun.LCOW,
         has_effluent_constraints=True,
