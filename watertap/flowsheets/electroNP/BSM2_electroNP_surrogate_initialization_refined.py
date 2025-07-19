@@ -1259,11 +1259,11 @@ def add_costing(m):
         flowsheet_costing_block=m.fs.costing,
         costing_method=cost_circular_clarifier,
     )
-    m.fs.P1.costing = UnitModelCostingBlock(
-        flowsheet_costing_block=m.fs.costing,
-        costing_method=cost_pump,
-        costing_method_arguments={"pump_type": PumpType.low_pressure},
-    )
+    # m.fs.P1.costing = UnitModelCostingBlock(
+    #     flowsheet_costing_block=m.fs.costing,
+    #     costing_method=cost_pump,
+    #     costing_method_arguments={"pump_type": PumpType.low_pressure},
+    # )
 
     m.fs.AD.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
     m.fs.dewater.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
