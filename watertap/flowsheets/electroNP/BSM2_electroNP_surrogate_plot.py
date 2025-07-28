@@ -6047,6 +6047,98 @@ def stackplot_COD_max(num):
     plt.show(block=True)
 
 
+def stackplot_TKN_max(num):
+    # 1D plot
+    TKN_max_list = np.linspace(0.0066, 0.008, num)
+
+    # No electroNP flowsheet
+    m, results = run_optimization_vary_max(
+        COD_max=0.1,
+        BOD5_max=0.01,
+        TKN_max=0.007,
+        TP_max=0.68,
+        has_electroNP=False,
+        has_optimization=True,
+    )
+
+    Ne_Ener_aeration = pyo.value(m.fs.costing.aeration_energy)
+    Ne_LCOW = pyo.value(m.fs.costing.LCOW)
+    Ne_SEC = pyo.value(m.fs.costing.specific_energy_consumption)
+
+    # aeration energy
+    Ne_Ener_aeration_list = Ne_Ener_aeration * np.ones(num)
+
+    # LCOW
+    Ne_LCOW_list = Ne_LCOW * np.ones(num)
+
+    # SEC
+    Ne_SEC_list = Ne_SEC * np.ones(num)
+
+    # electroNP flowsheet
+    # LCOW
+    LCOW_list = np.zeros(num)
+    LCOW_list[:] = np.nan
+
+    # SEC
+    SEC_list = np.zeros(num)
+    SEC_list[:] = np.nan
+
+    # aeration energy
+    Ener_aeration_list = np.zeros(num)
+    Ener_aeration_list[:] = np.nan
+
+    # electroNP SEC
+    SEC_electroNP_list = np.zeros(num)
+    SEC_electroNP_list[:] = np.nan
+
+    for i in range(0, num):
+        try:
+            m, results = run_optimization_vary_max(
+                COD_max=0.1,
+                BOD5_max=0.01,
+                TKN_max=TKN_max_list[i],
+                TP_max=0.005,
+                has_electroNP=True,
+                has_optimization=True,
+            )
+
+            LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
+            SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+            Ener_aeration_list[i] = pyo.value(m.fs.costing.aeration_energy)
+            SEC_electroNP_list[i] = pyo.value(m.fs.costing.electroNP_energy_consumption)
+        except:
+            pass
+
+    LCOW_list = interp_1d(LCOW_list)
+    SEC_list = interp_1d(SEC_list)
+    Ener_aeration_list = interp_1d(Ener_aeration_list)
+    SEC_electroNP_list = interp_1d(SEC_electroNP_list)
+
+    TKN_max_list = 1000 * TKN_max_list
+
+    # Figure 1
+    fig1, ax1 = plt.subplots(figsize=(7, 5), layout="constrained")
+    stacked_1 = [a + b for a, b in zip(Ener_aeration_list, SEC_electroNP_list)]
+    SEC_other = [a - b for a, b in zip(SEC_list, stacked_1)]
+    stacked_cols = [Ener_aeration_list, SEC_electroNP_list, SEC_other]
+    labels = ["Aeration energy", "electroN-P", "other"]
+    hatches = ["/", "\\", "|", "-", "+", "x", "o", "O", ".", "*"]
+    ax1.stackplot(TKN_max_list, stacked_cols, labels=labels, hatch=hatches)
+    ax1.plot(
+        TKN_max_list,
+        Ne_SEC_list,
+        color="k",
+        linestyle="-.",
+        label="SEC (no electroNP)",
+    )
+    ax1.set_xlim(6.7, 8)
+    ax1.set_xlabel("TKN Max Concentration (mg/L)", fontsize=14)
+    ax1.set_ylabel("SEC (kWh/m3)", fontsize=14)
+    ax1.legend()
+
+    plt.show(block=True)
+
+
 def interp_1d(array):
     # Making sequences for interp
     ok = ~np.isnan(array)
@@ -6131,4 +6223,5 @@ if __name__ == "__main__":
     # plot_COD_max_no_electroNP(num=15)
     # plot_BOD5_max_no_electroNP(num=15)
 
-    stackplot_COD_max(num=19)
+    # stackplot_COD_max(num=19)
+    stackplot_TKN_max(num=15)
