@@ -10,9 +10,6 @@
 # "https://github.com/watertap-org/watertap/"
 #################################################################################
 
-import re
-import pytest
-
 import pyomo.environ as pyo
 from pyomo.environ import (
     assert_optimal_termination,
@@ -24,35 +21,32 @@ from pyomo.environ import (
     value,
     Var,
 )
-from pyomo.network import Port
 
-from idaes.core import EnergyBalanceType, FlowsheetBlock, MomentumBalanceType
-from idaes.core.initialization import InitializationStatus
+from idaes.core import FlowsheetBlock
 from idaes.core.scaling import set_scaling_factor
 from idaes.core.solvers import get_solver
-from idaes.core.util.exceptions import ConfigurationError
-from idaes.core.util.model_diagnostics import DiagnosticsToolbox
-from idaes.core.util.testing import PhysicalParameterTestBlock
 
 from watertap.property_models.multicomp_aq_sol_prop_pack import (
     MCASParameterBlock,
 )
-from watertap.unit_models.nanofiltration_0D import (
-    Nanofiltration0D,
-    Nanofiltration0DInitializer,
-    Nanofiltration0DScaler,
-)
-
+from watertap.unit_models.nanofiltration_ZO import NanofiltrationZO
 from idaes.core import UnitModelCostingBlock
 from watertap.costing.unit_models.nanofiltration import cost_nanofiltration
 from watertap.costing import WaterTAPCosting
+from idaes.core.util.scaling import calculate_scaling_factors
+from idaes.core.util.misc import StrEnum
 
 __author__ = "Chenyu Wang"
 
 
-def CMR_nf_case():
-    m = build()
-    set_scaling(m)
+class Case(StrEnum):
+    case1 = "case1"
+    case2 = "case2"
+
+
+def CMR_nf_case(simplified_routine=False):
+    m = build(simplified_routine=simplified_routine)
+    # set_scaling(m)
     initialize_system(m)
     m, results = solve(m)
     display_performance_metrics(m)
@@ -61,7 +55,7 @@ def CMR_nf_case():
     return m, results
 
 
-def build():
+def build(simplified_routine=False):
     m = ConcreteModel()
     m.fs = FlowsheetBlock(dynamic=False)
     m.fs.costing = WaterTAPCosting()
@@ -120,53 +114,134 @@ def build():
         },
     )
 
-    m.fs.unit = Nanofiltration0D(
-        property_package=m.fs.properties,
-        # electroneutrality_ion="Cl_-",
-        # electroneutrality_ion=None,
-        has_pressure_change=True,
-        passing_species_list=["Ca_2+", "Nd_3+", "Pr_3+", "Na_+", "Dy_3+", "Cl_-"],
-    )
+    m.fs.unit = NanofiltrationZO(property_package=m.fs.properties)
     m.fs.unit.costing = UnitModelCostingBlock(
         flowsheet_costing_block=m.fs.costing, costing_method=cost_nanofiltration
     )
 
     # Fix other inlet state variables
-    m.fs.unit.inlet.flow_mol_phase_comp[0, "Liq", "H2O"].fix(1e3)
-    m.fs.unit.inlet.flow_mol_phase_comp[0, "Liq", "Co_2+"].fix(0.01)
-    m.fs.unit.inlet.flow_mol_phase_comp[0, "Liq", "Ca_2+"].fix(0.019)
-    m.fs.unit.inlet.flow_mol_phase_comp[0, "Liq", "Cu_2+"].fix(0.001)
-    m.fs.unit.inlet.flow_mol_phase_comp[0, "Liq", "Fe_3+"].fix(1.190)
-    m.fs.unit.inlet.flow_mol_phase_comp[0, "Liq", "Nd_3+"].fix(0.020)
-    m.fs.unit.inlet.flow_mol_phase_comp[0, "Liq", "Ni_2+"].fix(0.012)
-    m.fs.unit.inlet.flow_mol_phase_comp[0, "Liq", "Pr_3+"].fix(0.006)
-    m.fs.unit.inlet.flow_mol_phase_comp[0, "Liq", "Na_+"].fix(0.005)
-    m.fs.unit.inlet.flow_mol_phase_comp[0, "Liq", "Cr_6+"].fix(0.001)
-    m.fs.unit.inlet.flow_mol_phase_comp[0, "Liq", "Sn_2+"].fix(0.001)
-    m.fs.unit.inlet.flow_mol_phase_comp[0, "Liq", "Zn_2+"].fix(0.002)
-    m.fs.unit.inlet.flow_mol_phase_comp[0, "Liq", "Pb_2+"].fix(0.001)
-    m.fs.unit.inlet.flow_mol_phase_comp[0, "Liq", "Dy_3+"].fix(0.001)
-    m.fs.unit.inlet.temperature[0].fix(298.15)
-    m.fs.unit.inlet.pressure[0].fix(101325)
+    # fully specify system
+    # feed_flow_mass = 1
+    # feed_mass_frac = {
+    #     "Co_2+": 11122e-6,
+    #     "Ca_2+": 382e-6,
+    #     "Mg_2+": 1394e-6,
+    #     "SO4_2-": 2136e-6,
+    #     "Cl_-": 20316.88e-6,
+    # }
+    Cin = 0.5
+    Qin = 1e3
+    m.fs.unit.feed_side.properties_in.calculate_state(
+        var_args={
+            ("flow_vol_phase", "Liq"): 1,
+            ("conc_mass_phase_comp", ("Liq", "Co_2+")): value(
+                105.732e-3
+            ),  # feed mass concentration
+            ("conc_mass_phase_comp", ("Liq", "Ca_2+")): value(
+                11.3742e-3
+            ),  # feed mass concentration
+            ("conc_mass_phase_comp", ("Liq", "Cu_2+")): value(
+                1e-9
+            ),  # feed mass concentration
+            ("conc_mass_phase_comp", ("Liq", "Fe_3+")): value(
+                17454.9915e-3
+            ),  # feed mass concentration
+            ("conc_mass_phase_comp", ("Liq", "Nd_3+")): value(
+                521.0505e-3
+            ),  # feed mass concentration
+            ("conc_mass_phase_comp", ("Liq", "Ni_2+")): value(
+                15.9399e-3
+            ),  # feed mass concentration
+            ("conc_mass_phase_comp", ("Liq", "Pr_3+")): value(
+                134.4078e-3
+            ),  # feed mass concentration
+            ("conc_mass_phase_comp", ("Liq", "Na_+")): value(
+                6.3279e-3
+            ),  # feed mass concentration
+            ("conc_mass_phase_comp", ("Liq", "Cr_6+")): value(
+                1e-9
+            ),  # feed mass concentration
+            ("conc_mass_phase_comp", ("Liq", "Sn_2+")): value(
+                1e-9
+            ),  # feed mass concentration
+            ("conc_mass_phase_comp", ("Liq", "Zn_2+")): value(
+                668.3544e-3
+            ),  # feed mass concentration
+            ("conc_mass_phase_comp", ("Liq", "Pb_2+")): value(
+                1e-9
+            ),  # feed mass concentration
+            ("conc_mass_phase_comp", ("Liq", "Dy_3+")): value(
+                0.801e-3
+            ),  # feed mass concentration
+            ("conc_mass_phase_comp", ("Liq", "Cl_-")): value(
+                10e-3
+            ),  # feed mass concentration
+        },  # volumetric feed flowrate [-]
+        hold_state=True,  # fixes the calculated component mass flow rates
+    )
+    # m.fs.unit.feed_side.properties_in[0].flow_vol_phase["Liq"].fix(1e3)
+    # m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Co_2+"].fix(105.732 * pyo.units.mg/pyo.units.L)
+    # m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Ca_2+"].fix(11.3742 * pyo.units.mg/pyo.units.L)
+    # m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Cu_2+"].fix(1e-9 * pyo.units.mg/pyo.units.L)
+    # m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Fe_3+"].fix(17454.9915 * pyo.units.mg/pyo.units.L)
+    # m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Nd_3+"].fix(521.0505 * pyo.units.mg/pyo.units.L)
+    # m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Ni_2+"].fix(15.9399 * pyo.units.mg/pyo.units.L)
+    # m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Pr_3+"].fix(134.4078 * pyo.units.mg/pyo.units.L)
+    # m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Na_+"].fix(6.3279 * pyo.units.mg/pyo.units.L)
+    # m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Cr_6+"].fix(1e-9 * pyo.units.mg/pyo.units.L)
+    # m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Sn_2+"].fix(1e-9 * pyo.units.mg/pyo.units.L)
+    # m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Zn_2+"].fix(668.3544 * pyo.units.mg/pyo.units.L)
+    # m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Pb_2+"].fix(1e-9 * pyo.units.mg/pyo.units.L)
+    # m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Dy_3+"].fix(0.801 * pyo.units.mg/pyo.units.L)
 
-    m.fs.unit.recovery_solvent.fix(0.95)
-    m.fs.unit.rejection_comp.fix(1e-10)
-    m.fs.unit.rejection_comp[0, "Co_2+"].fix(0.98)
-    # m.fs.unit.rejection_comp[0, "Ca_2+"].fix(0.92)
-    m.fs.unit.rejection_comp[0, "Cu_2+"].fix(0.98)
-    m.fs.unit.rejection_comp[0, "Fe_3+"].fix(0.98)
-    # m.fs.unit.rejection_comp[0, "Nd_3+"].fix(0.9945)
-    m.fs.unit.rejection_comp[0, "Ni_2+"].fix(0.98)
-    # m.fs.unit.rejection_comp[0, "Pr_3+"].fix(0.95)  # Pr 59; Nd 60
-    # m.fs.unit.rejection_comp[0, "Na_+"].fix(0.796)
-    m.fs.unit.rejection_comp[0, "Cr_6+"].fix(0.93)
-    m.fs.unit.rejection_comp[0, "Sn_2+"].fix(0.95)  # Sn 50; Nd 60; Zn 30
-    m.fs.unit.rejection_comp[0, "Zn_2+"].fix(0.98)
-    m.fs.unit.rejection_comp[0, "Pb_2+"].fix(0.99)
-    # m.fs.unit.rejection_comp[0, "Dy_3+"].fix(0.95)  # Dy 66; Nd 60
+    # m.fs.unit.feed_side.properties_in[0].flow_mol_phase_comp["Liq", "H2O"].fix(1e3)
+    # m.fs.unit.feed_side.properties_in[0].flow_mol_phase_comp["Liq", "Co_2+"].fix(0.01)
+    # m.fs.unit.feed_side.properties_in[0].flow_mol_phase_comp["Liq", "Ca_2+"].fix(0.019)
+    # m.fs.unit.feed_side.properties_in[0].flow_mol_phase_comp["Liq", "Cu_2+"].fix(0.001)
+    # m.fs.unit.feed_side.properties_in[0].flow_mol_phase_comp["Liq", "Fe_3+"].fix(1.190)
+    # m.fs.unit.feed_side.properties_in[0].flow_mol_phase_comp["Liq", "Nd_3+"].fix(0.020)
+    # m.fs.unit.feed_side.properties_in[0].flow_mol_phase_comp["Liq", "Ni_2+"].fix(0.012)
+    # m.fs.unit.feed_side.properties_in[0].flow_mol_phase_comp["Liq", "Pr_3+"].fix(0.006)
+    # m.fs.unit.feed_side.properties_in[0].flow_mol_phase_comp["Liq", "Na_+"].fix(0.005)
+    # m.fs.unit.feed_side.properties_in[0].flow_mol_phase_comp["Liq", "Cr_6+"].fix(0.001)
+    # m.fs.unit.feed_side.properties_in[0].flow_mol_phase_comp["Liq", "Sn_2+"].fix(0.001)
+    # m.fs.unit.feed_side.properties_in[0].flow_mol_phase_comp["Liq", "Zn_2+"].fix(0.002)
+    # m.fs.unit.feed_side.properties_in[0].flow_mol_phase_comp["Liq", "Pb_2+"].fix(0.001)
+    # m.fs.unit.feed_side.properties_in[0].flow_mol_phase_comp["Liq", "Dy_3+"].fix(0.001)
+
+    m.fs.unit.feed_side.properties_in[0].temperature.fix(298.15)
+    m.fs.unit.feed_side.properties_in[0].pressure.fix(101325)
+
+    m.fs.unit.recovery_vol_phase[0, "Liq"].fix(0.95)
+    # m.fs.unit.flux_vol_solvent.fix(1.67e-6)
+    m.fs.unit.rejection_phase_comp.fix(1e-10)
+    m.fs.unit.rejection_phase_comp[0, "Liq", "Co_2+"].fix(0.98)
+    # m.fs.unit.rejection_phase_comp[0, "Liq", "Ca_2+"].fix(0.92)
+    m.fs.unit.rejection_phase_comp[0, "Liq", "Cu_2+"].fix(0.98)
+    m.fs.unit.rejection_phase_comp[0, "Liq", "Fe_3+"].fix(0.98)
+    # m.fs.unit.rejection_phase_comp[0, "Liq", "Nd_3+"].fix(0.9945)
+    m.fs.unit.rejection_phase_comp[0, "Liq", "Ni_2+"].fix(0.98)
+    # m.fs.unit.rejection_phase_comp[0, "Liq", "Pr_3+"].fix(0.95)  # Pr 59; Nd 60
+    # m.fs.unit.rejection_phase_comp[0, "Liq", "Na_+"].fix(0.796)
+    m.fs.unit.rejection_phase_comp[0, "Liq", "Cr_6+"].fix(0.93)
+    m.fs.unit.rejection_phase_comp[0, "Liq", "Sn_2+"].fix(0.95)  # Sn 50; Nd 60; Zn 30
+    m.fs.unit.rejection_phase_comp[0, "Liq", "Zn_2+"].fix(0.98)
+    m.fs.unit.rejection_phase_comp[0, "Liq", "Pb_2+"].fix(0.99)
+    # m.fs.unit.rejection_phase_comp[0, "Liq", "Dy_3+"].fix(0.95)  # Dy 66; Nd 60
+
+    if simplified_routine is False:
+        m.fs.unit.rejection_phase_comp[0, "Liq", "Ca_2+"].fix(0.92)
+        m.fs.unit.rejection_phase_comp[0, "Liq", "Nd_3+"].fix(0.9945)
+        m.fs.unit.rejection_phase_comp[0, "Liq", "Pr_3+"].fix(0.95)  # Pr 59; Nd 60
+        m.fs.unit.rejection_phase_comp[0, "Liq", "Na_+"].fix(0.796)
+        m.fs.unit.rejection_phase_comp[0, "Liq", "Dy_3+"].fix(0.95)  # Dy 66; Nd 60
+
     m.fs.unit.area.fix(500)
-    m.fs.unit.deltaP.fix(0)
-    # m.fs.unit.permeate.pressure[0].fix(101325)
+    # m.fs.unit.deltaP.fix(0)
+    m.fs.unit.permeate.pressure[0].fix(101325)
+    # m.fs.unit.feed_side.properties_in[0].assert_electroneutrality(
+    #     defined_state=True, adjust_by_ion="Cl_-"
+    # )
 
     m.fs.costing.cost_process()
     m.fs.costing.add_annual_water_production(m.fs.unit.properties_permeate[0].flow_vol)
@@ -191,16 +266,14 @@ def set_scaling(m):
     set_scaling_factor(m.fs.unit.inlet.flow_mol_phase_comp[0, "Liq", "Zn_2+"], 1e2)
     set_scaling_factor(m.fs.unit.inlet.flow_mol_phase_comp[0, "Liq", "Pb_2+"], 1e2)
     set_scaling_factor(m.fs.unit.inlet.flow_mol_phase_comp[0, "Liq", "Dy_3+"], 1e2)
-
-    scaler = Nanofiltration0DScaler()
-    scaler.scale_model(m.fs.unit)
+    calculate_scaling_factors(m)
 
 
 def initialize_system(m):
     # Initialize system
-    initializer = Nanofiltration0DInitializer()
+    # m.fs.unit.initialize()
     try:
-        initializer.initialize(m.fs.unit)
+        m.fs.unit.initialize()
     except:
         pass
     m.fs.costing.initialize()
@@ -220,7 +293,8 @@ def solve(m):
 def display_performance_metrics(m):
     print("---- System Performance Metrics ----")
     f_in = pyo.units.convert(
-        m.fs.unit.properties_in[0].flow_vol, to_units=pyo.units.m**3 / pyo.units.hr
+        m.fs.unit.feed_side.properties_in[0].flow_vol,
+        to_units=pyo.units.m**3 / pyo.units.hr,
     )
     # print(f"Influent flow: " f"{pyo.value(f_in):.3g}" f"{pyo.units.get_units(f_in)}")
     # f_permeate = pyo.units.convert(
@@ -272,7 +346,8 @@ def display_performance_metrics(m):
 
     print("\n---- Feed Metrics ----")
     f_in = pyo.units.convert(
-        m.fs.unit.properties_in[0].flow_vol, to_units=pyo.units.m**3 / pyo.units.hr
+        m.fs.unit.feed_side.properties_in[0].flow_vol,
+        to_units=pyo.units.m**3 / pyo.units.hr,
     )
     print(f"Influent flow: " f"{pyo.value(f_in):.3g}" f"{pyo.units.get_units(f_in)}")
     f_permeate = pyo.units.convert(
@@ -280,7 +355,7 @@ def display_performance_metrics(m):
         to_units=pyo.units.m**3 / pyo.units.hr,
     )
     Co_in = pyo.units.convert(
-        m.fs.unit.properties_in[0].conc_mass_phase_comp["Liq", "Co_2+"],
+        m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Co_2+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
@@ -289,7 +364,7 @@ def display_performance_metrics(m):
         f"{pyo.units.get_units(Co_in)}"
     )
     Ca_in = pyo.units.convert(
-        m.fs.unit.properties_in[0].conc_mass_phase_comp["Liq", "Ca_2+"],
+        m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Ca_2+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
@@ -298,7 +373,7 @@ def display_performance_metrics(m):
         f"{pyo.units.get_units(Ca_in)}"
     )
     Cu_in = pyo.units.convert(
-        m.fs.unit.properties_in[0].conc_mass_phase_comp["Liq", "Cu_2+"],
+        m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Cu_2+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
@@ -307,7 +382,7 @@ def display_performance_metrics(m):
         f"{pyo.units.get_units(Cu_in)}"
     )
     Fe_in = pyo.units.convert(
-        m.fs.unit.properties_in[0].conc_mass_phase_comp["Liq", "Fe_3+"],
+        m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Fe_3+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
@@ -316,7 +391,7 @@ def display_performance_metrics(m):
         f"{pyo.units.get_units(Fe_in)}"
     )
     Nd_in = pyo.units.convert(
-        m.fs.unit.properties_in[0].conc_mass_phase_comp["Liq", "Nd_3+"],
+        m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Nd_3+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
@@ -325,7 +400,7 @@ def display_performance_metrics(m):
         f"{pyo.units.get_units(Nd_in)}"
     )
     Ni_in = pyo.units.convert(
-        m.fs.unit.properties_in[0].conc_mass_phase_comp["Liq", "Ni_2+"],
+        m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Ni_2+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
@@ -334,7 +409,7 @@ def display_performance_metrics(m):
         f"{pyo.units.get_units(Ni_in)}"
     )
     Pr_in = pyo.units.convert(
-        m.fs.unit.properties_in[0].conc_mass_phase_comp["Liq", "Pr_3+"],
+        m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Pr_3+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
@@ -343,7 +418,7 @@ def display_performance_metrics(m):
         f"{pyo.units.get_units(Pr_in)}"
     )
     Na_in = pyo.units.convert(
-        m.fs.unit.properties_in[0].conc_mass_phase_comp["Liq", "Na_+"],
+        m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Na_+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
@@ -352,7 +427,7 @@ def display_performance_metrics(m):
         f"{pyo.units.get_units(Na_in)}"
     )
     Cr_in = pyo.units.convert(
-        m.fs.unit.properties_in[0].conc_mass_phase_comp["Liq", "Cr_6+"],
+        m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Cr_6+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
@@ -361,7 +436,7 @@ def display_performance_metrics(m):
         f"{pyo.units.get_units(Cr_in)}"
     )
     Sn_in = pyo.units.convert(
-        m.fs.unit.properties_in[0].conc_mass_phase_comp["Liq", "Sn_2+"],
+        m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Sn_2+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
@@ -370,7 +445,7 @@ def display_performance_metrics(m):
         f"{pyo.units.get_units(Sn_in)}"
     )
     Zn_in = pyo.units.convert(
-        m.fs.unit.properties_in[0].conc_mass_phase_comp["Liq", "Zn_2+"],
+        m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Zn_2+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
@@ -379,7 +454,7 @@ def display_performance_metrics(m):
         f"{pyo.units.get_units(Zn_in)}"
     )
     Pb_in = pyo.units.convert(
-        m.fs.unit.properties_in[0].conc_mass_phase_comp["Liq", "Pb_2+"],
+        m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Pb_2+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
@@ -388,7 +463,7 @@ def display_performance_metrics(m):
         f"{pyo.units.get_units(Pb_in)}"
     )
     Dy_in = pyo.units.convert(
-        m.fs.unit.properties_in[0].conc_mass_phase_comp["Liq", "Dy_3+"],
+        m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Dy_3+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
@@ -547,4 +622,4 @@ def display_costing(m):
 
 
 if __name__ == "__main__":
-    m, results = CMR_nf_case()
+    m, results = CMR_nf_case(simplified_routine=False)
