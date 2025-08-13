@@ -183,5 +183,5 @@ def plot_area(num):
 
 if __name__ == "__main__":
     # m, results = CMR_nf_case(case=Case.case1, simplified_routine=False, membrane_cost=15, area=500)
-    # plot_membrane_cost(num=5)
+    # plot_membrane_cost(num=15)
     plot_area(num=15)

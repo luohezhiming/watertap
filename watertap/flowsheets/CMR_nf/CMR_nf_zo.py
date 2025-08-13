@@ -318,59 +318,6 @@ def solve(m):
 
 
 def display_performance_metrics(m):
-    print("---- System Performance Metrics ----")
-    f_in = pyo.units.convert(
-        m.fs.unit.feed_side.properties_in[0].flow_vol,
-        to_units=pyo.units.m**3 / pyo.units.hr,
-    )
-    # print(f"Influent flow: " f"{pyo.value(f_in):.3g}" f"{pyo.units.get_units(f_in)}")
-    # f_permeate = pyo.units.convert(
-    #     m.fs.unit.properties_permeate[0].flow_vol,
-    #     to_units=pyo.units.m**3 / pyo.units.hr,
-    # )
-    # print(
-    #     f"Permeate flow: "
-    #     f"{pyo.value(f_permeate):.3g}"
-    #     f"{pyo.units.get_units(f_permeate)}"
-    # )
-    # f_retentate = pyo.units.convert(
-    #     m.fs.unit.properties_retentate[0].flow_vol,
-    #     to_units=pyo.units.m**3 / pyo.units.hr,
-    # )
-    # print(
-    #     f"Retentate flow: "
-    #     f"{pyo.value(f_retentate):.3g}"
-    #     f"{pyo.units.get_units(f_retentate)}"
-    # )
-    water_recovery = m.fs.unit.recovery_vol_phase[0, "Liq"]
-    print(f"Volumetric-based recovery: " f"{pyo.value(water_recovery):.3g}")
-    Co_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Co_2+"]
-    print(f"Co2+ mass rejection: " f"{pyo.value(1-Co_recovery):.3g}")
-    Ca_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Ca_2+"]
-    print(f"Ca2+ mass rejection: " f"{pyo.value(1 - Ca_recovery):.3g}")
-    Cu_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Cu_2+"]
-    print(f"Cu2+ mass rejection: " f"{pyo.value(1 - Cu_recovery):.3g}")
-    Fe_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Fe_3+"]
-    print(f"Fe3+ mass rejection: " f"{pyo.value(1 - Fe_recovery):.3g}")
-    Nd_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Nd_3+"]
-    print(f"Nd3+ mass rejection: " f"{pyo.value(1 - Nd_recovery):.3g}")
-    Ni_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Ni_2+"]
-    print(f"Ni2+ mass rejection: " f"{pyo.value(1 - Ni_recovery):.3g}")
-    Pr_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Pr_3+"]
-    print(f"Pr3+ mass rejection: " f"{pyo.value(1 - Pr_recovery):.3g}")
-    Na_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Na_+"]
-    print(f"Na+ mass rejection: " f"{pyo.value(1 - Na_recovery):.3g}")
-    Cr_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Cr_6+"]
-    print(f"Cr6+ mass rejection: " f"{pyo.value(1 - Cr_recovery):.3g}")
-    Sn_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Sn_2+"]
-    print(f"Sn2+ mass rejection: " f"{pyo.value(1 - Sn_recovery):.3g}")
-    Zn_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Zn_2+"]
-    print(f"Zn2+ mass rejection: " f"{pyo.value(1 - Zn_recovery):.3g}")
-    Pb_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Pb_2+"]
-    print(f"Pb2+ mass rejection: " f"{pyo.value(1 - Pb_recovery):.3g}")
-    Dy_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Dy_3+"]
-    print(f"Dy3+ mass rejection: " f"{pyo.value(1 - Dy_recovery):.3g}")
-
     print("\n---- Feed Metrics ----")
     f_in = pyo.units.convert(
         m.fs.unit.feed_side.properties_in[0].flow_vol,
@@ -626,6 +573,59 @@ def display_performance_metrics(m):
         f"{pyo.value(Dy_permeate):.3g}"
         f"{pyo.units.get_units(Dy_permeate)}"
     )
+
+    print("\n---- System Performance Metrics ----")
+    f_in = pyo.units.convert(
+        m.fs.unit.feed_side.properties_in[0].flow_vol,
+        to_units=pyo.units.m**3 / pyo.units.hr,
+    )
+    # print(f"Influent flow: " f"{pyo.value(f_in):.3g}" f"{pyo.units.get_units(f_in)}")
+    # f_permeate = pyo.units.convert(
+    #     m.fs.unit.properties_permeate[0].flow_vol,
+    #     to_units=pyo.units.m**3 / pyo.units.hr,
+    # )
+    # print(
+    #     f"Permeate flow: "
+    #     f"{pyo.value(f_permeate):.3g}"
+    #     f"{pyo.units.get_units(f_permeate)}"
+    # )
+    # f_retentate = pyo.units.convert(
+    #     m.fs.unit.properties_retentate[0].flow_vol,
+    #     to_units=pyo.units.m**3 / pyo.units.hr,
+    # )
+    # print(
+    #     f"Retentate flow: "
+    #     f"{pyo.value(f_retentate):.3g}"
+    #     f"{pyo.units.get_units(f_retentate)}"
+    # )
+    water_recovery = m.fs.unit.recovery_vol_phase[0, "Liq"]
+    print(f"Volumetric-based recovery: " f"{pyo.value(water_recovery):.3g}")
+    Co_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Co_2+"]
+    print(f"Co2+ mass rejection: " f"{pyo.value(1 - Co_recovery):.3g}")
+    Ca_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Ca_2+"]
+    print(f"Ca2+ mass rejection: " f"{pyo.value(1 - Ca_recovery):.3g}")
+    Cu_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Cu_2+"]
+    print(f"Cu2+ mass rejection: " f"{pyo.value(1 - Cu_recovery):.3g}")
+    Fe_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Fe_3+"]
+    print(f"Fe3+ mass rejection: " f"{pyo.value(1 - Fe_recovery):.3g}")
+    Nd_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Nd_3+"]
+    print(f"Nd3+ mass rejection: " f"{pyo.value(1 - Nd_recovery):.3g}")
+    Ni_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Ni_2+"]
+    print(f"Ni2+ mass rejection: " f"{pyo.value(1 - Ni_recovery):.3g}")
+    Pr_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Pr_3+"]
+    print(f"Pr3+ mass rejection: " f"{pyo.value(1 - Pr_recovery):.3g}")
+    Na_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Na_+"]
+    print(f"Na+ mass rejection: " f"{pyo.value(1 - Na_recovery):.3g}")
+    Cr_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Cr_6+"]
+    print(f"Cr6+ mass rejection: " f"{pyo.value(1 - Cr_recovery):.3g}")
+    Sn_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Sn_2+"]
+    print(f"Sn2+ mass rejection: " f"{pyo.value(1 - Sn_recovery):.3g}")
+    Zn_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Zn_2+"]
+    print(f"Zn2+ mass rejection: " f"{pyo.value(1 - Zn_recovery):.3g}")
+    Pb_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Pb_2+"]
+    print(f"Pb2+ mass rejection: " f"{pyo.value(1 - Pb_recovery):.3g}")
+    Dy_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Dy_3+"]
+    print(f"Dy3+ mass rejection: " f"{pyo.value(1 - Dy_recovery):.3g}")
 
 
 def display_costing(m):
