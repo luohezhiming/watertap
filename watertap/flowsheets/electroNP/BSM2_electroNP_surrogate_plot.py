@@ -44,9 +44,9 @@ def main(CP=-1.1 * pyo.units.V, r_AV=0.1):
         m.fs.electroNP.cathodic_potential.fix(pyo.value(CP))
     if pyo.value(r_AV) >= 0.11:
         m.fs.electroNP.area_volume_ratio.fix(pyo.value(r_AV))
-    if pyo.value(CP) >= -0.8 and pyo.value(r_AV) <= 0.09:
-        m.fs.electroNP.cathodic_potential.fix(pyo.value(CP))
-        m.fs.electroNP.area_volume_ratio.fix(pyo.value(r_AV))
+    # if pyo.value(CP) >= -0.8 and pyo.value(r_AV) <= 0.09:
+    #     m.fs.electroNP.cathodic_potential.fix(pyo.value(CP))
+    #     m.fs.electroNP.area_volume_ratio.fix(pyo.value(r_AV))
     set_scaling(m)
     initialize_system(m)
 
@@ -1221,8 +1221,8 @@ def contourf_plot(num):
 
     # 2D plot
     CP_list = np.linspace(-1.2, -0.8, num)
-    # r_AV_list = np.linspace(0.09, 0.12, num)
-    r_AV_list = np.linspace(0.09, 0.13, num)
+    r_AV_list = np.linspace(0.09, 0.12, num)
+    # r_AV_list = np.linspace(0.09, 0.13, num)
 
     P_out_matrix = np.zeros((num, num))
     P_out_matrix[:] = np.nan
@@ -1234,23 +1234,25 @@ def contourf_plot(num):
     SEC_electroNP_matrix[:] = np.nan
     aeration_matrix = np.zeros((num, num))
     aeration_matrix[:] = np.nan
+    SEC_electroNP_aeration_matrix = np.zeros((num, num))
+    SEC_electroNP_aeration_matrix[:] = np.nan
 
     for i in range(0, num):
         for j in range(0, num):
             print(f"CP: {CP_list[i]}")
             print(f"rAV: {r_AV_list[j]}")
             try:
-                # # simulation
-                # m, results = main(CP=CP_list[i], r_AV=r_AV_list[j])
+                # simulation
+                m, results = main(CP=CP_list[i], r_AV=r_AV_list[j])
                 # case 2:
-                m, results = run_optimization(
-                    CP=CP_list[i],
-                    r_AV=r_AV_list[j],
-                    has_electroNP=True,
-                    has_optimization=True,
-                    objective=objective_fun.LCOW,
-                    has_effluent_constraints=True,
-                )
+                # m, results = run_optimization(
+                #     CP=CP_list[i],
+                #     r_AV=r_AV_list[j],
+                #     has_electroNP=True,
+                #     has_optimization=True,
+                #     objective=objective_fun.LCOW,
+                #     has_effluent_constraints=True,
+                # )
                 P_out_matrix[j, i] = (
                     m.fs.Treated.properties[0].conc_mass_comp["S_PO4"].value * 1e3
                 )
@@ -1260,6 +1262,9 @@ def contourf_plot(num):
                     m.fs.costing.electroNP_energy_consumption
                 ) / pyo.value(m.fs.costing.specific_energy_consumption)
                 aeration_matrix[j, i] = pyo.value(m.fs.costing.aeration_energy)
+                SEC_electroNP_aeration_matrix[j, i] = pyo.value(
+                    m.fs.costing.electroNP_energy_consumption
+                ) / pyo.value(m.fs.costing.aeration_energy)
             except:
                 pass
 
@@ -1268,6 +1273,7 @@ def contourf_plot(num):
     SEC_matrix = interp_2d(SEC_matrix)
     SEC_electroNP_matrix = interp_2d(SEC_electroNP_matrix)
     aeration_matrix = interp_2d(aeration_matrix)
+    SEC_electroNP_aeration_matrix = interp_2d(SEC_electroNP_aeration_matrix)
 
     fig3, ax3 = plt.subplots(figsize=(7, 5))
     CF = ax3.contourf(CP_list, r_AV_list, P_out_matrix, cmap="GnBu")
@@ -1340,6 +1346,20 @@ def contourf_plot(num):
     ax7.set_ylabel("Area Volume Ratio (cm$^{-1}$)", fontsize=12)
     cbar = fig7.colorbar(CF)
     cbar.ax.set_ylabel("Aeration energy (kWh/m3)", fontsize=12)
+
+    fig8, ax8 = plt.subplots(figsize=(7, 5))
+    CF = ax8.contourf(CP_list, r_AV_list, SEC_electroNP_aeration_matrix, cmap="GnBu")
+    ax8.plot(CP_base, r_AV_base, marker="o", color="black", markersize=5)
+    ax8.annotate(
+        f"({CP_base}, {r_AV_base})",
+        (CP_base, r_AV_base),
+        textcoords="offset points",
+        xytext=(6, 6),
+    )
+    ax8.set_xlabel("Cathodic Potential (V)", fontsize=12)
+    ax8.set_ylabel("Area Volume Ratio (cm$^{-1}$)", fontsize=12)
+    cbar = fig6.colorbar(CF)
+    cbar.ax.set_ylabel("ElectroNP SEC / aeration SEC", fontsize=12)
 
     plt.show(block=True)
 
@@ -6047,6 +6067,99 @@ def stackplot_COD_max(num):
     plt.show(block=True)
 
 
+def stackplot_BOD5_max(num):
+    # 1D plot
+    BOD5_max_list = np.linspace(0.006, 0.0075, num)
+    # BOD5_max_list = np.linspace(0.006, 0.0065, num)
+
+    # No electroNP flowsheet
+    m, results = run_optimization_vary_max(
+        COD_max=0.1,
+        BOD5_max=0.01,
+        TKN_max=0.007,
+        TP_max=0.68,
+        has_electroNP=False,
+        has_optimization=True,
+    )
+
+    Ne_Ener_aeration = pyo.value(m.fs.costing.aeration_energy)
+    Ne_LCOW = pyo.value(m.fs.costing.LCOW)
+    Ne_SEC = pyo.value(m.fs.costing.specific_energy_consumption)
+
+    # aeration energy
+    Ne_Ener_aeration_list = Ne_Ener_aeration * np.ones(num)
+
+    # LCOW
+    Ne_LCOW_list = Ne_LCOW * np.ones(num)
+
+    # SEC
+    Ne_SEC_list = Ne_SEC * np.ones(num)
+
+    # electroNP flowsheet
+    # LCOW
+    LCOW_list = np.zeros(num)
+    LCOW_list[:] = np.nan
+
+    # SEC
+    SEC_list = np.zeros(num)
+    SEC_list[:] = np.nan
+
+    # aeration energy
+    Ener_aeration_list = np.zeros(num)
+    Ener_aeration_list[:] = np.nan
+
+    # electroNP SEC
+    SEC_electroNP_list = np.zeros(num)
+    SEC_electroNP_list[:] = np.nan
+
+    for i in range(0, num):
+        try:
+            m, results = run_optimization_vary_max(
+                COD_max=0.1,
+                BOD5_max=BOD5_max_list[i],
+                TKN_max=0.007,
+                TP_max=0.005,
+                has_electroNP=True,
+                has_optimization=True,
+            )
+
+            LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
+            SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+            Ener_aeration_list[i] = pyo.value(m.fs.costing.aeration_energy)
+            SEC_electroNP_list[i] = pyo.value(m.fs.costing.electroNP_energy_consumption)
+        except:
+            pass
+
+    LCOW_list = interp_1d(LCOW_list)
+    SEC_list = interp_1d(SEC_list)
+    Ener_aeration_list = interp_1d(Ener_aeration_list)
+    SEC_electroNP_list = interp_1d(SEC_electroNP_list)
+
+    BOD5_max_list = 1000 * BOD5_max_list
+
+    # Figure 1
+    fig1, ax1 = plt.subplots(figsize=(7, 5), layout="constrained")
+    stacked_1 = [a + b for a, b in zip(Ener_aeration_list, SEC_electroNP_list)]
+    SEC_other = [a - b for a, b in zip(SEC_list, stacked_1)]
+    stacked_cols = [Ener_aeration_list, SEC_electroNP_list, SEC_other]
+    labels = ["Aeration energy", "electroN-P", "other"]
+    hatches = ["/", "\\", "|", "-", "+", "x", "o", "O", ".", "*"]
+    ax1.stackplot(BOD5_max_list, stacked_cols, labels=labels, hatch=hatches)
+    ax1.plot(
+        BOD5_max_list,
+        Ne_SEC_list,
+        color="k",
+        linestyle="-.",
+        label="SEC (no electroNP)",
+    )
+    # ax1.set_xlim(95.62, 97.8)
+    ax1.set_xlabel("BOD5 Max Concentration (mg/L)", fontsize=14)
+    ax1.set_ylabel("SEC (kWh/m3)", fontsize=14)
+    ax1.legend()
+
+    plt.show(block=True)
+
+
 def stackplot_TKN_max(num):
     # 1D plot
     TKN_max_list = np.linspace(0.0066, 0.008, num)
@@ -6206,7 +6319,7 @@ if __name__ == "__main__":
     # plot_CP_effluent(num=25)
     # plot_rAV(num=5)
     # plot_rAV_effluent(num=25)
-    # contourf_plot(num=15)
+    contourf_plot(num=15)
     # contourf_plot_electricity_cost(num=3)
     # contourf_plot_aeration(num=10)
 
@@ -6224,4 +6337,5 @@ if __name__ == "__main__":
     # plot_BOD5_max_no_electroNP(num=15)
 
     # stackplot_COD_max(num=19)
-    stackplot_TKN_max(num=15)
+    # stackplot_BOD5_max(num=30)
+    # stackplot_TKN_max(num=15)
