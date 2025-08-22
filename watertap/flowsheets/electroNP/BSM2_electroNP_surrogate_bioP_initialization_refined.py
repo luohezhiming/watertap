@@ -608,12 +608,12 @@ def set_operating_conditions(m):
                 iscale.set_scaling_factor(var, 1e-5)
                 # # for plotting
                 # iscale.set_scaling_factor(var, 1e-3)
-            if "pressure_sat" in var.name:
-                iscale.set_scaling_factor(var, 1e-3)
+            # if "pressure_sat" in var.name:
+            #     iscale.set_scaling_factor(var, 1e-3)
             # if "pressure_sat[S_h2]" in var.name:
             #     iscale.set_scaling_factor(var, 1e-2)
             if "conc_mass_comp" in var.name:
-                iscale.set_scaling_factor(var, 1e1)
+                iscale.set_scaling_factor(var, 1e2)
             # if "conc_mass_comp[S_h2]" in var.name:
             #     iscale.set_scaling_factor(var, 1e5)
             # if "conc_mass_comp[S_ch4]" in var.name:
@@ -663,8 +663,8 @@ def initialize_system(m):
     seq = SequentialDecomposition()
     seq.options.tear_method = "Direct"
     seq.options.iterLim = 1
-    # seq.options.tear_set = [m.fs.stream1b, m.fs.stream2, m.fs.stream5, m.fs.stream10adm]
-    seq.options.tear_set = [m.fs.stream2, m.fs.stream5, m.fs.stream10adm]
+    seq.options.tear_set = [m.fs.stream5, m.fs.stream10adm]
+    # seq.options.tear_set = [m.fs.stream2, m.fs.stream5, m.fs.stream10adm]
 
     G = seq.create_graph(m)
     # Uncomment this code to see tear set and initialization order
@@ -854,54 +854,53 @@ def initialize_system(m):
             "temperature": {0: 308.15},
             "pressure": {0: 101325},
         }
-
     else:
         tear_guesses0 = {
             "flow_vol": {0: 0.495},
             "conc_mass_comp": {
-                (0, "S_A"): 0.087,
-                (0, "S_F"): 0.14,
+                (0, "S_A"): 0.067,
+                (0, "S_F"): 0.13,
                 (0, "S_I"): 0.057,
-                (0, "S_N2"): 0.038,
-                (0, "S_NH4"): 0.025,
-                (0, "S_NO3"): 0.0023,
+                (0, "S_N2"): 0.048,
+                (0, "S_NH4"): 0.024,
+                (0, "S_NO3"): 0.005,
                 (0, "S_O2"): 0.0016,
-                (0, "S_PO4"): 0.021,
+                (0, "S_PO4"): 0.018,
                 (0, "S_K"): 0.38,
-                (0, "S_Mg"): 0.026,
+                (0, "S_Mg"): 0.025,
                 (0, "S_IC"): 0.083,
-                (0, "X_AUT"): 0.10,
-                (0, "X_H"): 3.6,
+                (0, "X_AUT"): 0.18,
+                (0, "X_H"): 3.65,
                 (0, "X_I"): 3.2,
-                (0, "X_PAO"): 3.6,
-                (0, "X_PHA"): 0.0023,
-                (0, "X_PP"): 1.1,
+                (0, "X_PAO"): 2.7,
+                (0, "X_PHA"): 0.001,
+                (0, "X_PP"): 0.88,
                 (0, "X_S"): 0.08,
             },
             "temperature": {0: 308.15},
             "pressure": {0: 101325},
         }
         tear_guesses = {
-            "flow_vol": {0: 1.2368},
+            "flow_vol": {0: 1.237},
             "conc_mass_comp": {
-                (0, "S_A"): 0.0006,
+                (0, "S_A"): 0.00085,
                 (0, "S_F"): 0.0004,
                 (0, "S_I"): 0.057,
-                (0, "S_N2"): 0.045,
-                (0, "S_NH4"): 0.0075,
-                (0, "S_NO3"): 0.003,
+                (0, "S_N2"): 0.063,
+                (0, "S_NH4"): 0.01,
+                (0, "S_NO3"): 0.006,
                 (0, "S_O2"): 0.0019,
-                (0, "S_PO4"): 0.011,
+                (0, "S_PO4"): 0.01,
                 (0, "S_K"): 0.37,
                 (0, "S_Mg"): 0.023,
                 (0, "S_IC"): 0.13,
-                (0, "X_AUT"): 0.10,
+                (0, "X_AUT"): 0.18,
                 (0, "X_H"): 3.6,
                 (0, "X_I"): 3.2,
-                (0, "X_PAO"): 3.6,
-                (0, "X_PHA"): 0.094,
-                (0, "X_PP"): 1.16,
-                (0, "X_S"): 0.059,
+                (0, "X_PAO"): 2.7,
+                (0, "X_PHA"): 0.073,
+                (0, "X_PP"): 0.89,
+                (0, "X_S"): 0.057,
             },
             "temperature": {0: 308.15},
             "pressure": {0: 101325},
@@ -910,24 +909,24 @@ def initialize_system(m):
         tear_guesses2 = {
             "flow_vol": {0: 0.003},
             "conc_mass_comp": {
-                (0, "S_A"): 0.10,
+                (0, "S_A"): 0.08,
                 (0, "S_F"): 0.16,
                 (0, "S_I"): 0.057,
-                (0, "S_N2"): 0.036,
+                (0, "S_N2"): 0.043,
                 (0, "S_NH4"): 0.03,
-                (0, "S_NO3"): 0.002,
+                (0, "S_NO3"): 0.004,
                 (0, "S_O2"): 0.0013,
-                (0, "S_PO4"): 0.024,
+                (0, "S_PO4"): 0.02,
                 (0, "S_K"): 0.38,
-                (0, "S_Mg"): 0.027,
-                (0, "S_IC"): 0.072,
-                (0, "X_AUT"): 0.25,
-                (0, "X_H"): 23.0,
-                (0, "X_I"): 11.3,
-                (0, "X_PAO"): 10.9,
-                (0, "X_PHA"): 0.0058,
-                (0, "X_PP"): 2.9,
-                (0, "X_S"): 3.8,
+                (0, "S_Mg"): 0.025,
+                (0, "S_IC"): 0.07,
+                (0, "X_AUT"): 0.48,
+                (0, "X_H"): 24.5,
+                (0, "X_I"): 11.9,
+                (0, "X_PAO"): 9.1,
+                (0, "X_PHA"): 0.0028,
+                (0, "X_PP"): 2.3,
+                (0, "X_S"): 4.0,
             },
             "temperature": {0: 308.15},
             "pressure": {0: 101325},
@@ -935,7 +934,7 @@ def initialize_system(m):
 
     # Pass the tear_guess to the SD tool
     # seq.set_guesses_for(m.fs.CL.inlet, tear_guesses_CL)
-    seq.set_guesses_for(m.fs.R1.inlet, tear_guesses0)
+    # seq.set_guesses_for(m.fs.R1.inlet, tear_guesses0)
     seq.set_guesses_for(m.fs.R3.inlet, tear_guesses)
     seq.set_guesses_for(m.fs.translator_asm2d_adm1.inlet, tear_guesses2)
 
@@ -1436,7 +1435,7 @@ def display_design(m):
 
 if __name__ == "__main__":
     # This method builds and runs a steady state activated sludge flowsheet.
-    m, results = main(has_electroNP=True)
+    m, results = main(has_electroNP=False)
     if m.fs.has_electroNP is False:
         stream_table = create_stream_table_dataframe(
             {

@@ -6319,7 +6319,7 @@ if __name__ == "__main__":
     # plot_CP_effluent(num=25)
     # plot_rAV(num=5)
     # plot_rAV_effluent(num=25)
-    contourf_plot(num=15)
+    # contourf_plot(num=15)
     # contourf_plot_electricity_cost(num=3)
     # contourf_plot_aeration(num=10)
 
@@ -6336,6 +6336,6 @@ if __name__ == "__main__":
     # plot_COD_max_no_electroNP(num=15)
     # plot_BOD5_max_no_electroNP(num=15)
 
-    # stackplot_COD_max(num=19)
+    stackplot_COD_max(num=40)
     # stackplot_BOD5_max(num=30)
     # stackplot_TKN_max(num=15)
