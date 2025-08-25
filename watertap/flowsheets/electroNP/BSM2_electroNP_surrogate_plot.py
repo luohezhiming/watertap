@@ -6336,6 +6336,6 @@ if __name__ == "__main__":
     # plot_COD_max_no_electroNP(num=15)
     # plot_BOD5_max_no_electroNP(num=15)
 
-    stackplot_COD_max(num=40)
+    # stackplot_COD_max(num=10)
     # stackplot_BOD5_max(num=30)
-    # stackplot_TKN_max(num=15)
+    stackplot_TKN_max(num=19)
