@@ -38,8 +38,8 @@ from scipy import interpolate
 def main(CP=-1.1 * pyo.units.V, r_AV=0.1):
     m = build_flowsheet(has_electroNP=True)
     set_operating_conditions(m)
-    if pyo.value(CP) <= -1.1:
-        m.fs.electroNP.cathodic_potential.fix(pyo.value(CP))
+    # if pyo.value(CP) <= -1.1:
+    #     m.fs.electroNP.cathodic_potential.fix(pyo.value(CP))
     if pyo.value(CP) >= -0.9:
         m.fs.electroNP.cathodic_potential.fix(pyo.value(CP))
     if pyo.value(r_AV) >= 0.11:
@@ -540,10 +540,10 @@ def plot_CP(num):
     # Together
     fig1t, ax1t1 = plt.subplots(figsize=(9, 5))
     ax1t1.plot(CP_list, P_out_list, color="tab:red", label="_PO4 Concentration")
-    ax1t1.set_ylim([10, 60])
-    # Base case
-    CP_base = -1.1
-    ax1t1.axvline(x=CP_base, color="b", linestyle="--", label="Base case")
+    ax1t1.set_ylim([10, 55])
+    # # Base case
+    # CP_base = -1.1
+    # ax1t1.axvline(x=CP_base, color="b", linestyle="--", label="Base case")
     # Optimal
     opt_idx = np.argmin(P_out_list)
     CP_opt = CP_list[opt_idx]
@@ -557,7 +557,7 @@ def plot_CP(num):
     )
     ax1t1.set_xlabel("Cathodic Potential (V)", fontsize=12)
     ax1t1.set_ylabel("PO4 Concentration (mg/L)", fontsize=12)
-    ax1t1.legend(loc="lower left")
+    # ax1t1.legend(loc="lower left")
     ax1t1.tick_params(axis="x", labelsize=12)
     ax1t1.tick_params(axis="y", labelsize=12)
     ax1t1.yaxis.label.set_color("tab:red")
@@ -568,7 +568,7 @@ def plot_CP(num):
     ax1t1b = ax1t1.twinx()
     ax1t1b.spines["left"].set_position(("outward", 50))
     ax1t1b.plot(CP_list, SNOX_out_list, color="tab:green", label="_SNOX Concentration")
-    ax1t1b.set_ylim([2.95, 3.15])
+    ax1t1b.set_ylim([7.7, 7.9])
     # Optimal
     opt_idx = np.argmin(SNOX_out_list)
     CP_opt = CP_list[opt_idx]
@@ -592,7 +592,7 @@ def plot_CP(num):
 
     ax1t2 = ax1t1.twinx()
     ax1t2.plot(CP_list, P_removal_list, color="tab:blue", label="_Phosphorus Recovery")
-    ax1t2.set_ylim([0.86, 0.94])
+    ax1t2.set_ylim([0.87, 0.94])
     # Optimal
     opt_idx = np.argmax(P_removal_list)
     CP_opt = CP_list[opt_idx]
@@ -616,7 +616,7 @@ def plot_CP(num):
     ax1t3.plot(
         CP_list, Ener_electroNP_out, color="tab:orange", label="_Energy Consumption"
     )
-    ax1t3.set_ylim([0, 0.4])
+    ax1t3.set_ylim([0, 0.35])
     # Optimal
     opt_idx = np.argmin(Ener_electroNP_out)
     CP_opt = CP_list[opt_idx]
@@ -723,7 +723,7 @@ def plot_CP_effluent(num):
 
     # P removal
     ax1.plot(CP_list, P_removal_list, color="k", label="_Phosphorus Recovery")
-    ax1.set_ylim([0.86, 0.94])
+    # ax1.set_ylim([0.86, 0.94])
     ax1.set_xlabel("Cathodic Potential (V)", fontsize=11)
     ax1.set_ylabel("Phosphorus Recovery", fontsize=11)
     ax1.tick_params(axis="x", labelsize=11)
@@ -734,7 +734,7 @@ def plot_CP_effluent(num):
     ax1a = ax1.twinx()
     ax1a.plot(CP_list, TSS_out_list, color="tab:blue", label="_TSS Concentration")
     # ax1a.plot(CP_list, TSS_max, color="tab:blue", linestyle='--', label='_TSS Max')
-    ax1a.set_ylim([45.15, 45.25])
+    # ax1a.set_ylim([45.15, 45.25])
     ax1a.set_ylabel("TSS Concentration (mg/L)", fontsize=11)
     ax1a.tick_params(axis="x", labelsize=11)
     ax1a.tick_params(axis="y", labelsize=11)
@@ -748,7 +748,7 @@ def plot_CP_effluent(num):
     ax1b.spines.right.set_position(("axes", 1.15))
     ax1b.plot(CP_list, COD_out_list, color="tab:orange", label="_COD Concentration")
     # ax1b.plot(CP_list, COD_max, color="tab:orange", linestyle='--', label='_COD Max')
-    ax1b.set_ylim([96.44, 96.46])
+    # ax1b.set_ylim([96.44, 96.46])
     ax1b.set_ylabel("COD Concentration (mg/L)", fontsize=11)
     ax1b.tick_params(axis="x", labelsize=11)
     ax1b.tick_params(axis="y", labelsize=11)
@@ -762,7 +762,7 @@ def plot_CP_effluent(num):
     ax1c.spines.right.set_position(("axes", 1.35))
     ax1c.plot(CP_list, BOD_out_list, color="tab:purple", label="_BOD Concentration")
     # ax1c.plot(CP_list, BOD_max, color="tab:purple", linestyle='--', label='_BOD Max')
-    ax1c.set_ylim([6.066, 6.074])
+    # ax1c.set_ylim([6.066, 6.074])
     ax1c.set_ylabel("BOD Concentration (mg/L)", fontsize=11)
     ax1c.tick_params(axis="x", labelsize=11)
     ax1c.tick_params(axis="y", labelsize=11)
@@ -775,7 +775,7 @@ def plot_CP_effluent(num):
     fig2, ax2 = plt.subplots(figsize=(9, 5), layout="constrained")
     ax2.plot(CP_list, P_removal_list, color="k", label="_Phosphorus Recovery")
     ax2.set_xlabel("Cathodic Potential (V)", fontsize=11)
-    ax2.set_ylim([0.86, 0.94])
+    # ax2.set_ylim([0.86, 0.94])
     ax2.set_ylabel("Phosphorus Recovery", fontsize=11)
     ax2.tick_params(axis="x", labelsize=11)
     ax2.tick_params(axis="y", labelsize=11)
@@ -785,7 +785,7 @@ def plot_CP_effluent(num):
     ax1d = ax2.twinx()
     ax1d.plot(CP_list, TKN_out_list, color="tab:brown", label="_TKN Concentration")
     # ax1d.plot(CP_list, TKN_max, color="tab:brown", linestyle='--', label='_TKN Max')
-    ax1d.set_ylim([6.72, 6.74])
+    # ax1d.set_ylim([6.72, 6.74])
     ax1d.set_ylabel("TKN Concentration (mg/L)", fontsize=11)
     ax1d.tick_params(axis="x", labelsize=11)
     ax1d.tick_params(axis="y", labelsize=11)
@@ -798,7 +798,7 @@ def plot_CP_effluent(num):
     ax1e = ax2.twinx()
     ax1e.spines.right.set_position(("axes", 1.15))
     ax1e.plot(CP_list, SNOX_out_list, color="tab:green", label="_SNOX Concentration")
-    ax1e.set_ylim([2.95, 3.15])
+    # ax1e.set_ylim([2.95, 3.15])
     ax1e.set_ylabel("SNOx Concentration (mg/L)", fontsize=11)
     ax1e.tick_params(axis="x", labelsize=11)
     ax1e.tick_params(axis="y", labelsize=11)
@@ -810,7 +810,7 @@ def plot_CP_effluent(num):
     # Figure 3
     fig3, ax3 = plt.subplots(figsize=(9, 5), layout="constrained")
     ax3.plot(CP_list, P_removal_list, color="k", label="_Phosphorus Recovery")
-    ax3.set_ylim([0.86, 0.94])
+    # ax3.set_ylim([0.86, 0.94])
     ax3.set_xlabel("Cathodic Potential (V)", fontsize=11)
     ax3.set_ylabel("Phosphorus Recovery", fontsize=11)
     ax3.tick_params(axis="x", labelsize=11)
@@ -823,7 +823,7 @@ def plot_CP_effluent(num):
         CP_list, P_org_out_list, color="tab:pink", label="_Organic P Concentration"
     )
     ax1f.plot(CP_list, TP_max, color="tab:grey", linestyle="--", label="_TP Max")
-    ax1f.set_ylim([5, 5.5])
+    # ax1f.set_ylim([5, 5.5])
     ax1f.set_xlabel("Cathodic Potential (V)", fontsize=11)
     ax1f.set_ylabel("Organic Phosphorus Concentration (mg/L)", fontsize=11)
     ax1f.tick_params(axis="x", labelsize=11)
@@ -837,7 +837,7 @@ def plot_CP_effluent(num):
     ax1g = ax3.twinx()
     ax1g.spines.right.set_position(("axes", 1.15))
     ax1g.plot(CP_list, P_out_list, color="tab:red", label="_PO4 Concentration")
-    ax1g.set_ylim([10, 60])
+    # ax1g.set_ylim([10, 60])
     ax1g.set_xlabel("Cathodic Potential (V)", fontsize=11)
     ax1g.set_ylabel("PO4 Concentration (mg/L)", fontsize=11)
     ax1g.tick_params(axis="x", labelsize=11)
@@ -892,9 +892,9 @@ def plot_rAV(num):
     ax2t1.plot(r_AV_list, P_out_list, "tab:red", label="_PO4 Concentration")
     ax2t1.set_xlim([0.07, 0.14])
     ax2t1.set_ylim([0, 240])
-    # Base case
-    r_AV_base = 0.1
-    ax2t1.axvline(x=r_AV_base, color="b", linestyle="--", label="Base case")
+    # # Base case
+    # r_AV_base = 0.1
+    # ax2t1.axvline(x=r_AV_base, color="b", linestyle="--", label="Base case")
     # Optimal
     opt_idx = np.argmin(P_out_list)
     r_AV_opt = r_AV_list[opt_idx]
@@ -908,7 +908,7 @@ def plot_rAV(num):
     )
     ax2t1.set_xlabel("Area Volume Ratio (cm$^{-1}$)", fontsize=12)
     ax2t1.set_ylabel("PO4 Concentration (mg/L)", fontsize=12)
-    ax2t1.legend(loc="lower right")
+    # ax2t1.legend(loc="lower right")
     ax2t1.tick_params(axis="x", labelsize=12)
     ax2t1.tick_params(axis="y", labelsize=12)
     ax2t1.yaxis.label.set_color("tab:red")
@@ -6162,7 +6162,7 @@ def stackplot_BOD5_max(num):
 
 def stackplot_TKN_max(num):
     # 1D plot
-    TKN_max_list = np.linspace(0.0066, 0.008, num)
+    TKN_max_list = np.linspace(0.0066, 0.0074, num)
 
     # No electroNP flowsheet
     m, results = run_optimization_vary_max(
@@ -6244,7 +6244,7 @@ def stackplot_TKN_max(num):
         linestyle="-.",
         label="SEC (no electroNP)",
     )
-    ax1.set_xlim(6.7, 8)
+    # ax1.set_xlim(6.7, 8)
     ax1.set_xlabel("TKN Max Concentration (mg/L)", fontsize=14)
     ax1.set_ylabel("SEC (kWh/m3)", fontsize=14)
     ax1.legend()
@@ -6287,7 +6287,7 @@ if __name__ == "__main__":
     # m, results = main(CP=-0.8 * pyo.units.V, r_AV=0.12)
     # m, results = main(CP=-0.8 * pyo.units.V, r_AV=0.09)
 
-    # m, results = main(CP=-1.1 * pyo.units.V, r_AV=0.14)
+    # m, results = main(CP=-1.3 * pyo.units.V, r_AV=0.1)
 
     # m, results = run_optimization(
     #     CP=-1.1,
@@ -6315,9 +6315,9 @@ if __name__ == "__main__":
     #     has_optimization=True,
     # )
 
-    # plot_CP(num=5)
-    # plot_CP_effluent(num=25)
-    # plot_rAV(num=5)
+    # plot_CP(num=30)
+    # # plot_CP_effluent(num=25)
+    # plot_rAV(num=40)
     # plot_rAV_effluent(num=25)
     # contourf_plot(num=15)
     # contourf_plot_electricity_cost(num=3)
