@@ -75,6 +75,10 @@ def build(case, simplified_routine=False):
             "Zn_2+",
             "Pb_2+",
             "Dy_3+",
+            "B_3+",
+            "Gd_3+",
+            "Mn_2+",
+            "Si_4+",
             "Cl_-",
         ],
         # diffusivity_data={
@@ -111,6 +115,10 @@ def build(case, simplified_routine=False):
             "Pb_2+": 2,
             "Dy_3+": 3,
             "Cl_-": -1,
+            "B_3+": 3,
+            "Gd_3+": 3,
+            "Mn_2+": 3,
+            "Si_4+": 4,
         },
     )
 
@@ -165,6 +173,18 @@ def build(case, simplified_routine=False):
                 ("conc_mass_phase_comp", ("Liq", "Dy_3+")): value(
                     0.801e-3
                 ),  # feed mass concentration
+                ("conc_mass_phase_comp", ("Liq", "B_3+")): value(
+                    72.0099e-3
+                ),  # feed mass concentration
+                ("conc_mass_phase_comp", ("Liq", "Gd_3+")): value(
+                    2.6433e-3
+                ),  # feed mass concentration
+                ("conc_mass_phase_comp", ("Liq", "Mn_2+")): value(
+                    40.2903e-3
+                ),  # feed mass concentration
+                ("conc_mass_phase_comp", ("Liq", "Si_4+")): value(
+                    20.1852e-3
+                ),  # feed mass concentration
                 ("conc_mass_phase_comp", ("Liq", "Cl_-")): value(
                     10000e-3
                 ),  # feed mass concentration
@@ -214,6 +234,18 @@ def build(case, simplified_routine=False):
                 ("conc_mass_phase_comp", ("Liq", "Dy_3+")): value(
                     0.0738e-3
                 ),  # feed mass concentration
+                ("conc_mass_phase_comp", ("Liq", "B_3+")): value(
+                    0
+                ),  # feed mass concentration
+                ("conc_mass_phase_comp", ("Liq", "Gd_3+")): value(
+                    0.2214e-3
+                ),  # feed mass concentration
+                ("conc_mass_phase_comp", ("Liq", "Mn_2+")): value(
+                    0.3895e-3
+                ),  # feed mass concentration
+                ("conc_mass_phase_comp", ("Liq", "Si_4+")): value(
+                    1.1808e-3
+                ),  # feed mass concentration
                 ("conc_mass_phase_comp", ("Liq", "Cl_-")): value(
                     10000e-3
                 ),  # feed mass concentration
@@ -255,6 +287,7 @@ def build(case, simplified_routine=False):
     m.fs.unit.rejection_phase_comp[0, "Liq", "Zn_2+"].fix(0.98)
     m.fs.unit.rejection_phase_comp[0, "Liq", "Pb_2+"].fix(0.99)
     # m.fs.unit.rejection_phase_comp[0, "Liq", "Dy_3+"].fix(0.95)  # Dy 66; Nd 60
+    m.fs.unit.rejection_phase_comp[0, "Liq", "Mn_2+"].fix(0.89)
 
     if simplified_routine is False:
         m.fs.unit.rejection_phase_comp[0, "Liq", "Ca_2+"].fix(0.92)
@@ -262,13 +295,14 @@ def build(case, simplified_routine=False):
         m.fs.unit.rejection_phase_comp[0, "Liq", "Pr_3+"].fix(0.95)  # Pr 59; Nd 60
         m.fs.unit.rejection_phase_comp[0, "Liq", "Na_+"].fix(0.796)
         m.fs.unit.rejection_phase_comp[0, "Liq", "Dy_3+"].fix(0.95)  # Dy 66; Nd 60
+        m.fs.unit.rejection_phase_comp[0, "Liq", "Gd_3+"].fix(0.95)
 
     m.fs.unit.area.fix(500)
     # m.fs.unit.deltaP.fix(0)
     m.fs.unit.permeate.pressure[0].fix(101325)
-    m.fs.unit.feed_side.properties_in[0].assert_electroneutrality(
-        defined_state=True, adjust_by_ion="Cl_-"
-    )
+    # m.fs.unit.feed_side.properties_in[0].assert_electroneutrality(
+    #     defined_state=True, adjust_by_ion="Cl_-"
+    # )
 
     m.fs.costing.cost_process()
     m.fs.costing.add_annual_water_production(m.fs.unit.properties_permeate[0].flow_vol)
@@ -293,16 +327,20 @@ def set_scaling(m):
     set_scaling_factor(m.fs.unit.inlet.flow_mol_phase_comp[0, "Liq", "Zn_2+"], 1e2)
     set_scaling_factor(m.fs.unit.inlet.flow_mol_phase_comp[0, "Liq", "Pb_2+"], 1e2)
     set_scaling_factor(m.fs.unit.inlet.flow_mol_phase_comp[0, "Liq", "Dy_3+"], 1e2)
+    set_scaling_factor(m.fs.unit.inlet.flow_mol_phase_comp[0, "Liq", "B_3+"], 1e2)
+    set_scaling_factor(m.fs.unit.inlet.flow_mol_phase_comp[0, "Liq", "Gd_3+"], 1e2)
+    set_scaling_factor(m.fs.unit.inlet.flow_mol_phase_comp[0, "Liq", "Mn_2+"], 1e2)
+    set_scaling_factor(m.fs.unit.inlet.flow_mol_phase_comp[0, "Liq", "Si_4+"], 1e2)
     calculate_scaling_factors(m)
 
 
 def initialize_system(m):
     # Initialize system
-    m.fs.unit.initialize()
-    # try:
-    #     m.fs.unit.initialize()
-    # except:
-    #     pass
+    # m.fs.unit.initialize()
+    try:
+        m.fs.unit.initialize()
+    except:
+        pass
     m.fs.costing.initialize()
 
 
@@ -427,15 +465,15 @@ def display_performance_metrics(m):
         f"{pyo.value(Zn_in):.3g}"
         f"{pyo.units.get_units(Zn_in)}"
     )
-    Pb_in = pyo.units.convert(
-        m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Pb_2+"],
-        to_units=pyo.units.mg / pyo.units.L,
-    )
-    print(
-        f"Pb2+ feed mass concentration: "
-        f"{pyo.value(Pb_in):.3g}"
-        f"{pyo.units.get_units(Pb_in)}"
-    )
+    # Pb_in = pyo.units.convert(
+    #     m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Pb_2+"],
+    #     to_units=pyo.units.mg / pyo.units.L,
+    # )
+    # print(
+    #     f"Pb2+ feed mass concentration: "
+    #     f"{pyo.value(Pb_in):.3g}"
+    #     f"{pyo.units.get_units(Pb_in)}"
+    # )
     Dy_in = pyo.units.convert(
         m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Dy_3+"],
         to_units=pyo.units.mg / pyo.units.L,
@@ -444,6 +482,42 @@ def display_performance_metrics(m):
         f"Dy3+ feed mass concentration: "
         f"{pyo.value(Dy_in):.3g}"
         f"{pyo.units.get_units(Dy_in)}"
+    )
+    B_in = pyo.units.convert(
+        m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "B_3+"],
+        to_units=pyo.units.mg / pyo.units.L,
+    )
+    print(
+        f"B3+ feed mass concentration: "
+        f"{pyo.value(B_in):.3g}"
+        f"{pyo.units.get_units(B_in)}"
+    )
+    Gd_in = pyo.units.convert(
+        m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Gd_3+"],
+        to_units=pyo.units.mg / pyo.units.L,
+    )
+    print(
+        f"Gd3+ feed mass concentration: "
+        f"{pyo.value(Gd_in):.3g}"
+        f"{pyo.units.get_units(Gd_in)}"
+    )
+    Mn_in = pyo.units.convert(
+        m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Mn_2+"],
+        to_units=pyo.units.mg / pyo.units.L,
+    )
+    print(
+        f"Mn2+ feed mass concentration: "
+        f"{pyo.value(Mn_in):.3g}"
+        f"{pyo.units.get_units(Mn_in)}"
+    )
+    Si_in = pyo.units.convert(
+        m.fs.unit.feed_side.properties_in[0].conc_mass_phase_comp["Liq", "Si_4+"],
+        to_units=pyo.units.mg / pyo.units.L,
+    )
+    print(
+        f"Si4+ feed mass concentration: "
+        f"{pyo.value(Si_in):.3g}"
+        f"{pyo.units.get_units(Si_in)}"
     )
 
     print("\n---- Permeate Metrics ----")
@@ -555,15 +629,15 @@ def display_performance_metrics(m):
         f"{pyo.value(Zn_permeate):.3g}"
         f"{pyo.units.get_units(Zn_permeate)}"
     )
-    Pb_permeate = pyo.units.convert(
-        m.fs.unit.properties_permeate[0].conc_mass_phase_comp["Liq", "Pb_2+"],
-        to_units=pyo.units.mg / pyo.units.L,
-    )
-    print(
-        f"Pb2+ permeate mass concentration: "
-        f"{pyo.value(Pb_permeate):.3g}"
-        f"{pyo.units.get_units(Pb_permeate)}"
-    )
+    # Pb_permeate = pyo.units.convert(
+    #     m.fs.unit.properties_permeate[0].conc_mass_phase_comp["Liq", "Pb_2+"],
+    #     to_units=pyo.units.mg / pyo.units.L,
+    # )
+    # print(
+    #     f"Pb2+ permeate mass concentration: "
+    #     f"{pyo.value(Pb_permeate):.3g}"
+    #     f"{pyo.units.get_units(Pb_permeate)}"
+    # )
     Dy_permeate = pyo.units.convert(
         m.fs.unit.properties_permeate[0].conc_mass_phase_comp["Liq", "Dy_3+"],
         to_units=pyo.units.mg / pyo.units.L,
@@ -572,6 +646,42 @@ def display_performance_metrics(m):
         f"Dy3+ permeate mass concentration: "
         f"{pyo.value(Dy_permeate):.3g}"
         f"{pyo.units.get_units(Dy_permeate)}"
+    )
+    B_permeate = pyo.units.convert(
+        m.fs.unit.properties_permeate[0].conc_mass_phase_comp["Liq", "B_3+"],
+        to_units=pyo.units.mg / pyo.units.L,
+    )
+    print(
+        f"B3+ permeate mass concentration: "
+        f"{pyo.value(B_permeate):.3g}"
+        f"{pyo.units.get_units(B_permeate)}"
+    )
+    Gd_permeate = pyo.units.convert(
+        m.fs.unit.properties_permeate[0].conc_mass_phase_comp["Liq", "Gd_3+"],
+        to_units=pyo.units.mg / pyo.units.L,
+    )
+    print(
+        f"Gd3+ permeate mass concentration: "
+        f"{pyo.value(Gd_permeate):.3g}"
+        f"{pyo.units.get_units(Gd_permeate)}"
+    )
+    Mn_permeate = pyo.units.convert(
+        m.fs.unit.properties_permeate[0].conc_mass_phase_comp["Liq", "Mn_2+"],
+        to_units=pyo.units.mg / pyo.units.L,
+    )
+    print(
+        f"Mn2+ permeate mass concentration: "
+        f"{pyo.value(Mn_permeate):.3g}"
+        f"{pyo.units.get_units(Mn_permeate)}"
+    )
+    Si_permeate = pyo.units.convert(
+        m.fs.unit.properties_permeate[0].conc_mass_phase_comp["Liq", "Si_4+"],
+        to_units=pyo.units.mg / pyo.units.L,
+    )
+    print(
+        f"Si4+ permeate mass concentration: "
+        f"{pyo.value(Si_permeate):.3g}"
+        f"{pyo.units.get_units(Si_permeate)}"
     )
 
     print("\n---- System Performance Metrics ----")
@@ -622,10 +732,18 @@ def display_performance_metrics(m):
     print(f"Sn2+ mass rejection: " f"{pyo.value(1 - Sn_recovery):.3g}")
     Zn_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Zn_2+"]
     print(f"Zn2+ mass rejection: " f"{pyo.value(1 - Zn_recovery):.3g}")
-    Pb_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Pb_2+"]
-    print(f"Pb2+ mass rejection: " f"{pyo.value(1 - Pb_recovery):.3g}")
+    # Pb_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Pb_2+"]
+    # print(f"Pb2+ mass rejection: " f"{pyo.value(1 - Pb_recovery):.3g}")
     Dy_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Dy_3+"]
     print(f"Dy3+ mass rejection: " f"{pyo.value(1 - Dy_recovery):.3g}")
+    B_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "B_3+"]
+    print(f"B3+ mass rejection: " f"{pyo.value(1 - B_recovery):.3g}")
+    Gd_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Gd_3+"]
+    print(f"Gd3+ mass rejection: " f"{pyo.value(1 - Gd_recovery):.3g}")
+    Mn_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Mn_2+"]
+    print(f"Mn3+ mass rejection: " f"{pyo.value(1 - Mn_recovery):.3g}")
+    Si_recovery = m.fs.unit.recovery_mass_phase_comp[0, "Liq", "Si_4+"]
+    print(f"Si4+ mass rejection: " f"{pyo.value(1 - Si_recovery):.3g}")
 
 
 def display_costing(m):
