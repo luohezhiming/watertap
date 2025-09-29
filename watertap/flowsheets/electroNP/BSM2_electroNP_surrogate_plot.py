@@ -5984,7 +5984,7 @@ def stackplot_COD_max(num):
         COD_max=0.1,
         BOD5_max=0.01,
         TKN_max=0.007,
-        TP_max=0.68,
+        TP_max=0.6,
         has_electroNP=False,
         has_optimization=True,
     )
@@ -6059,7 +6059,7 @@ def stackplot_COD_max(num):
         linestyle="-.",
         label="SEC (no electroNP)",
     )
-    ax1.set_xlim(95.62, 97.8)
+    # ax1.set_xlim(95.62, 97.8)
     ax1.set_xlabel("COD Max Concentration (mg/L)", fontsize=14)
     ax1.set_ylabel("SEC (kWh/m3)", fontsize=14)
     ax1.legend()
@@ -6069,7 +6069,7 @@ def stackplot_COD_max(num):
 
 def stackplot_BOD5_max(num):
     # 1D plot
-    BOD5_max_list = np.linspace(0.006, 0.0075, num)
+    BOD5_max_list = np.linspace(0.0058, 0.007, num)
     # BOD5_max_list = np.linspace(0.006, 0.0065, num)
 
     # No electroNP flowsheet
@@ -6077,7 +6077,7 @@ def stackplot_BOD5_max(num):
         COD_max=0.1,
         BOD5_max=0.01,
         TKN_max=0.007,
-        TP_max=0.68,
+        TP_max=0.6,
         has_electroNP=False,
         has_optimization=True,
     )
@@ -6162,14 +6162,14 @@ def stackplot_BOD5_max(num):
 
 def stackplot_TKN_max(num):
     # 1D plot
-    TKN_max_list = np.linspace(0.0066, 0.008, num)
+    TKN_max_list = np.linspace(0.0066, 0.0076, num)
 
     # No electroNP flowsheet
     m, results = run_optimization_vary_max(
         COD_max=0.1,
         BOD5_max=0.01,
         TKN_max=0.007,
-        TP_max=0.68,
+        TP_max=0.6,
         has_electroNP=False,
         has_optimization=True,
     )
@@ -6244,7 +6244,7 @@ def stackplot_TKN_max(num):
         linestyle="-.",
         label="SEC (no electroNP)",
     )
-    ax1.set_xlim(6.7, 8)
+    # ax1.set_xlim(6.7, 8)
     ax1.set_xlabel("TKN Max Concentration (mg/L)", fontsize=14)
     ax1.set_ylabel("SEC (kWh/m3)", fontsize=14)
     ax1.legend()
@@ -6336,6 +6336,6 @@ if __name__ == "__main__":
     # plot_COD_max_no_electroNP(num=15)
     # plot_BOD5_max_no_electroNP(num=15)
 
-    # stackplot_COD_max(num=10)
-    # stackplot_BOD5_max(num=30)
-    stackplot_TKN_max(num=19)
+    stackplot_COD_max(num=15)
+    # stackplot_BOD5_max(num=15)
+    # stackplot_TKN_max(num=16)

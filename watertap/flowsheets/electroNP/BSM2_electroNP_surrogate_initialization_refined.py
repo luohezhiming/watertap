@@ -1557,11 +1557,10 @@ def display_costing(m):
 
 def display_performance_metrics(m):
     print("\n--- Influent Metrics ---")
-    print(
-        "Influent flow",
-        pyo.value(m.fs.FeedWater.flow_vol[0]),
-        pyo.units.get_units(m.fs.FeedWater.flow_vol[0]),
+    Q_in = pyo.units.convert(
+        m.fs.FeedWater.flow_vol[0], to_units=pyo.units.gallon / pyo.units.day
     )
+    print("Influent flow: %.2f MGD" % pyo.value(Q_in / 1e6))
     print(
         "Feed TSS concentration: %.1f mg/L"
         % pyo.value(m.fs.FeedWater.properties[0].TSS * 1e3)
@@ -1592,11 +1591,10 @@ def display_performance_metrics(m):
     )
 
     print("\n--- Effluent Metrics ---")
-    print(
-        "Influent flow",
-        pyo.value(m.fs.Treated.flow_vol[0]),
-        pyo.units.get_units(m.fs.Treated.flow_vol[0]),
+    Q_out = pyo.units.convert(
+        m.fs.Treated.flow_vol[0], to_units=pyo.units.gallon / pyo.units.day
     )
+    print("Effluent flow: %.2f MGD" % pyo.value(Q_out / 1e6))
     print(
         "TSS concentration: %.1f mg/L" % pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
     )
@@ -1735,106 +1733,106 @@ def display_design(m):
 
 if __name__ == "__main__":
     # This method builds and runs a steady state activated sludge flowsheet.
-    # m, results = main(
-    #     has_electroNP=False,
-    #     has_optimization=True,
-    #     objective=objective_fun.LCOW,
-    #     has_effluent_constraints=True,
-    # )
-    # if m.fs.has_electroNP is False:
-    #     stream_table = create_stream_table_dataframe(
-    #         {
-    #             "Feed": m.fs.FeedWater.outlet,
-    #             "R1 inlet": m.fs.R1.inlet,
-    #             "R3 inlet": m.fs.R3.inlet,
-    #             "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
-    #             # "R1": m.fs.R1.outlet,
-    #             # "R2": m.fs.R2.outlet,
-    #             # "R3": m.fs.R3.outlet,
-    #             # "R4": m.fs.R4.outlet,
-    #             # "R5": m.fs.R5.outlet,
-    #             # "R6": m.fs.R6.outlet,
-    #             # "R7": m.fs.R7.outlet,
-    #             # "thickener outlet": m.fs.thickener.underflow,
-    #             # "ADM-ASM translator outlet": m.fs.translator_adm1_asm2d.outlet,
-    #             # "dewater outlet": m.fs.dewater.overflow,
-    #             "Treated water": m.fs.Treated.inlet,
-    #             # "Sludge": m.fs.Sludge.inlet,
-    #         },
-    #         time_point=0,
-    #     )
-    # else:
-    #     stream_table = create_stream_table_dataframe(
-    #         {
-    #             "Feed": m.fs.FeedWater.outlet,
-    #             # "CL inlet": m.fs.CL.inlet,
-    #             "R1 inlet": m.fs.R1.inlet,
-    #             "R3 inlet": m.fs.R3.inlet,
-    #             "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
-    #             # "R1": m.fs.R1.outlet,
-    #             # "R2": m.fs.R2.outlet,
-    #             # "R3": m.fs.R3.outlet,
-    #             # "R4": m.fs.R4.outlet,
-    #             # "R5": m.fs.R5.outlet,
-    #             # "R6": m.fs.R6.outlet,
-    #             # "R7": m.fs.R7.outlet,
-    #             # # "thickener inlet": m.fs.thickener.inlet,
-    #             # "thickener outlet": m.fs.thickener.underflow,
-    #             # "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
-    #             # "ADM-ASM translator outlet": m.fs.translator_adm1_asm2d.outlet,
-    #             # "dewater outlet": m.fs.dewater.overflow,
-    #             # "electroNP inlet": m.fs.electroNP.inlet,
-    #             # "electroNP treated": m.fs.electroNP.treated,
-    #             # # "electroNP byproduct": m.fs.electroNP.byproduct,
-    #             # # "electroNP byproduct": m.fs.electroNP.byproduct,
-    #             "Treated water": m.fs.Treated.inlet,
-    #             "Sludge": m.fs.Sludge.inlet,
-    #             # "MX1": m.fs.MX1.outlet,
-    #             # "MX2": m.fs.MX2.outlet,
-    #             # "MX3": m.fs.MX3.outlet,
-    #             # "MX4": m.fs.MX4.outlet,
-    #         },
-    #         time_point=0,
-    #     )
-    # print(stream_table_dataframe_to_string(stream_table))
-
-    m_min, obj_set, m_set, cp_opt, r_AV_opt = multi_run(
+    m, results = main(
         has_electroNP=True,
-        objective=objective_fun.LCOP,
+        has_optimization=True,
+        objective=objective_fun.LCOW,
         has_effluent_constraints=True,
-        num=20,
     )
-    stream_table = create_stream_table_dataframe(
-        {
-            "Feed": m_min.fs.FeedWater.outlet,
-            "CL inlet": m_min.fs.CL.inlet,
-            # "R1 inlet": m_min.fs.R1.inlet,
-            # "R3 inlet": m_min.fs.R3.inlet,
-            # "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
-            "R1": m_min.fs.R1.outlet,
-            "R2": m_min.fs.R2.outlet,
-            "R3": m_min.fs.R3.outlet,
-            "R4": m_min.fs.R4.outlet,
-            "R5": m_min.fs.R5.outlet,
-            "R6": m_min.fs.R6.outlet,
-            "R7": m_min.fs.R7.outlet,
-            # "thickener inlet": m_min.fs.thickener.inlet,
-            "thickener outlet": m_min.fs.thickener.underflow,
-            "ASM-ADM translator inlet": m_min.fs.translator_asm2d_adm1.inlet,
-            "ADM-ASM translator outlet": m_min.fs.translator_adm1_asm2d.outlet,
-            "dewater outlet": m_min.fs.dewater.overflow,
-            "electroNP inlet": m_min.fs.electroNP.inlet,
-            "electroNP treated": m_min.fs.electroNP.treated,
-            # "electroNP byproduct": m_min.fs.electroNP.byproduct,
-            # "electroNP byproduct": m_min.fs.electroNP.byproduct,
-            "Treated water": m_min.fs.Treated.inlet,
-            "Sludge": m_min.fs.Sludge.inlet,
-            # "MX1": m_min.fs.MX1.outlet,
-            # "MX2": m_min.fs.MX2.outlet,
-            # "MX3": m_min.fs.MX3.outlet,
-            # "MX4": m_min.fs.MX4.outlet,
-        },
-        time_point=0,
-    )
+    if m.fs.has_electroNP is False:
+        stream_table = create_stream_table_dataframe(
+            {
+                "Feed": m.fs.FeedWater.outlet,
+                "R1 inlet": m.fs.R1.inlet,
+                "R3 inlet": m.fs.R3.inlet,
+                "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
+                # "R1": m.fs.R1.outlet,
+                # "R2": m.fs.R2.outlet,
+                # "R3": m.fs.R3.outlet,
+                # "R4": m.fs.R4.outlet,
+                # "R5": m.fs.R5.outlet,
+                # "R6": m.fs.R6.outlet,
+                # "R7": m.fs.R7.outlet,
+                # "thickener outlet": m.fs.thickener.underflow,
+                # "ADM-ASM translator outlet": m.fs.translator_adm1_asm2d.outlet,
+                # "dewater outlet": m.fs.dewater.overflow,
+                "Treated water": m.fs.Treated.inlet,
+                # "Sludge": m.fs.Sludge.inlet,
+            },
+            time_point=0,
+        )
+    else:
+        stream_table = create_stream_table_dataframe(
+            {
+                "Feed": m.fs.FeedWater.outlet,
+                # "CL inlet": m.fs.CL.inlet,
+                "R1 inlet": m.fs.R1.inlet,
+                "R3 inlet": m.fs.R3.inlet,
+                "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
+                # "R1": m.fs.R1.outlet,
+                # "R2": m.fs.R2.outlet,
+                # "R3": m.fs.R3.outlet,
+                # "R4": m.fs.R4.outlet,
+                # "R5": m.fs.R5.outlet,
+                # "R6": m.fs.R6.outlet,
+                # "R7": m.fs.R7.outlet,
+                # # "thickener inlet": m.fs.thickener.inlet,
+                # "thickener outlet": m.fs.thickener.underflow,
+                # "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
+                # "ADM-ASM translator outlet": m.fs.translator_adm1_asm2d.outlet,
+                # "dewater outlet": m.fs.dewater.overflow,
+                # "electroNP inlet": m.fs.electroNP.inlet,
+                # "electroNP treated": m.fs.electroNP.treated,
+                # # "electroNP byproduct": m.fs.electroNP.byproduct,
+                # # "electroNP byproduct": m.fs.electroNP.byproduct,
+                "Treated water": m.fs.Treated.inlet,
+                "Sludge": m.fs.Sludge.inlet,
+                # "MX1": m.fs.MX1.outlet,
+                # "MX2": m.fs.MX2.outlet,
+                # "MX3": m.fs.MX3.outlet,
+                # "MX4": m.fs.MX4.outlet,
+            },
+            time_point=0,
+        )
+    print(stream_table_dataframe_to_string(stream_table))
+
+    # m_min, obj_set, m_set, cp_opt, r_AV_opt = multi_run(
+    #     has_electroNP=True,
+    #     objective=objective_fun.LCOP,
+    #     has_effluent_constraints=True,
+    #     num=20,
+    # )
+    # stream_table = create_stream_table_dataframe(
+    #     {
+    #         "Feed": m_min.fs.FeedWater.outlet,
+    #         "CL inlet": m_min.fs.CL.inlet,
+    #         # "R1 inlet": m_min.fs.R1.inlet,
+    #         # "R3 inlet": m_min.fs.R3.inlet,
+    #         # "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
+    #         "R1": m_min.fs.R1.outlet,
+    #         "R2": m_min.fs.R2.outlet,
+    #         "R3": m_min.fs.R3.outlet,
+    #         "R4": m_min.fs.R4.outlet,
+    #         "R5": m_min.fs.R5.outlet,
+    #         "R6": m_min.fs.R6.outlet,
+    #         "R7": m_min.fs.R7.outlet,
+    #         # "thickener inlet": m_min.fs.thickener.inlet,
+    #         "thickener outlet": m_min.fs.thickener.underflow,
+    #         "ASM-ADM translator inlet": m_min.fs.translator_asm2d_adm1.inlet,
+    #         "ADM-ASM translator outlet": m_min.fs.translator_adm1_asm2d.outlet,
+    #         "dewater outlet": m_min.fs.dewater.overflow,
+    #         "electroNP inlet": m_min.fs.electroNP.inlet,
+    #         "electroNP treated": m_min.fs.electroNP.treated,
+    #         # "electroNP byproduct": m_min.fs.electroNP.byproduct,
+    #         # "electroNP byproduct": m_min.fs.electroNP.byproduct,
+    #         "Treated water": m_min.fs.Treated.inlet,
+    #         "Sludge": m_min.fs.Sludge.inlet,
+    #         # "MX1": m_min.fs.MX1.outlet,
+    #         # "MX2": m_min.fs.MX2.outlet,
+    #         # "MX3": m_min.fs.MX3.outlet,
+    #         # "MX4": m_min.fs.MX4.outlet,
+    #     },
+    #     time_point=0,
+    # )
 
     # print(stream_table_dataframe_to_string(stream_table))
