@@ -1557,11 +1557,10 @@ def display_costing(m):
 
 def display_performance_metrics(m):
     print("\n--- Influent Metrics ---")
-    print(
-        "Influent flow",
-        pyo.value(m.fs.FeedWater.flow_vol[0]),
-        pyo.units.get_units(m.fs.FeedWater.flow_vol[0]),
+    Q_in = pyo.units.convert(
+        m.fs.FeedWater.flow_vol[0], to_units=pyo.units.gallon / pyo.units.day
     )
+    print("Influent flow: %.2f MGD" % pyo.value(Q_in / 1e6))
     print(
         "Feed TSS concentration: %.1f mg/L"
         % pyo.value(m.fs.FeedWater.properties[0].TSS * 1e3)
@@ -1592,11 +1591,10 @@ def display_performance_metrics(m):
     )
 
     print("\n--- Effluent Metrics ---")
-    print(
-        "Influent flow",
-        pyo.value(m.fs.Treated.flow_vol[0]),
-        pyo.units.get_units(m.fs.Treated.flow_vol[0]),
+    Q_out = pyo.units.convert(
+        m.fs.Treated.flow_vol[0], to_units=pyo.units.gallon / pyo.units.day
     )
+    print("Effluent flow: %.2f MGD" % pyo.value(Q_out / 1e6))
     print(
         "TSS concentration: %.1f mg/L" % pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
     )
@@ -1728,15 +1726,15 @@ def display_design(m):
     print("\n--- decision variables ---")
     if m.fs.has_electroNP is True:
         print(
-            "Cathodic potential: %.3f V" % pyo.value(m.fs.electroNP.cathodic_potential)
+            "Cathodic potential: %.4f V" % pyo.value(m.fs.electroNP.cathodic_potential)
         )
-        print("Area volume ratio: %.3f V" % pyo.value(m.fs.electroNP.area_volume_ratio))
+        print("Area volume ratio: %.4f V" % pyo.value(m.fs.electroNP.area_volume_ratio))
 
 
 if __name__ == "__main__":
-    # This method builds and runs a steady state activated sludge flowsheet.
+    # # This method builds and runs a steady state activated sludge flowsheet.
     # m, results = main(
-    #     has_electroNP=False,
+    #     has_electroNP=True,
     #     has_optimization=True,
     #     objective=objective_fun.LCOW,
     #     has_effluent_constraints=True,
@@ -1800,7 +1798,7 @@ if __name__ == "__main__":
 
     m_min, obj_set, m_set, cp_opt, r_AV_opt = multi_run(
         has_electroNP=True,
-        objective=objective_fun.LCOP,
+        objective=objective_fun.LCOW,
         has_effluent_constraints=True,
         num=20,
     )
@@ -1837,4 +1835,4 @@ if __name__ == "__main__":
         time_point=0,
     )
 
-    # print(stream_table_dataframe_to_string(stream_table))
+    print(stream_table_dataframe_to_string(stream_table))

@@ -38,8 +38,8 @@ from scipy import interpolate
 def main(CP=-1.1 * pyo.units.V, r_AV=0.1):
     m = build_flowsheet(has_electroNP=True)
     set_operating_conditions(m)
-    # if pyo.value(CP) <= -1.1:
-    #     m.fs.electroNP.cathodic_potential.fix(pyo.value(CP))
+    if pyo.value(CP) <= -1.1:
+        m.fs.electroNP.cathodic_potential.fix(pyo.value(CP))
     if pyo.value(CP) >= -0.9:
         m.fs.electroNP.cathodic_potential.fix(pyo.value(CP))
     if pyo.value(r_AV) >= 0.11:
@@ -288,6 +288,7 @@ def run_optimization_vary_max(
     TP_max=0.005,
     has_electroNP=True,
     has_optimization=True,
+    TSS_max=0.05,
 ):
     m = build_flowsheet(has_electroNP=has_electroNP)
     set_operating_conditions(m)
@@ -315,6 +316,7 @@ def run_optimization_vary_max(
                 BOD5_max=BOD5_max,
                 TKN_max=TKN_max,
                 TP_max=TP_max,
+                TSS_max=TSS_max,
             )
         else:
             setup_optimization_no_electroNP_vary_max(
@@ -324,6 +326,7 @@ def run_optimization_vary_max(
                 BOD5_max=BOD5_max,
                 TKN_max=TKN_max,
                 TP_max=TP_max,
+                TSS_max=TSS_max,
             )
 
     results = solve(m)
@@ -338,6 +341,7 @@ def setup_optimization_vary_max(
     BOD5_max=0.01,
     TKN_max=0.007,
     TP_max=0.005,
+    TSS_max=0.05,
 ):
     # Objective function
     if objective == objective_fun.LCOW:
@@ -385,6 +389,8 @@ def setup_optimization_vary_max(
     m.fs.TKN_max.fix(TKN_max)
     m.fs.total_P_max.unfix()
     m.fs.total_P_max.fix(TP_max)
+    m.fs.TSS_max.unfix()
+    m.fs.TSS_max.fix(TSS_max)
 
     # m.fs.eq_total_P_max[0].deactivate()
 
@@ -396,6 +402,7 @@ def setup_optimization_no_electroNP_vary_max(
     BOD5_max=0.01,
     TKN_max=0.007,
     TP_max=0.005,
+    TSS_max=0.05,
 ):
     results = solve(m)
 
@@ -437,6 +444,8 @@ def setup_optimization_no_electroNP_vary_max(
     m.fs.TKN_max.fix(TKN_max)
     m.fs.total_P_max.unfix()
     m.fs.total_P_max.fix(TP_max)
+    m.fs.TSS_max.unfix()
+    m.fs.TSS_max.fix(TSS_max)
 
     # m.fs.eq_total_P_max[0].deactivate()
 
@@ -616,7 +625,7 @@ def plot_CP(num):
     ax1t3.plot(
         CP_list, Ener_electroNP_out, color="tab:orange", label="_Energy Consumption"
     )
-    ax1t3.set_ylim([0, 0.35])
+    ax1t3.set_ylim([0, 0.4])
     # Optimal
     opt_idx = np.argmin(Ener_electroNP_out)
     CP_opt = CP_list[opt_idx]
@@ -5984,7 +5993,7 @@ def stackplot_COD_max(num):
         COD_max=0.1,
         BOD5_max=0.01,
         TKN_max=0.007,
-        TP_max=0.68,
+        TP_max=0.6,
         has_electroNP=False,
         has_optimization=True,
     )
@@ -6069,7 +6078,7 @@ def stackplot_COD_max(num):
 
 def stackplot_BOD5_max(num):
     # 1D plot
-    BOD5_max_list = np.linspace(0.006, 0.0075, num)
+    BOD5_max_list = np.linspace(0.0058, 0.007, num)
     # BOD5_max_list = np.linspace(0.006, 0.0065, num)
 
     # No electroNP flowsheet
@@ -6077,7 +6086,7 @@ def stackplot_BOD5_max(num):
         COD_max=0.1,
         BOD5_max=0.01,
         TKN_max=0.007,
-        TP_max=0.68,
+        TP_max=0.6,
         has_electroNP=False,
         has_optimization=True,
     )
@@ -6152,7 +6161,7 @@ def stackplot_BOD5_max(num):
         linestyle="-.",
         label="SEC (no electroNP)",
     )
-    # ax1.set_xlim(95.62, 97.8)
+    ax1.set_xlim(5.8, 7.0)
     ax1.set_xlabel("BOD5 Max Concentration (mg/L)", fontsize=14)
     ax1.set_ylabel("SEC (kWh/m3)", fontsize=14)
     ax1.legend()
@@ -6162,14 +6171,14 @@ def stackplot_BOD5_max(num):
 
 def stackplot_TKN_max(num):
     # 1D plot
-    TKN_max_list = np.linspace(0.0066, 0.0074, num)
+    TKN_max_list = np.linspace(0.0066, 0.0076, num)
 
     # No electroNP flowsheet
     m, results = run_optimization_vary_max(
         COD_max=0.1,
         BOD5_max=0.01,
         TKN_max=0.007,
-        TP_max=0.68,
+        TP_max=0.6,
         has_electroNP=False,
         has_optimization=True,
     )
@@ -6244,10 +6253,104 @@ def stackplot_TKN_max(num):
         linestyle="-.",
         label="SEC (no electroNP)",
     )
-    # ax1.set_xlim(6.7, 8)
+    ax1.set_xlim(6.6, 7.5)
     ax1.set_xlabel("TKN Max Concentration (mg/L)", fontsize=14)
     ax1.set_ylabel("SEC (kWh/m3)", fontsize=14)
     ax1.legend()
+
+    plt.show(block=True)
+
+
+def stackplot_TSS_max(num):
+    # 1D plot
+    TSS_max_list = np.linspace(0.041, 0.046, num)
+
+    # No electroNP flowsheet
+    m, results = run_optimization_vary_max(
+        COD_max=0.1,
+        BOD5_max=0.01,
+        TKN_max=0.007,
+        TP_max=0.6,
+        has_electroNP=False,
+        has_optimization=True,
+        TSS_max=0.05,
+    )
+
+    Ne_Ener_aeration = pyo.value(m.fs.costing.aeration_energy)
+    Ne_LCOW = pyo.value(m.fs.costing.LCOW)
+    Ne_SEC = pyo.value(m.fs.costing.specific_energy_consumption)
+
+    # aeration energy
+    Ne_Ener_aeration_list = Ne_Ener_aeration * np.ones(num)
+
+    # LCOW
+    Ne_LCOW_list = Ne_LCOW * np.ones(num)
+
+    # SEC
+    Ne_SEC_list = Ne_SEC * np.ones(num)
+
+    # electroNP flowsheet
+    # LCOW
+    LCOW_list = np.zeros(num)
+    LCOW_list[:] = np.nan
+
+    # SEC
+    SEC_list = np.zeros(num)
+    SEC_list[:] = np.nan
+
+    # aeration energy
+    Ener_aeration_list = np.zeros(num)
+    Ener_aeration_list[:] = np.nan
+
+    # electroNP SEC
+    SEC_electroNP_list = np.zeros(num)
+    SEC_electroNP_list[:] = np.nan
+
+    for i in range(0, num):
+        try:
+            m, results = run_optimization_vary_max(
+                COD_max=0.1,
+                BOD5_max=0.01,
+                TKN_max=0.007,
+                TP_max=0.6,
+                has_electroNP=True,
+                has_optimization=True,
+                TSS_max=TSS_max_list[i],
+            )
+
+            LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
+            SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+            Ener_aeration_list[i] = pyo.value(m.fs.costing.aeration_energy)
+            SEC_electroNP_list[i] = pyo.value(m.fs.costing.electroNP_energy_consumption)
+        except:
+            pass
+
+    LCOW_list = interp_1d(LCOW_list)
+    SEC_list = interp_1d(SEC_list)
+    Ener_aeration_list = interp_1d(Ener_aeration_list)
+    SEC_electroNP_list = interp_1d(SEC_electroNP_list)
+
+    TSS_max_list = 1000 * TSS_max_list
+
+    # Figure 1
+    fig1, ax1 = plt.subplots(figsize=(7, 5), layout="constrained")
+    stacked_1 = [a + b for a, b in zip(Ener_aeration_list, SEC_electroNP_list)]
+    SEC_other = [a - b for a, b in zip(SEC_list, stacked_1)]
+    stacked_cols = [Ener_aeration_list, SEC_electroNP_list, SEC_other]
+    labels = ["Aeration energy", "electroN-P", "other"]
+    hatches = ["/", "\\", "|", "-", "+", "x", "o", "O", ".", "*"]
+    ax1.stackplot(TSS_max_list, stacked_cols, labels=labels, hatch=hatches)
+    ax1.plot(
+        TSS_max_list,
+        Ne_SEC_list,
+        color="k",
+        linestyle="-.",
+        label="SEC (no electroNP)",
+    )
+    ax1.set_xlim(41, 46)
+    ax1.set_xlabel("TSS Max Concentration (mg/L)", fontsize=14)
+    ax1.set_ylabel("SEC (kWh/m3)", fontsize=14)
+    ax1.legend(loc="lower left")
 
     plt.show(block=True)
 
@@ -6287,7 +6390,7 @@ if __name__ == "__main__":
     # m, results = main(CP=-0.8 * pyo.units.V, r_AV=0.12)
     # m, results = main(CP=-0.8 * pyo.units.V, r_AV=0.09)
 
-    # m, results = main(CP=-1.3 * pyo.units.V, r_AV=0.1)
+    # m, results = main(CP=-1.1 * pyo.units.V, r_AV=0.14)
 
     # m, results = run_optimization(
     #     CP=-1.1,
@@ -6333,9 +6436,10 @@ if __name__ == "__main__":
     # plot_TP_max(num=15)
     # plot_aeration_tank_volume(num=15)
 
-    # plot_COD_max_no_electroNP(num=15)
+    # plot_TSS_max_no_electroNP(num=15)
     # plot_BOD5_max_no_electroNP(num=15)
 
-    # stackplot_COD_max(num=10)
-    # stackplot_BOD5_max(num=30)
-    stackplot_TKN_max(num=19)
+    # stackplot_TSS_max(num=10)
+    # stackplot_BOD5_max(num=15)
+    # stackplot_TKN_max(num=14)
+    stackplot_TSS_max(num=14)
