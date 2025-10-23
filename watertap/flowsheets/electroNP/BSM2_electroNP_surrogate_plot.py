@@ -72,30 +72,34 @@ def main(CP=-1.1 * pyo.units.V, r_AV=0.1):
     return m, results
 
 
-def run_with_electricity_cost(CP=-1.1 * pyo.units.V, electricity_cost=0.07):
-    m = build_flowsheet(has_electroNP=True)
+def run_with_electricity_cost(
+    has_electroNP=True, CP=-1.1 * pyo.units.V, electricity_cost=0.07
+):
+    m = build_flowsheet(has_electroNP=has_electroNP)
     set_operating_conditions(m)
-    if pyo.value(CP) <= -1.1:
-        m.fs.electroNP.cathodic_potential.fix(pyo.value(CP))
-    # # if pyo.value(CP) >= -0.9:
-    # #     m.fs.electroNP.cathodic_potential.fix(pyo.value(CP))
-    # if pyo.value(r_AV) >= 0.11:
-    #     m.fs.electroNP.area_volume_ratio.fix(pyo.value(r_AV))
-    if pyo.value(CP) >= -0.8:
-        m.fs.electroNP.cathodic_potential.fix(pyo.value(CP))
+    if has_electroNP is True:
+        if pyo.value(CP) <= -1.1:
+            m.fs.electroNP.cathodic_potential.fix(pyo.value(CP))
+        # # if pyo.value(CP) >= -0.9:
+        # #     m.fs.electroNP.cathodic_potential.fix(pyo.value(CP))
+        # if pyo.value(r_AV) >= 0.11:
+        #     m.fs.electroNP.area_volume_ratio.fix(pyo.value(r_AV))
+        if pyo.value(CP) >= -0.8:
+            m.fs.electroNP.cathodic_potential.fix(pyo.value(CP))
     set_scaling(m)
     initialize_system(m)
 
-    m.fs.electroNP.cathodic_potential.unfix()
-    m.fs.electroNP.cathodic_potential.fix(CP)
+    if has_electroNP is True:
+        m.fs.electroNP.cathodic_potential.unfix()
+        m.fs.electroNP.cathodic_potential.fix(CP)
 
     # results = solve(m)
 
     add_costing(m)
     m.fs.costing.electricity_cost.unfix()
     m.fs.costing.electricity_cost.fix(electricity_cost)
-    m.fs.costing.electroNP_energy_consumption
-    m.fs.costing.aeration_energy
+    # m.fs.costing.electroNP_energy_consumption
+    # m.fs.costing.aeration_energy
     m.fs.costing.initialize()
 
     interval_initializer(m.fs.costing)
@@ -509,6 +513,103 @@ def run_optimization_with_aeration_tank_volume(
     results = solve(m)
 
     return m, results
+
+
+def run_optimization_vary_electricity_cost(
+    electricity_cost=0.07,
+    has_electroNP=True,
+    has_optimization=True,
+    objective=objective_fun.LCOW,
+):
+    m = build_flowsheet(has_electroNP=has_electroNP)
+    set_operating_conditions(m)
+    set_scaling(m)
+
+    m, results = initialize_system(m)
+    add_costing(m)
+    m.fs.costing.electricity_cost.unfix()
+    m.fs.costing.electricity_cost.fix(electricity_cost)
+    m.fs.costing.initialize()
+    interval_initializer(m.fs.costing)
+
+    if has_electroNP is True:
+        m.fs.electroNP.cathodic_potential.unfix()
+        m.fs.electroNP.area_volume_ratio.unfix()
+        m.fs.electroNP.cathodic_potential.fix(-0.96)
+        m.fs.electroNP.area_volume_ratio.fix(0.1)
+
+    # results = solve(m)
+
+    if has_optimization:
+        setup_optimization(
+            m,
+            objective=objective,
+            has_effluent_constraints=True,
+            reactor_volume_equalities=False,
+        )
+    results = solve(m)
+
+    return m, results
+
+
+# def setup_optimization(
+#     m,
+#     has_electroNP=True,
+#     objective=objective_fun.LCOW,
+# ):
+#     # Objective function
+#     if objective == objective_fun.LCOW:
+#         m.fs.objective = pyo.Objective(expr=m.fs.costing.LCOW)
+#     elif objective == objective_fun.LCOP:
+#         m.fs.objective = pyo.Objective(expr=m.fs.costing.LCOW_P_removal)
+#     else:
+#         raise TypeError(
+#             f'objective must be set to "LCOW"  or "LCOP".'
+#             f" objective was set to {objective}"
+#         )
+#
+#     # Decision variables
+#     if has_electroNP is True:
+#         m.fs.electroNP.cathodic_potential.unfix()
+#         m.fs.electroNP.cathodic_potential.setlb(-1.3)
+#         m.fs.electroNP.cathodic_potential.setub(-0.8)
+#
+#         m.fs.electroNP.area_volume_ratio.unfix()
+#         m.fs.electroNP.area_volume_ratio.setlb(0.065)
+#         m.fs.electroNP.area_volume_ratio.setub(0.145)
+#
+#     m.fs.R5.outlet.conc_mass_comp[:, "S_O2"].unfix()
+#     m.fs.R5.outlet.conc_mass_comp[:, "S_O2"].setlb(0)
+#     m.fs.R5.outlet.conc_mass_comp[:, "S_O2"].setub(10e-3)
+#
+#     m.fs.R6.outlet.conc_mass_comp[:, "S_O2"].unfix()
+#     m.fs.R6.outlet.conc_mass_comp[:, "S_O2"].setlb(0)
+#     m.fs.R6.outlet.conc_mass_comp[:, "S_O2"].setub(10e-3)
+#
+#     m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].unfix()
+#     m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].setlb(0)
+#     m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].setub(10e-3)
+#
+#     # # Unfix fraction of outflow from reactor 7 that goes to recycle
+#     # m.fs.SP1.split_fraction[:, "underflow"].unfix()
+#     # # m.fs.SP1.split_fraction[:, "underflow"].setlb(0.45)
+#     # m.fs.SP2.split_fraction[:, "recycle"].unfix()
+#
+#     add_effluent_violations(m)
+#
+#
+#     m.fs.COD_max.unfix()
+#     m.fs.COD_max.fix(COD_max)
+#     m.fs.BOD5_max.unfix()
+#     m.fs.BOD5_max.fix(BOD5_max)
+#     m.fs.TKN_max.unfix()
+#     m.fs.TKN_max.fix(TKN_max)
+#     m.fs.total_P_max.unfix()
+#     m.fs.total_P_max.fix(TP_max)
+#     m.fs.TSS_max.unfix()
+#     m.fs.TSS_max.fix(TSS_max)
+#
+#     # m.fs.eq_total_P_max[0].deactivate()
 
 
 def plot_CP(num):
@@ -6355,6 +6456,107 @@ def stackplot_TSS_max(num):
     plt.show(block=True)
 
 
+def plot_electricity_cost(num):
+    # # 1D plot
+    electricity_cost_list = np.linspace(0.05, 0.1, num)
+
+    # P removal
+    # P_removal_list = np.zeros(num)
+    # P_removal_list[:] = np.nan
+    LCOW_list = np.zeros(num)
+    LCOW_list[:] = np.nan
+    LCOP_list = np.zeros(num)
+    LCOP_list[:] = np.nan
+
+    LCOW_no_electroNP_list = np.zeros(num)
+    LCOW_no_electroNP_list[:] = np.nan
+
+    for i in range(0, num):
+        try:
+            m, results = run_optimization_vary_electricity_cost(
+                electricity_cost=electricity_cost_list[i],
+                has_electroNP=True,
+                has_optimization=True,
+                objective=objective_fun.LCOW,
+            )
+            # m2, results = run_with_electricity_cost(
+            #     has_electroNP=False, CP=-1.1, electricity_cost=electricity_cost_list[i]
+            # )
+
+            # P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
+            LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
+            LCOP_list[i] = pyo.value(m.fs.costing.LCOW_P_removal)
+            # LCOW_no_electroNP_list[i] = pyo.value(m2.fs.costing.LCOW)
+            # LCOP_no_electroNP_list[i] = pyo.value(m2.fs.costing.LCOW_P_removal)
+        except:
+            pass
+
+    for i in range(0, num):
+        try:
+            m2, results = run_optimization_vary_electricity_cost(
+                electricity_cost=electricity_cost_list[i],
+                has_electroNP=False,
+                has_optimization=True,
+                objective=objective_fun.LCOW,
+            )
+            # m2, results = run_with_electricity_cost(
+            #     has_electroNP=False, CP=-1.1, electricity_cost=electricity_cost_list[i]
+            # )
+
+            LCOW_no_electroNP_list[i] = pyo.value(m2.fs.costing.LCOW)
+        except:
+            pass
+
+    LCOW_list = interp_1d(LCOW_list)
+    LCOP_list = interp_1d(LCOP_list)
+    LCOW_no_electroNP_list = interp_1d(LCOW_no_electroNP_list)
+
+    # Figure 1
+    fig1, ax1 = plt.subplots(figsize=(9, 5), layout="constrained")
+
+    # LCOW
+    ax1.plot(
+        electricity_cost_list,
+        LCOW_list,
+        color="tab:blue",
+        label="LCOW (BSM2 with electroNP)",
+    )
+    ax1.plot(
+        electricity_cost_list,
+        LCOW_no_electroNP_list,
+        color="tab:blue",
+        linestyle="--",
+        label="LCOW (BSM2 without electroNP)",
+    )
+    ax1.set_xlabel("Electricity Cost ($/kWh (2018))", fontsize=12)
+    # ax1.set_ylim([0.65, 0.95])
+    ax1.set_ylabel("LCOW ($/m3 (2023))", fontsize=11)
+    ax1.tick_params(axis="x", labelsize=11)
+    ax1.tick_params(axis="y", labelsize=11)
+    plt.locator_params(axis="y", nbins=8)
+    ax1.legend(loc="upper center")
+
+    # LCOP
+    ax1a = ax1.twinx()
+    ax1a.plot(
+        electricity_cost_list,
+        LCOP_list,
+        color="tab:red",
+        label="LCOP (BSM2 with electroNP)",
+    )
+    # ax1a.set_ylim([44.95, 45.25])
+    ax1a.set_ylabel("LCOP ($/kg (2023))", fontsize=11)
+    ax1a.tick_params(axis="x", labelsize=11)
+    ax1a.tick_params(axis="y", labelsize=11)
+    ax1a.yaxis.label.set_color("tab:red")
+    ax1a.spines["right"].set_color("tab:red")
+    ax1a.tick_params(axis="y", colors="tab:red")
+    plt.locator_params(axis="y", nbins=8)
+    ax1a.legend(loc="lower center")
+
+    plt.show(block=True)
+
+
 def interp_1d(array):
     # Making sequences for interp
     ok = ~np.isnan(array)
@@ -6442,4 +6644,11 @@ if __name__ == "__main__":
     # stackplot_TSS_max(num=10)
     # stackplot_BOD5_max(num=15)
     # stackplot_TKN_max(num=14)
-    stackplot_TSS_max(num=14)
+    # stackplot_TSS_max(num=14)
+    plot_electricity_cost(num=5)
+    # run_optimization_vary_electricity_cost(
+    #     electricity_cost=0.07,
+    #     has_electroNP=False,
+    #     has_optimization=True,
+    #     objective=objective_fun.LCOW,
+    # )
