@@ -55,13 +55,13 @@ def run_optimization_vary_max(
     m.fs.costing.initialize()
     interval_initializer(m.fs.costing)
 
-    if has_electroNP is True:
-        m.fs.electroNP.cathodic_potential.unfix()
-        m.fs.electroNP.area_volume_ratio.unfix()
-        m.fs.electroNP.cathodic_potential.fix(-0.96)
-        m.fs.electroNP.area_volume_ratio.fix(0.1)
+    # if has_electroNP is True:
+    #     m.fs.electroNP.cathodic_potential.unfix()
+    #     m.fs.electroNP.area_volume_ratio.unfix()
+    #     m.fs.electroNP.cathodic_potential.fix(-0.96)
+    #     m.fs.electroNP.area_volume_ratio.fix(0.1)
 
-    # solve(m)
+    solve(m)
 
     if has_optimization:
         setup_optimization_vary_max(
@@ -199,13 +199,13 @@ def run_optimization_vary_electricity_cost_phosphorus_revenue(
     m.fs.costing.initialize()
     interval_initializer(m.fs.costing)
 
-    # if has_electroNP is True:
-    #     m.fs.electroNP.cathodic_potential.unfix()
-    #     m.fs.electroNP.area_volume_ratio.unfix()
-    #     m.fs.electroNP.cathodic_potential.fix(-0.96)
-    #     m.fs.electroNP.area_volume_ratio.fix(0.1)
+    if has_electroNP is True:
+        m.fs.electroNP.cathodic_potential.unfix()
+        m.fs.electroNP.area_volume_ratio.unfix()
+        m.fs.electroNP.cathodic_potential.fix(-0.96)
+        m.fs.electroNP.area_volume_ratio.fix(0.1)
 
-    results = solve(m)
+    # results = solve(m)
 
     if has_optimization:
         setup_optimization(
