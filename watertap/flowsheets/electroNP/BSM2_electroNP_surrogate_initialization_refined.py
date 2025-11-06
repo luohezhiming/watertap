@@ -1734,7 +1734,7 @@ def display_design(m):
 if __name__ == "__main__":
     # This method builds and runs a steady state activated sludge flowsheet.
     m, results = main(
-        has_electroNP=False,
+        has_electroNP=True,
         has_optimization=False,
         objective=objective_fun.LCOW,
         has_effluent_constraints=True,
