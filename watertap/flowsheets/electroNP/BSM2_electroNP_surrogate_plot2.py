@@ -1,6 +1,8 @@
 import pandas as pd
 import pyomo.environ as pyo
 import numpy as np
+from sympy.abc import epsilon
+
 from watertap.core.util.initialization import (
     check_solve,
     assert_degrees_of_freedom,
@@ -37,6 +39,78 @@ from scipy import interpolate
 import seaborn as sns
 
 
+############################################ Auxiliary Functions #######################################################
+def interp_1d(array):
+    # Making sequences for interp
+    ok = ~np.isnan(array)
+    xp = ok.ravel().nonzero()[0]
+    fp = array[~np.isnan(array)]
+    x = np.isnan(array).ravel().nonzero()[0]
+
+    # Replacing nan values
+    array[np.isnan(array)] = np.interp(x, xp, fp)
+
+    return array
+
+
+def interp_2d(array):
+    x = np.arange(0, array.shape[1])
+    y = np.arange(0, array.shape[0])
+    # mask invalid values
+    array = np.ma.masked_invalid(array)
+    xx, yy = np.meshgrid(x, y)
+    # get only the valid values
+    x1 = xx[~array.mask]
+    y1 = yy[~array.mask]
+    newarr = array[~array.mask]
+
+    GD1 = interpolate.griddata((x1, y1), newarr.ravel(), (xx, yy), method="linear")
+
+    return GD1
+
+
+def smooth_1d(arr, threshold=0.2, neighbors=1):
+    """
+    Detect and interpolate spikes where a point differs from the average
+    of nearby neighbors by more than a given relative threshold.
+
+    Parameters:
+        arr (array-like): Input array (list or NumPy array).
+        threshold (float): Relative threshold (default 0.2 = 20%).
+        neighbors (int): Number of neighbors on each side to consider.
+
+    Returns:
+        np.ndarray: Array with spikes interpolated.
+    """
+    arr = np.asarray(arr, dtype=float)
+    result = arr.copy()
+    n = len(arr)
+    if n < 2:
+        return result
+
+    for i in range(n):
+        # Determine valid neighbor indices
+        left_start = max(0, i - neighbors)
+        right_end = min(n, i + neighbors + 1)
+
+        # Exclude the current point
+        neighbor_vals = np.concatenate((arr[left_start:i], arr[i + 1 : right_end]))
+        if len(neighbor_vals) == 0:
+            continue
+
+        neighbor_mean = np.mean(neighbor_vals)
+        diff_ratio = abs(arr[i] - neighbor_mean) / (
+            abs(neighbor_mean) + 1e-8
+        )  # avoid div by zero
+
+        # If it's a spike (too different from its local neighborhood)
+        if diff_ratio > threshold:
+            result[i] = neighbor_mean
+
+    return result
+
+
+############################################### Optimization ###########################################################
 def run_optimization_vary_max(
     COD_max=0.1,
     BOD5_max=0.01,
@@ -219,6 +293,58 @@ def run_optimization_vary_electricity_cost_phosphorus_revenue(
     return m, results
 
 
+def run_optimization_vary_epsilon(
+    epsilon=1,
+    COD_max=0.1,
+    BOD5_max=0.01,
+    TKN_max=0.007,
+    TP_max=0.005,
+    TSS_max=0.05,
+    has_electroNP=True,
+    has_optimization=True,
+):
+    m = build_flowsheet(has_electroNP=has_electroNP)
+    set_operating_conditions(m)
+    set_scaling(m)
+
+    m, results = initialize_system(m)
+    add_costing(m)
+    m.fs.costing.initialize()
+    interval_initializer(m.fs.costing)
+
+    # if has_electroNP is True:
+    #     m.fs.electroNP.cathodic_potential.unfix()
+    #     m.fs.electroNP.area_volume_ratio.unfix()
+    #     m.fs.electroNP.cathodic_potential.fix(-0.96)
+    #     m.fs.electroNP.area_volume_ratio.fix(0.1)
+
+    solve(m)
+
+    if has_optimization:
+        setup_optimization_vary_max(
+            m,
+            COD_max=COD_max,
+            BOD5_max=BOD5_max,
+            TKN_max=TKN_max,
+            TP_max=TP_max,
+            TSS_max=TSS_max,
+            has_electroNP=has_electroNP,
+            objective=objective_fun.LCOW,
+        )
+
+    m.fs.epsilon = pyo.Var(initialize=epsilon, units=pyo.units.kg / pyo.units.m**3)
+    m.fs.epsilon.fix()
+
+    @m.fs.Constraint(m.fs.time)
+    def eq_LCOP_max(self, t):
+        return m.fs.costing.LCOW_P_removal <= m.fs.epsilon
+
+    results = solve(m)
+
+    return m, results
+
+
+################################################### plot ###############################################################
 def plot_electricity_cost_LCOW(num):
     # # 1D plot
     electricity_cost_list = np.linspace(0.05, 0.2, num)
@@ -402,23 +528,23 @@ def plot_electricity_cost_LCOP(num):
     plt.locator_params(axis="y", nbins=8)
     ax1a.legend(loc="lower center")
 
-    # SEC
-    ax1a = ax1.twinx()
-    ax1a.plot(
-        electricity_cost_list,
-        SEC_list,
-        color="tab:red",
-        label="Specific energy consumption",
-    )
-    # ax1a.set_ylim([44.95, 45.25])
-    ax1a.set_ylabel("SEC (kWh/m3)", fontsize=11)
-    ax1a.tick_params(axis="x", labelsize=11)
-    ax1a.tick_params(axis="y", labelsize=11)
-    ax1a.yaxis.label.set_color("tab:red")
-    ax1a.spines["right"].set_color("tab:red")
-    ax1a.tick_params(axis="y", colors="tab:red")
-    plt.locator_params(axis="y", nbins=8)
-    ax1a.legend(loc="lower center")
+    # # SEC
+    # ax1a = ax1.twinx()
+    # ax1a.plot(
+    #     electricity_cost_list,
+    #     SEC_list,
+    #     color="tab:red",
+    #     label="Specific energy consumption",
+    # )
+    # # ax1a.set_ylim([44.95, 45.25])
+    # ax1a.set_ylabel("SEC (kWh/m3)", fontsize=11)
+    # ax1a.tick_params(axis="x", labelsize=11)
+    # ax1a.tick_params(axis="y", labelsize=11)
+    # ax1a.yaxis.label.set_color("tab:red")
+    # ax1a.spines["right"].set_color("tab:red")
+    # ax1a.tick_params(axis="y", colors="tab:red")
+    # plt.locator_params(axis="y", nbins=8)
+    # ax1a.legend(loc="lower center")
 
     plt.show(block=True)
 
@@ -972,114 +1098,61 @@ def plot_TSS_max(num):
     plt.show(block=True)
 
 
-def interp_1d(array):
-    # Making sequences for interp
-    ok = ~np.isnan(array)
-    xp = ok.ravel().nonzero()[0]
-    fp = array[~np.isnan(array)]
-    x = np.isnan(array).ravel().nonzero()[0]
+def Pareto_front_plot(num):
+    epsilon_list = np.linspace(1, 1.4, num)
 
-    # Replacing nan values
-    array[np.isnan(array)] = np.interp(x, xp, fp)
+    pareto_points = []
+    for i in range(0, num):
+        try:
+            m, results = run_optimization_vary_epsilon(
+                epsilon=epsilon_list[i],
+                COD_max=0.1,
+                BOD5_max=0.01,
+                TKN_max=0.007,
+                TP_max=0.005,
+                TSS_max=0.05,
+                has_electroNP=True,
+                has_optimization=True,
+            )
 
-    return array
+            pareto_points.append(
+                [pyo.value(m.fs.costing.LCOW), pyo.value(m.fs.costing.LCOW_P_removal)]
+            )
+        except:
+            pass
 
+    pareto_points = np.array(pareto_points)
 
-def interp_2d(array):
-    x = np.arange(0, array.shape[1])
-    y = np.arange(0, array.shape[0])
-    # mask invalid values
-    array = np.ma.masked_invalid(array)
-    xx, yy = np.meshgrid(x, y)
-    # get only the valid values
-    x1 = xx[~array.mask]
-    y1 = yy[~array.mask]
-    newarr = array[~array.mask]
+    # Figure a
+    figa, axa = plt.subplots(figsize=(7, 5), layout="constrained")
+    axa.plot(
+        pareto_points[:, 0],
+        pareto_points[:, 1],
+        "ro",
+        label="Pareto Front (ε-Constraint)",
+    )
+    # axa.set_xlim([95.62, 97.8])
+    axa.set_xlabel("LCOW ($/m3 (2023))", fontsize=11)
+    axa.set_ylabel("LCOP ($/m3 (2023))", fontsize=11)
+    axa.tick_params(axis="x", labelsize=11)
+    axa.tick_params(axis="y", labelsize=11)
+    axa.legend()
+    axa.grid(True)
 
-    GD1 = interpolate.griddata((x1, y1), newarr.ravel(), (xx, yy), method="linear")
+    plt.show(block=True)
 
-    return GD1
-
-
-def smooth_1d(arr, threshold=0.2, neighbors=1):
-    """
-    Detect and interpolate spikes where a point differs from the average
-    of nearby neighbors by more than a given relative threshold.
-
-    Parameters:
-        arr (array-like): Input array (list or NumPy array).
-        threshold (float): Relative threshold (default 0.2 = 20%).
-        neighbors (int): Number of neighbors on each side to consider.
-
-    Returns:
-        np.ndarray: Array with spikes interpolated.
-    """
-    arr = np.asarray(arr, dtype=float)
-    result = arr.copy()
-    n = len(arr)
-    if n < 2:
-        return result
-
-    for i in range(n):
-        # Determine valid neighbor indices
-        left_start = max(0, i - neighbors)
-        right_end = min(n, i + neighbors + 1)
-
-        # Exclude the current point
-        neighbor_vals = np.concatenate((arr[left_start:i], arr[i + 1 : right_end]))
-        if len(neighbor_vals) == 0:
-            continue
-
-        neighbor_mean = np.mean(neighbor_vals)
-        diff_ratio = abs(arr[i] - neighbor_mean) / (
-            abs(neighbor_mean) + 1e-8
-        )  # avoid div by zero
-
-        # If it's a spike (too different from its local neighborhood)
-        if diff_ratio > threshold:
-            result[i] = neighbor_mean
-
-    return result
-
-
-# def smooth_1d(y):
-#     x = np.arange(len(y))
-#
-#     # Rolling mean for nearby values (window=3)
-#     def rolling_mean(arr, window=5):
-#         pad = window // 2
-#         padded = np.pad(arr, pad, mode="edge")
-#         means = np.convolve(padded, np.ones(window) / window, mode="valid")
-#         return means
-#
-#     local_mean = rolling_mean(y, window=3)
-#
-#     # Detect points >20% off local mean
-#     mask = np.abs(y - local_mean) > 0.2 * local_mean
-#
-#     # Replace outliers with NaN
-#     y_clean = y.copy()
-#     y_clean[mask] = np.nan
-#
-#     # Interpolate using only nearby good points
-#     def interpolate_nan(x, y):
-#         isnan = np.isnan(y)
-#         return np.interp(x, x[~isnan], y[~isnan])
-#
-#     y_interp = interpolate_nan(x, y_clean)
-#
-#     return y_interp
+    return pareto_points
 
 
 if __name__ == "__main__":
     # plot_electricity_cost_LCOW(num=10)
-    # plot_electricity_cost_LCOP(num=20)
+    plot_electricity_cost_LCOP(num=10)
     # heatmap_plot_minimize_LCOW(num=5)
     # heatmap_plot_minimize_LCOP(num=5)
     # plot_COD_max(num=19)
     # plot_BOD5_max(num=30)
     # plot_TKN_max(num=15)
-    plot_TSS_max(num=14)
+    # plot_TSS_max(num=14)
 
     # Test
     # run_optimization_vary_electricity_cost_phosphorus_revenue(
@@ -1099,3 +1172,14 @@ if __name__ == "__main__":
     #     has_electroNP=False,
     #     has_optimization=True,
     # )
+    # run_optimization_vary_epsilon(
+    #     epsilon=1,
+    #     COD_max=0.1,
+    #     BOD5_max=0.01,
+    #     TKN_max=0.007,
+    #     TP_max=0.005,
+    #     TSS_max=0.05,
+    #     has_electroNP=True,
+    #     has_optimization=True,
+    # )
+    # pareto_points = Pareto_front_plot(num=30)
