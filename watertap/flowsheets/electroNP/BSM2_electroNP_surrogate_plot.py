@@ -56,7 +56,7 @@ def main(CP=-1.1 * pyo.units.V, r_AV=0.1):
     m.fs.electroNP.cathodic_potential.fix(CP)
     m.fs.electroNP.area_volume_ratio.fix(r_AV)
 
-    # results = solve(m)
+    results = solve(m)
 
     add_costing(m)
     m.fs.costing.electroNP_energy_consumption
@@ -666,7 +666,7 @@ def plot_CP(num):
         xytext=(-76, -10),
     )
     ax1t1.set_xlabel("Cathodic Potential (V)", fontsize=12)
-    ax1t1.set_ylabel("PO4 Concentration (mg/L)", fontsize=12)
+    ax1t1.set_ylabel("P-PO4 Concentration (mg/L)", fontsize=12)
     # ax1t1.legend(loc="lower left")
     ax1t1.tick_params(axis="x", labelsize=12)
     ax1t1.tick_params(axis="y", labelsize=12)
@@ -6620,7 +6620,7 @@ if __name__ == "__main__":
     #     has_optimization=True,
     # )
 
-    # plot_CP(num=30)
+    plot_CP(num=25)
     # # plot_CP_effluent(num=25)
     # plot_rAV(num=40)
     # plot_rAV_effluent(num=25)
@@ -6645,7 +6645,7 @@ if __name__ == "__main__":
     # stackplot_BOD5_max(num=15)
     # stackplot_TKN_max(num=14)
     # stackplot_TSS_max(num=14)
-    plot_electricity_cost(num=5)
+    # plot_electricity_cost(num=5)
     # run_optimization_vary_electricity_cost(
     #     electricity_cost=0.07,
     #     has_electroNP=False,

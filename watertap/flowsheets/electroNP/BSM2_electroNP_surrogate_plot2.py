@@ -412,17 +412,17 @@ def plot_electricity_cost_LCOW(num):
         electricity_cost_list,
         LCOW_list,
         color="tab:blue",
-        label="LCOW (BSM2 with electroNP)",
+        label="Case 1",
     )
     ax1.plot(
         electricity_cost_list,
         LCOW_no_electroNP_list,
         color="tab:blue",
         linestyle="--",
-        label="LCOW (BSM2 without electroNP)",
+        label="Case*",
     )
     ax1.set_xlabel("Electricity Cost ($/kWh (2018))", fontsize=12)
-    # ax1.set_ylim([0.65, 0.95])
+    ax1.set_xlim([0.05, 0.2])
     ax1.set_ylabel("LCOW ($/m3 (2023))", fontsize=11)
     ax1.tick_params(axis="x", labelsize=11)
     ax1.tick_params(axis="y", labelsize=11)
@@ -503,30 +503,30 @@ def plot_electricity_cost_LCOP(num):
         label="LCOP",
     )
     ax1.set_xlabel("Electricity Cost ($/kWh (2018))", fontsize=12)
-    # ax1.set_ylim([0.65, 0.95])
+    ax1.set_xlim([0.05, 0.2])
     ax1.set_ylabel("LCOP ($/m3 (2023))", fontsize=11)
     ax1.tick_params(axis="x", labelsize=11)
     ax1.tick_params(axis="y", labelsize=11)
     plt.locator_params(axis="y", nbins=8)
     ax1.legend(loc="upper center")
 
-    # P recovery
-    ax1a = ax1.twinx()
-    ax1a.plot(
-        electricity_cost_list,
-        P_removal_list,
-        color="tab:red",
-        label="Phosphorus Recovery",
-    )
-    # ax1a.set_ylim([44.95, 45.25])
-    ax1a.set_ylabel("Phosphorus Recovery", fontsize=11)
-    ax1a.tick_params(axis="x", labelsize=11)
-    ax1a.tick_params(axis="y", labelsize=11)
-    ax1a.yaxis.label.set_color("tab:red")
-    ax1a.spines["right"].set_color("tab:red")
-    ax1a.tick_params(axis="y", colors="tab:red")
-    plt.locator_params(axis="y", nbins=8)
-    ax1a.legend(loc="lower center")
+    # # P recovery
+    # ax1a = ax1.twinx()
+    # ax1a.plot(
+    #     electricity_cost_list,
+    #     P_removal_list,
+    #     color="tab:red",
+    #     label="Phosphorus Recovery",
+    # )
+    # # ax1a.set_ylim([44.95, 45.25])
+    # ax1a.set_ylabel("Phosphorus Recovery", fontsize=11)
+    # ax1a.tick_params(axis="x", labelsize=11)
+    # ax1a.tick_params(axis="y", labelsize=11)
+    # ax1a.yaxis.label.set_color("tab:red")
+    # ax1a.spines["right"].set_color("tab:red")
+    # ax1a.tick_params(axis="y", colors="tab:red")
+    # plt.locator_params(axis="y", nbins=8)
+    # ax1a.legend(loc="lower center")
 
     # # SEC
     # ax1a = ax1.twinx()
@@ -552,7 +552,7 @@ def plot_electricity_cost_LCOP(num):
 def heatmap_plot_minimize_LCOW(num):
     # 2D plot
     electricity_cost_list = np.linspace(0.05, 0.2, num)
-    phosphours_revenue_list = np.linspace(0.6, 0.8, num)
+    phosphours_revenue_list = np.linspace(0.6, 1.0, num)
 
     LCOW_matrix = np.zeros((num, num))
     LCOW_matrix[:] = np.nan
@@ -628,7 +628,7 @@ def heatmap_plot_minimize_LCOP(num):
     # 2D plot
     # Minimize LCOP
     electricity_cost_list = np.linspace(0.05, 0.2, num)
-    phosphours_revenue_list = np.linspace(0.6, 0.8, num)
+    phosphours_revenue_list = np.linspace(0.6, 1.0, num)
 
     LCOW_matrix = np.zeros((num, num))
     LCOW_matrix[:] = np.nan
@@ -1145,8 +1145,8 @@ def Pareto_front_plot(num):
 
 
 if __name__ == "__main__":
-    # plot_electricity_cost_LCOW(num=10)
-    plot_electricity_cost_LCOP(num=10)
+    plot_electricity_cost_LCOW(num=2)
+    # plot_electricity_cost_LCOP(num=10)
     # heatmap_plot_minimize_LCOW(num=5)
     # heatmap_plot_minimize_LCOP(num=5)
     # plot_COD_max(num=19)

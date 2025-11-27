@@ -219,6 +219,9 @@ def add_costing(m):
 if __name__ == "__main__":
     m, results = main()
     print(f"P removal: {m.fs.unit.P_removal.value}")
+    print(
+        f"Energy Consumption of electroN-P: {m.fs.unit.energy_electric_flow_mass.value}"
+    )
     stream_table = create_stream_table_dataframe(
         {
             "electroNP inlet": m.fs.unit.inlet,
