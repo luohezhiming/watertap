@@ -23,6 +23,7 @@ from idaes.core import FlowsheetBlock
 from idaes.core.solvers import get_solver
 from idaes.core.util.model_statistics import degrees_of_freedom, number_total_objectives
 from watertap.flowsheets.electroNP.BSM2_electroNP_surrogate_initialization_refined import (
+    main,
     build_flowsheet,
     set_operating_conditions,
     set_scaling,
@@ -1144,8 +1145,112 @@ def Pareto_front_plot(num):
     return pareto_points
 
 
+def get_break_down_values(m):
+    LCOW_breakdown_data = {
+        "Electrodes": value(m.fs.costing.electrode_energy_consumption),
+        "Dryer": value(m.fs.costing.dryer_energy_consumption),
+        "Centrifuge": value(m.fs.costing.centrifuge_energy_consumption),
+        "Pumps": value(m.fs.costing.electroNP_pump_energy_consumption),
+    }
+    return LCOW_breakdown_data
+
+
+def visualize_breakdown(breakdown_data_dict, title="LCOW Breakdown", barwidth=0.4):
+    if not breakdown_data_dict:
+        print("No data provided for visualization.")
+        return
+
+    categories = list(breakdown_data_dict.keys())
+
+    # Get the list of all cost component labels (e.g., "Pump CAPEX")
+    first_dict = next(iter(breakdown_data_dict.values()), None)
+    if not first_dict:
+        print("Breakdown dictionary is empty.")
+        return
+
+    labels = list(first_dict.keys())
+
+    # Restructure data: plot_data will hold the values for stacking the bars.
+    # Each inner list corresponds to one cost component (label) across all scenarios.
+    plot_data = []
+    for label in labels:
+        # Collect the value for the current cost component (label) from every scenario dict
+        plot_data.append([d.get(label, 0) for d in breakdown_data_dict.values()])
+
+    # 2. Configure the plot
+    x = np.arange(len(categories))
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    # 'bottom' tracks the current vertical position for stacking the bars
+    bottom = np.zeros(len(categories))
+
+    # 3. Draw the stacked bars
+    for group, label in zip(plot_data, labels):
+        # Draw bars for the current cost component (group) stacked on the 'bottom'
+        bars = ax.bar(x, group, width=barwidth, bottom=bottom, label=label)
+
+        # Add numerical labels to the center of each bar segment
+        for bar, value in zip(bars, group):
+            height = bar.get_height()
+            # Only label non-zero values for cleaner visualization
+            if value > 1e-4:
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    bar.get_y() + height / 2,
+                    f"{value:.3f}",  # Format the value to 3 decimal places
+                    ha="center",
+                    va="center",
+                    fontsize=8,
+                    color="black",
+                )
+
+        # Update the bottom position for the next stack layer
+        bottom += group
+
+    # 4. Final plot aesthetics
+    ax.set_xticks(x)
+    ax.set_xticklabels(categories)
+    ax.set_xlim(-0.5, len(categories) - 0.5)
+    ax.set_ylabel("Specific Energy Consumption of ElectroN-P (kWh/m3)")
+    ax.set_title(title)
+    # Legend placed above the plot for clear viewing
+    ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.05), ncol=4)
+    plt.grid(axis="y", linestyle="--", alpha=0.6)
+    plt.tight_layout()
+    plt.show(block=True)
+
+
+def plot_electroNP_SEC_breakdown():
+    # m, results = main(
+    #     has_electroNP=False,
+    #     has_optimization=False,
+    #     objective=objective_fun.LCOW,
+    #     has_effluent_constraints=True,
+    # )
+    m = build_flowsheet(has_electroNP=True)
+    set_operating_conditions(m)
+    set_scaling(m)
+    m, results = initialize_system(m)
+    add_costing(m)
+    m.fs.costing.electrode_energy_consumption
+    m.fs.costing.dryer_energy_consumption
+    m.fs.costing.centrifuge_energy_consumption
+    m.fs.costing.electroNP_pump_energy_consumption
+    m.fs.costing.initialize()
+    interval_initializer(m.fs.costing)
+    results = solve(m)
+    pyo.assert_optimal_termination(results)
+
+    simulation_results = get_break_down_values(m)
+    # Add  breakdown resutls to breakdown_data_dict
+    breakdown_data_dict = {}
+    breakdown_data_dict["ElectroN-P"] = simulation_results
+    # Generate a comparison plot of LCOW contributions
+    visualize_breakdown(breakdown_data_dict)
+
+
 if __name__ == "__main__":
-    plot_electricity_cost_LCOW(num=2)
+    # plot_electricity_cost_LCOW(num=2)
     # plot_electricity_cost_LCOP(num=10)
     # heatmap_plot_minimize_LCOW(num=5)
     # heatmap_plot_minimize_LCOP(num=5)
@@ -1153,6 +1258,8 @@ if __name__ == "__main__":
     # plot_BOD5_max(num=30)
     # plot_TKN_max(num=15)
     # plot_TSS_max(num=14)
+    # pareto_points = Pareto_front_plot(num=30)
+    plot_electroNP_SEC_breakdown()
 
     # Test
     # run_optimization_vary_electricity_cost_phosphorus_revenue(
@@ -1182,4 +1289,3 @@ if __name__ == "__main__":
     #     has_electroNP=True,
     #     has_optimization=True,
     # )
-    # pareto_points = Pareto_front_plot(num=30)

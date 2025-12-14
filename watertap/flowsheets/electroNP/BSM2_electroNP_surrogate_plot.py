@@ -38,8 +38,8 @@ from scipy import interpolate
 def main(CP=-1.1 * pyo.units.V, r_AV=0.1):
     m = build_flowsheet(has_electroNP=True)
     set_operating_conditions(m)
-    if pyo.value(CP) <= -1.1:
-        m.fs.electroNP.cathodic_potential.fix(pyo.value(CP))
+    # if pyo.value(CP) <= -1.1:
+    #     m.fs.electroNP.cathodic_potential.fix(pyo.value(CP))
     if pyo.value(CP) >= -0.9:
         m.fs.electroNP.cathodic_potential.fix(pyo.value(CP))
     if pyo.value(r_AV) >= 0.11:
@@ -650,6 +650,7 @@ def plot_CP(num):
     # Together
     fig1t, ax1t1 = plt.subplots(figsize=(9, 5))
     ax1t1.plot(CP_list, P_out_list, color="tab:red", label="_PO4 Concentration")
+    ax1t1.set_xlim([-1.3, -0.8])
     ax1t1.set_ylim([10, 55])
     # # Base case
     # CP_base = -1.1
@@ -688,7 +689,7 @@ def plot_CP(num):
         f"({round(CP_opt, 2)}, {round(SNOX_out_opt, 2)})",
         (CP_opt, SNOX_out_opt),
         textcoords="offset points",
-        xytext=(6, -16),
+        xytext=(6, 10),
     )
     ax1t1b.set_ylabel("SNOx Concentration (mg/L)", fontsize=12)
     ax1t1b.tick_params(axis="x", labelsize=12)
@@ -1017,7 +1018,7 @@ def plot_rAV(num):
         xytext=(6, 15),
     )
     ax2t1.set_xlabel("Area Volume Ratio (cm$^{-1}$)", fontsize=12)
-    ax2t1.set_ylabel("PO4 Concentration (mg/L)", fontsize=12)
+    ax2t1.set_ylabel("P-PO4 Concentration (mg/L)", fontsize=12)
     # ax2t1.legend(loc="lower right")
     ax2t1.tick_params(axis="x", labelsize=12)
     ax2t1.tick_params(axis="y", labelsize=12)
@@ -1031,7 +1032,7 @@ def plot_rAV(num):
     ax2t1b.plot(
         r_AV_list, SNOX_out_list, color="tab:green", label="_SNOX Concentration"
     )
-    # ax2t1b.set_ylim([2.95, 3.15])
+    ax2t1b.set_ylim([7.5, 8.3])
     # Optimal
     opt_idx = np.argmin(SNOX_out_list)
     r_AV_opt = r_AV_list[opt_idx]
@@ -6620,9 +6621,9 @@ if __name__ == "__main__":
     #     has_optimization=True,
     # )
 
-    plot_CP(num=25)
+    # plot_CP(num=25)
     # # plot_CP_effluent(num=25)
-    # plot_rAV(num=40)
+    plot_rAV(num=25)
     # plot_rAV_effluent(num=25)
     # contourf_plot(num=15)
     # contourf_plot_electricity_cost(num=3)
