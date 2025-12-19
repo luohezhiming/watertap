@@ -38,6 +38,9 @@ import matplotlib.pyplot as plt
 from brokenaxes import brokenaxes
 from scipy import interpolate
 import seaborn as sns
+from idaes.core.base.costing_base import register_idaes_currency_units
+
+register_idaes_currency_units()
 
 
 ############################################ Auxiliary Functions #######################################################
@@ -405,6 +408,14 @@ def plot_electricity_cost_LCOW(num):
     LCOP_list = smooth_1d(LCOP_list)
     LCOW_no_electroNP_list = smooth_1d(LCOW_no_electroNP_list)
 
+    for i in range(0, num):
+        electricity_cost_list[i] = pyo.value(
+            pyo.units.convert(
+                electricity_cost_list[i] * pyo.units.USD_2018 / pyo.units.kWh,
+                to_units=pyo.units.USD_2023 / pyo.units.kWh,
+            )
+        )
+
     # Figure 1
     fig1, ax1 = plt.subplots(figsize=(9, 5), layout="constrained")
 
@@ -422,9 +433,9 @@ def plot_electricity_cost_LCOW(num):
         linestyle="--",
         label="Case*",
     )
-    ax1.set_xlabel("Electricity Cost ($/kWh (2018))", fontsize=12)
-    ax1.set_xlim([0.05, 0.2])
-    ax1.set_ylabel("LCOW ($/m3 (2023))", fontsize=11)
+    ax1.set_xlabel("Electricity Cost ($/kWh)", fontsize=12)
+    ax1.set_xlim([0.075, 0.25])
+    ax1.set_ylabel("LCOW ($/m3)", fontsize=11)
     ax1.tick_params(axis="x", labelsize=11)
     ax1.tick_params(axis="y", labelsize=11)
     plt.locator_params(axis="y", nbins=8)
@@ -1250,7 +1261,7 @@ def plot_electroNP_SEC_breakdown():
 
 
 if __name__ == "__main__":
-    # plot_electricity_cost_LCOW(num=2)
+    plot_electricity_cost_LCOW(num=15)
     # plot_electricity_cost_LCOP(num=10)
     # heatmap_plot_minimize_LCOW(num=5)
     # heatmap_plot_minimize_LCOP(num=5)
@@ -1259,7 +1270,7 @@ if __name__ == "__main__":
     # plot_TKN_max(num=15)
     # plot_TSS_max(num=14)
     # pareto_points = Pareto_front_plot(num=30)
-    plot_electroNP_SEC_breakdown()
+    # plot_electroNP_SEC_breakdown()
 
     # Test
     # run_optimization_vary_electricity_cost_phosphorus_revenue(
