@@ -181,8 +181,7 @@ def build(case):
         precipitate=precipitants,
     )
 
-    # the reactor us assumed performance model so we are simply testing that
-    # mass balances are correct
+    # the reactor us assumed performance model
     Conc_mol_Co_precipitate = 1.7941e-03 * (pyo.units.mol / pyo.units.L)
     Conc_mass_Co_precipitate = (
         Conc_mol_Co_precipitate * m.fs.ChemPre.mw_precipitate["CoFe2O4(s)"]
@@ -201,7 +200,7 @@ def build(case):
     m.fs.ChemPre.conc_mass_precipitate["CoFe2O4(s)"].fix(Conc_mass_Co_precipitate)
     m.fs.ChemPre.conc_mass_precipitate["Fe2O3(s)"].fix(Conc_mass_Fe_precipitate)
     m.fs.ChemPre.conc_mass_precipitate["Zn4(OH)6SO4(s)"].fix(Conc_mass_Zn_precipitate)
-    m.fs.ChemPre.waste_mass_frac_precipitate.fix(1)
+    m.fs.ChemPre.waste_mass_frac_precipitate.fix(0.2)
 
     m.fs.ChemPre.inlet.pressure[0].fix(101325)
     m.fs.ChemPre.inlet.temperature[0].fix(273.15 + 20)
@@ -220,7 +219,7 @@ def build(case):
                     11.3742e-3
                 ),  # feed mass concentration
                 ("conc_mass_phase_comp", ("Liq", "Cu_2+")): value(
-                    1e-9
+                    0
                 ),  # feed mass concentration
                 ("conc_mass_phase_comp", ("Liq", "Fe_3+")): value(
                     17454.9915e-3
@@ -327,7 +326,10 @@ def build(case):
         )
 
     # touch variables
+    m.fs.ChemPre.precipitation_reactor.properties_out[0].flow_vol
     m.fs.ChemPre.precipitation_reactor.properties_out[0].conc_mass_phase_comp
+    m.fs.ChemPre.separator.treated_state[0].flow_vol
+    m.fs.ChemPre.separator.treated_state[0].conc_mass_phase_comp
 
     # m.fs.costing.cost_process()
     # m.fs.costing.add_annual_water_production(m.fs.NF.properties_permeate[0].flow_vol)
@@ -571,6 +573,17 @@ def display_performance_metrics(m):
         f"{pyo.value(Mn_in):.3g}"
         f"{pyo.units.get_units(Mn_in)}"
     )
+    Mg_in = pyo.units.convert(
+        m.fs.ChemPre.precipitation_reactor.properties_in[0].conc_mass_phase_comp[
+            "Liq", "Mg_2+"
+        ],
+        to_units=pyo.units.mg / pyo.units.L,
+    )
+    print(
+        f"Mg2+ feed mass concentration: "
+        f"{pyo.value(Mg_in):.3g}"
+        f"{pyo.units.get_units(Mg_in)}"
+    )
     Si_in = pyo.units.convert(
         m.fs.ChemPre.precipitation_reactor.properties_in[0].conc_mass_phase_comp[
             "Liq", "Si_4+"
@@ -593,355 +606,329 @@ def display_performance_metrics(m):
         f"{pyo.value(SO4_in):.3g}"
         f"{pyo.units.get_units(SO4_in)}"
     )
+    H_in = pyo.units.convert(
+        m.fs.ChemPre.precipitation_reactor.properties_in[0].conc_mass_phase_comp[
+            "Liq", "H_+"
+        ],
+        to_units=pyo.units.mg / pyo.units.L,
+    )
+    print(
+        f"H_+ feed mass concentration: "
+        f"{pyo.value(H_in):.3g}"
+        f"{pyo.units.get_units(H_in)}"
+    )
 
     print("\n---- Outlet Metrics ----")
-    f_permeate = pyo.units.convert(
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].flow_vol,
+    f_treated = pyo.units.convert(
+        m.fs.ChemPre.separator.treated_state[0].flow_vol,
         to_units=pyo.units.gal / pyo.units.day,
     )
     print(
-        f"Permeate flow: "
-        f"{pyo.value(f_permeate):.3g}"
-        f"{pyo.units.get_units(f_permeate)}"
+        f"treated flow: "
+        f"{pyo.value(f_treated):.3g}"
+        f"{pyo.units.get_units(f_treated)}"
     )
-    Co_permeate = pyo.units.convert(
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].conc_mass_phase_comp[
-            "Liq", "Co_2+"
-        ],
+    Co_treated = pyo.units.convert(
+        m.fs.ChemPre.separator.treated_state[0].conc_mass_phase_comp["Liq", "Co_2+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
-        f"Co2+ permeate mass concentration: "
-        f"{pyo.value(Co_permeate):.3g}"
-        f"{pyo.units.get_units(Co_permeate)}"
+        f"Co2+ treated mass concentration: "
+        f"{pyo.value(Co_treated):.3g}"
+        f"{pyo.units.get_units(Co_treated)}"
     )
-    Ca_permeate = pyo.units.convert(
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].conc_mass_phase_comp[
-            "Liq", "Ca_2+"
-        ],
+    Ca_treated = pyo.units.convert(
+        m.fs.ChemPre.separator.treated_state[0].conc_mass_phase_comp["Liq", "Ca_2+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
-        f"Ca2+ permeate mass concentration: "
-        f"{pyo.value(Ca_permeate):.3g}"
-        f"{pyo.units.get_units(Ca_permeate)}"
+        f"Ca2+ treated mass concentration: "
+        f"{pyo.value(Ca_treated):.3g}"
+        f"{pyo.units.get_units(Ca_treated)}"
     )
-    Cu_permeate = pyo.units.convert(
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].conc_mass_phase_comp[
-            "Liq", "Cu_2+"
-        ],
+    Cu_treated = pyo.units.convert(
+        m.fs.ChemPre.separator.treated_state[0].conc_mass_phase_comp["Liq", "Cu_2+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
-        f"Cu2+ permeate mass concentration: "
-        f"{pyo.value(Cu_permeate):.3g}"
-        f"{pyo.units.get_units(Cu_permeate)}"
+        f"Cu2+ treated mass concentration: "
+        f"{pyo.value(Cu_treated):.3g}"
+        f"{pyo.units.get_units(Cu_treated)}"
     )
-    Fe_permeate = pyo.units.convert(
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].conc_mass_phase_comp[
-            "Liq", "Fe_3+"
-        ],
+    Fe_treated = pyo.units.convert(
+        m.fs.ChemPre.separator.treated_state[0].conc_mass_phase_comp["Liq", "Fe_3+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
-        f"Fe3+ permeate mass concentration: "
-        f"{pyo.value(Fe_permeate):.3g}"
-        f"{pyo.units.get_units(Fe_permeate)}"
+        f"Fe3+ treated mass concentration: "
+        f"{pyo.value(Fe_treated):.3g}"
+        f"{pyo.units.get_units(Fe_treated)}"
     )
-    Nd_permeate = pyo.units.convert(
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].conc_mass_phase_comp[
-            "Liq", "Nd_3+"
-        ],
+    Nd_treated = pyo.units.convert(
+        m.fs.ChemPre.separator.treated_state[0].conc_mass_phase_comp["Liq", "Nd_3+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
-        f"Nd3+ permeate mass concentration: "
-        f"{pyo.value(Nd_permeate):.3g}"
-        f"{pyo.units.get_units(Nd_permeate)}"
+        f"Nd3+ treated mass concentration: "
+        f"{pyo.value(Nd_treated):.3g}"
+        f"{pyo.units.get_units(Nd_treated)}"
     )
-    Ni_permeate = pyo.units.convert(
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].conc_mass_phase_comp[
-            "Liq", "Ni_2+"
-        ],
+    Ni_treated = pyo.units.convert(
+        m.fs.ChemPre.separator.treated_state[0].conc_mass_phase_comp["Liq", "Ni_2+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
-        f"Ni2+ permeate mass concentration: "
-        f"{pyo.value(Ni_permeate):.3g}"
-        f"{pyo.units.get_units(Ni_permeate)}"
+        f"Ni2+ treated mass concentration: "
+        f"{pyo.value(Ni_treated):.3g}"
+        f"{pyo.units.get_units(Ni_treated)}"
     )
-    Pr_permeate = pyo.units.convert(
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].conc_mass_phase_comp[
-            "Liq", "Pr_3+"
-        ],
+    Pr_treated = pyo.units.convert(
+        m.fs.ChemPre.separator.treated_state[0].conc_mass_phase_comp["Liq", "Pr_3+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
-        f"Pr3+ permeate mass concentration: "
-        f"{pyo.value(Pr_permeate):.3g}"
-        f"{pyo.units.get_units(Pr_permeate)}"
+        f"Pr3+ treated mass concentration: "
+        f"{pyo.value(Pr_treated):.3g}"
+        f"{pyo.units.get_units(Pr_treated)}"
     )
-    Na_permeate = pyo.units.convert(
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].conc_mass_phase_comp[
-            "Liq", "Na_+"
-        ],
+    Na_treated = pyo.units.convert(
+        m.fs.ChemPre.separator.treated_state[0].conc_mass_phase_comp["Liq", "Na_+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
-        f"Na+ permeate mass concentration: "
-        f"{pyo.value(Na_permeate):.3g}"
-        f"{pyo.units.get_units(Na_permeate)}"
+        f"Na+ treated mass concentration: "
+        f"{pyo.value(Na_treated):.3g}"
+        f"{pyo.units.get_units(Na_treated)}"
     )
-    Cr_permeate = pyo.units.convert(
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].conc_mass_phase_comp[
-            "Liq", "Cr_6+"
-        ],
+    Cr_treated = pyo.units.convert(
+        m.fs.ChemPre.separator.treated_state[0].conc_mass_phase_comp["Liq", "Cr_6+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
-        f"Cr6+ permeate mass concentration: "
-        f"{pyo.value(Cr_permeate):.3g}"
-        f"{pyo.units.get_units(Cr_permeate)}"
+        f"Cr6+ treated mass concentration: "
+        f"{pyo.value(Cr_treated):.3g}"
+        f"{pyo.units.get_units(Cr_treated)}"
     )
-    Zn_permeate = pyo.units.convert(
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].conc_mass_phase_comp[
-            "Liq", "Zn_2+"
-        ],
+    Zn_treated = pyo.units.convert(
+        m.fs.ChemPre.separator.treated_state[0].conc_mass_phase_comp["Liq", "Zn_2+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
-        f"Zn2+ permeate mass concentration: "
-        f"{pyo.value(Zn_permeate):.3g}"
-        f"{pyo.units.get_units(Zn_permeate)}"
+        f"Zn2+ treated mass concentration: "
+        f"{pyo.value(Zn_treated):.3g}"
+        f"{pyo.units.get_units(Zn_treated)}"
     )
-    Dy_permeate = pyo.units.convert(
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].conc_mass_phase_comp[
-            "Liq", "Dy_3+"
-        ],
+    Dy_treated = pyo.units.convert(
+        m.fs.ChemPre.separator.treated_state[0].conc_mass_phase_comp["Liq", "Dy_3+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
-        f"Dy3+ permeate mass concentration: "
-        f"{pyo.value(Dy_permeate):.3g}"
-        f"{pyo.units.get_units(Dy_permeate)}"
+        f"Dy3+ treated mass concentration: "
+        f"{pyo.value(Dy_treated):.3g}"
+        f"{pyo.units.get_units(Dy_treated)}"
     )
-    B_permeate = pyo.units.convert(
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].conc_mass_phase_comp[
-            "Liq", "B_3+"
-        ],
+    B_treated = pyo.units.convert(
+        m.fs.ChemPre.separator.treated_state[0].conc_mass_phase_comp["Liq", "B_3+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
-        f"B3+ permeate mass concentration: "
-        f"{pyo.value(B_permeate):.3g}"
-        f"{pyo.units.get_units(B_permeate)}"
+        f"B3+ treated mass concentration: "
+        f"{pyo.value(B_treated):.3g}"
+        f"{pyo.units.get_units(B_treated)}"
     )
-    Gd_permeate = pyo.units.convert(
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].conc_mass_phase_comp[
-            "Liq", "Gd_3+"
-        ],
+    Gd_treated = pyo.units.convert(
+        m.fs.ChemPre.separator.treated_state[0].conc_mass_phase_comp["Liq", "Gd_3+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
-        f"Gd3+ permeate mass concentration: "
-        f"{pyo.value(Gd_permeate):.3g}"
-        f"{pyo.units.get_units(Gd_permeate)}"
+        f"Gd3+ treated mass concentration: "
+        f"{pyo.value(Gd_treated):.3g}"
+        f"{pyo.units.get_units(Gd_treated)}"
     )
-    Mn_permeate = pyo.units.convert(
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].conc_mass_phase_comp[
-            "Liq", "Mn_2+"
-        ],
+    Mn_treated = pyo.units.convert(
+        m.fs.ChemPre.separator.treated_state[0].conc_mass_phase_comp["Liq", "Mn_2+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
-        f"Mn2+ permeate mass concentration: "
-        f"{pyo.value(Mn_permeate):.3g}"
-        f"{pyo.units.get_units(Mn_permeate)}"
+        f"Mn2+ treated mass concentration: "
+        f"{pyo.value(Mn_treated):.3g}"
+        f"{pyo.units.get_units(Mn_treated)}"
     )
-    Si_permeate = pyo.units.convert(
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].conc_mass_phase_comp[
-            "Liq", "Si_4+"
-        ],
+    Mg_treated = pyo.units.convert(
+        m.fs.ChemPre.separator.treated_state[0].conc_mass_phase_comp["Liq", "Mg_2+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
-        f"Si4+ permeate mass concentration: "
-        f"{pyo.value(Si_permeate):.3g}"
-        f"{pyo.units.get_units(Si_permeate)}"
+        f"Mg2+ treated mass concentration: "
+        f"{pyo.value(Mg_treated):.3g}"
+        f"{pyo.units.get_units(Mg_treated)}"
     )
-    SO4_permeate = pyo.units.convert(
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].conc_mass_phase_comp[
-            "Liq", "SO4_2-"
-        ],
+    Si_treated = pyo.units.convert(
+        m.fs.ChemPre.separator.treated_state[0].conc_mass_phase_comp["Liq", "Si_4+"],
         to_units=pyo.units.mg / pyo.units.L,
     )
     print(
-        f"SO4_2- permeate mass concentration: "
-        f"{pyo.value(SO4_permeate):.3g}"
-        f"{pyo.units.get_units(SO4_permeate)}"
+        f"Si4+ treated mass concentration: "
+        f"{pyo.value(Si_treated):.3g}"
+        f"{pyo.units.get_units(Si_treated)}"
+    )
+    SO4_treated = pyo.units.convert(
+        m.fs.ChemPre.separator.treated_state[0].conc_mass_phase_comp["Liq", "SO4_2-"],
+        to_units=pyo.units.mg / pyo.units.L,
+    )
+    print(
+        f"SO4_2- treated mass concentration: "
+        f"{pyo.value(SO4_treated):.3g}"
+        f"{pyo.units.get_units(SO4_treated)}"
+    )
+    H_treated = pyo.units.convert(
+        m.fs.ChemPre.separator.treated_state[0].conc_mass_phase_comp["Liq", "H_+"],
+        to_units=pyo.units.mg / pyo.units.L,
+    )
+    print(
+        f"H_+ treated mass concentration: "
+        f"{pyo.value(H_treated):.3g}"
+        f"{pyo.units.get_units(H_treated)}"
     )
 
     print("\n---- System Performance Metrics ----")
-    # f_in = pyo.units.convert(
-    #     m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_vol,
-    #     to_units=pyo.units.m**3 / pyo.units.hr,
-    # )
-    # f_out = pyo.units.convert(
-    #     m.fs.ChemPre.precipitation_reactor.properties_out[0].flow_vol,
-    #     to_units=pyo.units.m ** 3 / pyo.units.hr,
-    # )
-    # water_recovery = f_out/f_in
-    water_recovery = (
-        m.fs.ChemPre.outlet.flow_mol_phase_comp[0, "Liq", "H2O"]
-        / m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "H2O"]
+    f_in = pyo.units.convert(
+        m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_vol,
+        to_units=pyo.units.m**3 / pyo.units.hr,
     )
+    f_out = pyo.units.convert(
+        m.fs.ChemPre.separator.treated_state[0].flow_vol,
+        to_units=pyo.units.m**3 / pyo.units.hr,
+    )
+    water_recovery = f_out / f_in
+    # water_recovery = (
+    #     m.fs.ChemPre.outlet.flow_mol_phase_comp[0, "Liq", "H2O"]
+    #     / m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "H2O"]
+    # )
     print(f"Volumetric-based recovery: " f"{pyo.value(water_recovery):.8g}")
-    # Co_recovery = (
-    #     m.fs.ChemPre.precipitation_reactor.properties_out[0].flow_mass_phase_comp[
-    #         "Liq", "Co_2+"
-    #     ]
-    #     / m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_mass_phase_comp[
-    #         "Liq", "Co_2+"
-    #     ]
-    # )
     Co_recovery = (
-        m.fs.ChemPre.outlet.flow_mol_phase_comp[0, "Liq", "Co_2+"]
-        / m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Co_2+"]
+        m.fs.ChemPre.separator.treated_state[0].flow_mass_phase_comp["Liq", "Co_2+"]
+        / m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_mass_phase_comp[
+            "Liq", "Co_2+"
+        ]
     )
+    # Co_recovery = (
+    #     m.fs.ChemPre.outlet.flow_mol_phase_comp[0, "Liq", "Co_2+"]
+    #     / m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Co_2+"]
+    # )
     print(f"Co2+ mass rejection: " f"{pyo.value(1 - Co_recovery):.3g}")
-    # Ca_recovery = (
-    #     m.fs.ChemPre.precipitation_reactor.properties_out[0].flow_mass_phase_comp[
-    #         "Liq", "Ca_2+"
-    #     ]
-    #     / m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_mass_phase_comp[
-    #         "Liq", "Ca_2+"
-    #     ]
-    # )
     Ca_recovery = (
-        m.fs.ChemPre.outlet.flow_mol_phase_comp[0, "Liq", "Ca_2+"]
-        / m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Ca_2+"]
+        m.fs.ChemPre.separator.treated_state[0].flow_mass_phase_comp["Liq", "Ca_2+"]
+        / m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_mass_phase_comp[
+            "Liq", "Ca_2+"
+        ]
     )
+    # Ca_recovery = (
+    #     m.fs.ChemPre.outlet.flow_mol_phase_comp[0, "Liq", "Ca_2+"]
+    #     / m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Ca_2+"]
+    # )
     print(f"Ca2+ mass rejection: " f"{pyo.value(1 - Ca_recovery):.3g}")
-    # Cu_recovery = (
-    #     m.fs.ChemPre.precipitation_reactor.properties_out[0].flow_mass_phase_comp[
-    #         "Liq", "Cu_2+"
-    #     ]
-    #     / m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_mass_phase_comp[
-    #         "Liq", "Cu_2+"
-    #     ]
-    # )
     Cu_recovery = (
-        m.fs.ChemPre.outlet.flow_mol_phase_comp[0, "Liq", "Cu_2+"]
-        / m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Cu_2+"]
+        m.fs.ChemPre.separator.treated_state[0].flow_mass_phase_comp["Liq", "Cu_2+"]
+        / m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_mass_phase_comp[
+            "Liq", "Cu_2+"
+        ]
     )
-    print(f"Cu2+ mass rejection: " f"{pyo.value(1 - Cu_recovery):.3g}")
-    # Fe_recovery = (
-    #     m.fs.ChemPre.precipitation_reactor.properties_out[0].flow_mass_phase_comp[
-    #         "Liq", "Fe_3+"
-    #     ]
-    #     / m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_mass_phase_comp[
-    #         "Liq", "Fe_3+"
-    #     ]
+    # Cu_recovery = (
+    #     m.fs.ChemPre.outlet.flow_mol_phase_comp[0, "Liq", "Cu_2+"]
+    #     / m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Cu_2+"]
     # )
+    print(f"Cu2+ mass rejection: " f"{pyo.value(1 - Cu_recovery):.3g}")
     Fe_recovery = (
-        m.fs.ChemPre.outlet.flow_mol_phase_comp[0, "Liq", "Fe_3+"]
-        / m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Fe_3+"]
+        m.fs.ChemPre.separator.treated_state[0].flow_mass_phase_comp["Liq", "Fe_3+"]
+        / m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_mass_phase_comp[
+            "Liq", "Fe_3+"
+        ]
     )
+    # Fe_recovery = (
+    #     m.fs.ChemPre.outlet.flow_mol_phase_comp[0, "Liq", "Fe_3+"]
+    #     / m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Fe_3+"]
+    # )
     print(f"Fe3+ mass rejection: " f"{pyo.value(1 - Fe_recovery):.3g}")
     Nd_recovery = (
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].flow_mass_phase_comp[
-            "Liq", "Nd_3+"
-        ]
+        m.fs.ChemPre.separator.treated_state[0].flow_mass_phase_comp["Liq", "Nd_3+"]
         / m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_mass_phase_comp[
             "Liq", "Nd_3+"
         ]
     )
     print(f"Nd3+ mass rejection: " f"{pyo.value(1 - Nd_recovery):.3g}")
     Ni_recovery = (
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].flow_mass_phase_comp[
-            "Liq", "Ni_2+"
-        ]
+        m.fs.ChemPre.separator.treated_state[0].flow_mass_phase_comp["Liq", "Ni_2+"]
         / m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_mass_phase_comp[
             "Liq", "Ni_2+"
         ]
     )
     print(f"Ni2+ mass rejection: " f"{pyo.value(1 - Ni_recovery):.3g}")
     Pr_recovery = (
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].flow_mass_phase_comp[
-            "Liq", "Pr_3+"
-        ]
+        m.fs.ChemPre.separator.treated_state[0].flow_mass_phase_comp["Liq", "Pr_3+"]
         / m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_mass_phase_comp[
             "Liq", "Pr_3+"
         ]
     )
     print(f"Pr3+ mass rejection: " f"{pyo.value(1 - Pr_recovery):.3g}")
     Na_recovery = (
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].flow_mass_phase_comp[
-            "Liq", "Na_+"
-        ]
+        m.fs.ChemPre.separator.treated_state[0].flow_mass_phase_comp["Liq", "Na_+"]
         / m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_mass_phase_comp[
             "Liq", "Na_+"
         ]
     )
     print(f"Na+ mass rejection: " f"{pyo.value(1 - Na_recovery):.3g}")
     Cr_recovery = (
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].flow_mass_phase_comp[
-            "Liq", "Cr_6+"
-        ]
+        m.fs.ChemPre.separator.treated_state[0].flow_mass_phase_comp["Liq", "Cr_6+"]
         / m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_mass_phase_comp[
             "Liq", "Cr_6+"
         ]
     )
     print(f"Cr6+ mass rejection: " f"{pyo.value(1 - Cr_recovery):.3g}")
     Zn_recovery = (
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].flow_mass_phase_comp[
-            "Liq", "Zn_2+"
-        ]
+        m.fs.ChemPre.separator.treated_state[0].flow_mass_phase_comp["Liq", "Zn_2+"]
         / m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_mass_phase_comp[
             "Liq", "Zn_2+"
         ]
     )
     print(f"Zn2+ mass rejection: " f"{pyo.value(1 - Zn_recovery):.3g}")
     Dy_recovery = (
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].flow_mass_phase_comp[
-            "Liq", "Dy_3+"
-        ]
+        m.fs.ChemPre.separator.treated_state[0].flow_mass_phase_comp["Liq", "Dy_3+"]
         / m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_mass_phase_comp[
             "Liq", "Dy_3+"
         ]
     )
     print(f"Dy3+ mass rejection: " f"{pyo.value(1 - Dy_recovery):.3g}")
     B_recovery = (
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].flow_mass_phase_comp[
-            "Liq", "B_3+"
-        ]
+        m.fs.ChemPre.separator.treated_state[0].flow_mass_phase_comp["Liq", "B_3+"]
         / m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_mass_phase_comp[
             "Liq", "B_3+"
         ]
     )
     print(f"B3+ mass rejection: " f"{pyo.value(1 - B_recovery):.3g}")
     Gd_recovery = (
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].flow_mass_phase_comp[
-            "Liq", "Gd_3+"
-        ]
+        m.fs.ChemPre.separator.treated_state[0].flow_mass_phase_comp["Liq", "Gd_3+"]
         / m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_mass_phase_comp[
             "Liq", "Gd_3+"
         ]
     )
     print(f"Gd3+ mass rejection: " f"{pyo.value(1 - Gd_recovery):.3g}")
     Mn_recovery = (
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].flow_mass_phase_comp[
-            "Liq", "Mn_2+"
-        ]
+        m.fs.ChemPre.separator.treated_state[0].flow_mass_phase_comp["Liq", "Mn_2+"]
         / m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_mass_phase_comp[
             "Liq", "Mn_2+"
         ]
     )
-    print(f"Mn3+ mass rejection: " f"{pyo.value(1 - Mn_recovery):.3g}")
-    Si_recovery = (
-        m.fs.ChemPre.precipitation_reactor.properties_out[0].flow_mass_phase_comp[
-            "Liq", "Si_4+"
+    print(f"Mn2+ mass rejection: " f"{pyo.value(1 - Mn_recovery):.3g}")
+    Mg_recovery = (
+        m.fs.ChemPre.separator.treated_state[0].flow_mass_phase_comp["Liq", "Mg_2+"]
+        / m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_mass_phase_comp[
+            "Liq", "Mg_2+"
         ]
+    )
+    print(f"Mg2+ mass rejection: " f"{pyo.value(1 - Mg_recovery):.3g}")
+    Si_recovery = (
+        m.fs.ChemPre.separator.treated_state[0].flow_mass_phase_comp["Liq", "Si_4+"]
         / m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_mass_phase_comp[
             "Liq", "Si_4+"
         ]
@@ -952,6 +939,11 @@ def display_performance_metrics(m):
         / m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "SO4_2-"]
     )
     print(f"SO4_2- mass rejection: " f"{pyo.value(1 - SO4_recovery):.3g}")
+    H_recovery = (
+        m.fs.ChemPre.outlet.flow_mol_phase_comp[0, "Liq", "H_+"]
+        / m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "H_+"]
+    )
+    print(f"H_+ mass rejection: " f"{pyo.value(1 - H_recovery):.3g}")
 
 
 def display_costing(m):
