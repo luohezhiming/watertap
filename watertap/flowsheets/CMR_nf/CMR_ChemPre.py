@@ -44,6 +44,7 @@ from pyomo.network import Arc
 from idaes.core.util.model_statistics import (
     degrees_of_freedom,
 )
+import idaes.core.util.scaling as iscale
 
 __author__ = "Chenyu Wang"
 
@@ -102,24 +103,24 @@ def build(case):
         #     ("Liq", "SO4_2-"): 2.03e-09,
         # },
         mw_data={
-            "H2O": 18e-3,
+            "H2O": 18.015e-3,
             "Ca_2+": 40.08e-3,
-            "Co_2+": 58.93e-3,
+            "Co_2+": 58.9332e-3,
             "Cu_2+": 63.546e-3,
-            "Fe_3+": 55.845e-3,
-            "Mg_2+": 24.305e-3,
-            "Mn_2+": 54.94e-3,
-            "Na_+": 22.99e-3,
-            "Ni_2+": 58.69e-3,
-            "Zn_2+": 65.38e-3,
+            "Fe_3+": 55.847e-3,
+            "Mg_2+": 24.312e-3,
+            "Mn_2+": 54.938e-3,
+            "Na_+": 22.9898e-3,
+            "Ni_2+": 58.71e-3,
+            "Zn_2+": 65.3699e-3,
             "Dy_3+": 162.5e-3,
             "Gd_3+": 157.25e-3,
             "Nd_3+": 144.24e-3,
-            "Pr_3+": 140.91e-3,
+            "Pr_3+": 140.908e-3,
             "B_3+": 10.81e-3,
             "Si_4+": 28.09e-3,
             "Cr_6+": 51.996e-3,
-            "SO4_2-": 96.06e-3,
+            "SO4_2-": 96.0616e-3,
             "H_+": 1.008e-3,
         },
         # stokes_radius_data={
@@ -153,24 +154,28 @@ def build(case):
     # Define precipitatnts
     precipitants = {
         "CoFe2O4(s)": {
-            "mw": 234.62 * pyo.units.g / pyo.units.mol,
+            "mw": 234.6252 * pyo.units.g / pyo.units.mol,
             "precipitation_stoichiometric": {
                 "Co_2+": 1,
                 "Fe_3+": 2,
-                "H2O": 4,
-                "H_+": -8,
+                # "H2O": 4,
+                # "H_+": -8,
             },
         },
         "Fe2O3(s)": {
-            "mw": 159.69 * pyo.units.g / pyo.units.mol,
-            "precipitation_stoichiometric": {"Fe_3+": 2, "H2O": 3, "H_+": -6},
+            "mw": 159.6925 * pyo.units.g / pyo.units.mol,
+            "precipitation_stoichiometric": {
+                "Fe_3+": 2,
+                # "H2O": 3,
+                # "H_+": -6
+            },
         },
         "Zn4(OH)6SO4(s)": {
-            "mw": 459.63 * pyo.units.g / pyo.units.mol,
+            "mw": 459.6674 * pyo.units.g / pyo.units.mol,
             "precipitation_stoichiometric": {
                 "Zn_2+": 4,
-                "H2O": 6,
-                "H_+": -6,
+                # "H2O": 6,
+                # "H_+": -6,
                 "SO4_2-": 1,
             },
         },
@@ -182,17 +187,34 @@ def build(case):
     )
 
     # the reactor us assumed performance model
-    Conc_mol_Co_precipitate = 1.7941e-03 * (pyo.units.mol / pyo.units.L)
+    # # MINTEQ original
+    # Conc_mol_Co_precipitate = 1.7941e-03 * (pyo.units.mol / pyo.units.L)
+    # Conc_mass_Co_precipitate = (
+    #     Conc_mol_Co_precipitate * m.fs.ChemPre.mw_precipitate["CoFe2O4(s)"]
+    # )
+    #
+    # Conc_mol_Fe_precipitate = 1.5448e-01 * (pyo.units.mol / pyo.units.L)
+    # Conc_mass_Fe_precipitate = (
+    #     Conc_mol_Fe_precipitate * m.fs.ChemPre.mw_precipitate["Fe2O3(s)"]
+    # )
+    #
+    # Conc_mol_Zn_precipitate = 1.3398e-03 * (pyo.units.mol / pyo.units.L)
+    # Conc_mass_Zn_precipitate = (
+    #     Conc_mol_Zn_precipitate * m.fs.ChemPre.mw_precipitate["Zn4(OH)6SO4(s)"]
+    # )
+
+    # MINTEQ adjustment
+    Conc_mol_Co_precipitate = 1.827e-03 * (pyo.units.mol / pyo.units.L)
     Conc_mass_Co_precipitate = (
         Conc_mol_Co_precipitate * m.fs.ChemPre.mw_precipitate["CoFe2O4(s)"]
     )
 
-    Conc_mol_Fe_precipitate = 1.5448e-01 * (pyo.units.mol / pyo.units.L)
+    Conc_mol_Fe_precipitate = 1.573e-01 * (pyo.units.mol / pyo.units.L)
     Conc_mass_Fe_precipitate = (
         Conc_mol_Fe_precipitate * m.fs.ChemPre.mw_precipitate["Fe2O3(s)"]
     )
 
-    Conc_mol_Zn_precipitate = 1.3398e-03 * (pyo.units.mol / pyo.units.L)
+    Conc_mol_Zn_precipitate = 1.364e-03 * (pyo.units.mol / pyo.units.L)
     Conc_mass_Zn_precipitate = (
         Conc_mol_Zn_precipitate * m.fs.ChemPre.mw_precipitate["Zn4(OH)6SO4(s)"]
     )
@@ -200,10 +222,12 @@ def build(case):
     m.fs.ChemPre.conc_mass_precipitate["CoFe2O4(s)"].fix(Conc_mass_Co_precipitate)
     m.fs.ChemPre.conc_mass_precipitate["Fe2O3(s)"].fix(Conc_mass_Fe_precipitate)
     m.fs.ChemPre.conc_mass_precipitate["Zn4(OH)6SO4(s)"].fix(Conc_mass_Zn_precipitate)
-    m.fs.ChemPre.waste_mass_frac_precipitate.fix(0.2)
+    m.fs.ChemPre.waste_mass_frac_precipitate.fix(1)
 
     m.fs.ChemPre.inlet.pressure[0].fix(101325)
     m.fs.ChemPre.inlet.temperature[0].fix(273.15 + 20)
+
+    # set_scaling(m)
 
     # Fix other inlet state variables
     # fully specify system
@@ -219,7 +243,7 @@ def build(case):
                     11.3742e-3
                 ),  # feed mass concentration
                 ("conc_mass_phase_comp", ("Liq", "Cu_2+")): value(
-                    0
+                    1e-9
                 ),  # feed mass concentration
                 ("conc_mass_phase_comp", ("Liq", "Fe_3+")): value(
                     17454.9915e-3
@@ -366,26 +390,47 @@ def build(case):
 
 
 def set_scaling(m):
-    # Scale model
-    set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "H2O"], 1e5)
-    set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Co_2+"], 1e2)
-    set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Ca_2+"], 1e2)
-    set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Cu_2+"], 1e2)
-    set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Fe_3+"], 1e0)
-    set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Nd_3+"], 1e2)
-    set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Ni_2+"], 1e2)
-    set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Pr_3+"], 1e2)
-    set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Na_+"], 1e2)
-    set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Cr_6+"], 1e2)
-    set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Zn_2+"], 1e2)
-    set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Dy_3+"], 1e2)
-    set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "B_3+"], 1e2)
-    set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Gd_3+"], 1e2)
-    set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Mn_2+"], 1e2)
-    set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Mg_2+"], 1e2)
-    set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Si_4+"], 1e2)
-    set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "SO4_2-"], 1e2)
-    set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "H_+"], 1e2)
+    def scale_variables(m):
+        for var in m.fs.component_data_objects(pyo.Var, descend_into=True):
+            if "flow_vol" in var.name:
+                iscale.set_scaling_factor(var, 1e5)
+            if "flow_vol_phase" in var.name:
+                iscale.set_scaling_factor(var, 1e5)
+            if "temperature" in var.name:
+                iscale.set_scaling_factor(var, 1e-2)
+            if "pressure" in var.name:
+                iscale.set_scaling_factor(var, 1e-5)
+            if "flow_mol_phase_comp" in var.name:
+                iscale.set_scaling_factor(var, 1e2)
+            if "conc_mass_phase_comp" in var.name:
+                iscale.set_scaling_factor(var, 1e2)
+
+    # # Scale model
+    # set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "H2O"], 1e5)
+    # set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Co_2+"], 1e2)
+    # set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Ca_2+"], 1e2)
+    # # set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Cu_2+"], 1e2)
+    # set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Fe_3+"], 1e0)
+    # set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Nd_3+"], 1e2)
+    # set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Ni_2+"], 1e2)
+    # set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Pr_3+"], 1e2)
+    # set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Na_+"], 1e2)
+    # # set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Cr_6+"], 1e2)
+    # set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Zn_2+"], 1e2)
+    # set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Dy_3+"], 1e2)
+    # set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "B_3+"], 1e2)
+    # set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Gd_3+"], 1e2)
+    # set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Mn_2+"], 1e2)
+    # set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Mg_2+"], 1e2)
+    # set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Si_4+"], 1e2)
+    # set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "SO4_2-"], 1e2)
+    # set_scaling_factor(m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "H_+"], 1e2)
+
+    scale_variables(m)
+
+    set_scaling_factor(m.fs.ChemPre.flow_mass_precipitate["CoFe2O4(s)"], 1e5)
+    set_scaling_factor(m.fs.ChemPre.flow_mass_precipitate["Fe2O3(s)"], 1e4)
+    set_scaling_factor(m.fs.ChemPre.flow_mass_precipitate["Zn4(OH)6SO4(s)"], 1e5)
     calculate_scaling_factors(m)
 
 
@@ -441,17 +486,17 @@ def display_performance_metrics(m):
         f"{pyo.value(Ca_in):.3g}"
         f"{pyo.units.get_units(Ca_in)}"
     )
-    Cu_in = pyo.units.convert(
-        m.fs.ChemPre.precipitation_reactor.properties_in[0].conc_mass_phase_comp[
-            "Liq", "Cu_2+"
-        ],
-        to_units=pyo.units.mg / pyo.units.L,
-    )
-    print(
-        f"Cu2+ feed mass concentration: "
-        f"{pyo.value(Cu_in):.3g}"
-        f"{pyo.units.get_units(Cu_in)}"
-    )
+    # Cu_in = pyo.units.convert(
+    #     m.fs.ChemPre.precipitation_reactor.properties_in[0].conc_mass_phase_comp[
+    #         "Liq", "Cu_2+"
+    #     ],
+    #     to_units=pyo.units.mg / pyo.units.L,
+    # )
+    # print(
+    #     f"Cu2+ feed mass concentration: "
+    #     f"{pyo.value(Cu_in):.3g}"
+    #     f"{pyo.units.get_units(Cu_in)}"
+    # )
     Fe_in = pyo.units.convert(
         m.fs.ChemPre.precipitation_reactor.properties_in[0].conc_mass_phase_comp[
             "Liq", "Fe_3+"
@@ -507,17 +552,17 @@ def display_performance_metrics(m):
         f"{pyo.value(Na_in):.3g}"
         f"{pyo.units.get_units(Na_in)}"
     )
-    Cr_in = pyo.units.convert(
-        m.fs.ChemPre.precipitation_reactor.properties_in[0].conc_mass_phase_comp[
-            "Liq", "Cr_6+"
-        ],
-        to_units=pyo.units.mg / pyo.units.L,
-    )
-    print(
-        f"Cr6+ feed mass concentration: "
-        f"{pyo.value(Cr_in):.3g}"
-        f"{pyo.units.get_units(Cr_in)}"
-    )
+    # Cr_in = pyo.units.convert(
+    #     m.fs.ChemPre.precipitation_reactor.properties_in[0].conc_mass_phase_comp[
+    #         "Liq", "Cr_6+"
+    #     ],
+    #     to_units=pyo.units.mg / pyo.units.L,
+    # )
+    # print(
+    #     f"Cr6+ feed mass concentration: "
+    #     f"{pyo.value(Cr_in):.3g}"
+    #     f"{pyo.units.get_units(Cr_in)}"
+    # )
     Zn_in = pyo.units.convert(
         m.fs.ChemPre.precipitation_reactor.properties_in[0].conc_mass_phase_comp[
             "Liq", "Zn_2+"
@@ -646,15 +691,15 @@ def display_performance_metrics(m):
         f"{pyo.value(Ca_treated):.3g}"
         f"{pyo.units.get_units(Ca_treated)}"
     )
-    Cu_treated = pyo.units.convert(
-        m.fs.ChemPre.separator.treated_state[0].conc_mass_phase_comp["Liq", "Cu_2+"],
-        to_units=pyo.units.mg / pyo.units.L,
-    )
-    print(
-        f"Cu2+ treated mass concentration: "
-        f"{pyo.value(Cu_treated):.3g}"
-        f"{pyo.units.get_units(Cu_treated)}"
-    )
+    # Cu_treated = pyo.units.convert(
+    #     m.fs.ChemPre.separator.treated_state[0].conc_mass_phase_comp["Liq", "Cu_2+"],
+    #     to_units=pyo.units.mg / pyo.units.L,
+    # )
+    # print(
+    #     f"Cu2+ treated mass concentration: "
+    #     f"{pyo.value(Cu_treated):.3g}"
+    #     f"{pyo.units.get_units(Cu_treated)}"
+    # )
     Fe_treated = pyo.units.convert(
         m.fs.ChemPre.separator.treated_state[0].conc_mass_phase_comp["Liq", "Fe_3+"],
         to_units=pyo.units.mg / pyo.units.L,
@@ -700,15 +745,15 @@ def display_performance_metrics(m):
         f"{pyo.value(Na_treated):.3g}"
         f"{pyo.units.get_units(Na_treated)}"
     )
-    Cr_treated = pyo.units.convert(
-        m.fs.ChemPre.separator.treated_state[0].conc_mass_phase_comp["Liq", "Cr_6+"],
-        to_units=pyo.units.mg / pyo.units.L,
-    )
-    print(
-        f"Cr6+ treated mass concentration: "
-        f"{pyo.value(Cr_treated):.3g}"
-        f"{pyo.units.get_units(Cr_treated)}"
-    )
+    # Cr_treated = pyo.units.convert(
+    #     m.fs.ChemPre.separator.treated_state[0].conc_mass_phase_comp["Liq", "Cr_6+"],
+    #     to_units=pyo.units.mg / pyo.units.L,
+    # )
+    # print(
+    #     f"Cr6+ treated mass concentration: "
+    #     f"{pyo.value(Cr_treated):.3g}"
+    #     f"{pyo.units.get_units(Cr_treated)}"
+    # )
     Zn_treated = pyo.units.convert(
         m.fs.ChemPre.separator.treated_state[0].conc_mass_phase_comp["Liq", "Zn_2+"],
         to_units=pyo.units.mg / pyo.units.L,
@@ -828,17 +873,17 @@ def display_performance_metrics(m):
     #     / m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Ca_2+"]
     # )
     print(f"Ca2+ mass rejection: " f"{pyo.value(1 - Ca_recovery):.3g}")
-    Cu_recovery = (
-        m.fs.ChemPre.separator.treated_state[0].flow_mass_phase_comp["Liq", "Cu_2+"]
-        / m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_mass_phase_comp[
-            "Liq", "Cu_2+"
-        ]
-    )
     # Cu_recovery = (
-    #     m.fs.ChemPre.outlet.flow_mol_phase_comp[0, "Liq", "Cu_2+"]
-    #     / m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Cu_2+"]
+    #     m.fs.ChemPre.separator.treated_state[0].flow_mass_phase_comp["Liq", "Cu_2+"]
+    #     / m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_mass_phase_comp[
+    #         "Liq", "Cu_2+"
+    #     ]
     # )
-    print(f"Cu2+ mass rejection: " f"{pyo.value(1 - Cu_recovery):.3g}")
+    # # Cu_recovery = (
+    # #     m.fs.ChemPre.outlet.flow_mol_phase_comp[0, "Liq", "Cu_2+"]
+    # #     / m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "Cu_2+"]
+    # # )
+    # print(f"Cu2+ mass rejection: " f"{pyo.value(1 - Cu_recovery):.3g}")
     Fe_recovery = (
         m.fs.ChemPre.separator.treated_state[0].flow_mass_phase_comp["Liq", "Fe_3+"]
         / m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_mass_phase_comp[
@@ -878,13 +923,13 @@ def display_performance_metrics(m):
         ]
     )
     print(f"Na+ mass rejection: " f"{pyo.value(1 - Na_recovery):.3g}")
-    Cr_recovery = (
-        m.fs.ChemPre.separator.treated_state[0].flow_mass_phase_comp["Liq", "Cr_6+"]
-        / m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_mass_phase_comp[
-            "Liq", "Cr_6+"
-        ]
-    )
-    print(f"Cr6+ mass rejection: " f"{pyo.value(1 - Cr_recovery):.3g}")
+    # Cr_recovery = (
+    #     m.fs.ChemPre.separator.treated_state[0].flow_mass_phase_comp["Liq", "Cr_6+"]
+    #     / m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_mass_phase_comp[
+    #         "Liq", "Cr_6+"
+    #     ]
+    # )
+    # print(f"Cr6+ mass rejection: " f"{pyo.value(1 - Cr_recovery):.3g}")
     Zn_recovery = (
         m.fs.ChemPre.separator.treated_state[0].flow_mass_phase_comp["Liq", "Zn_2+"]
         / m.fs.ChemPre.precipitation_reactor.properties_in[0].flow_mass_phase_comp[
@@ -944,6 +989,15 @@ def display_performance_metrics(m):
         / m.fs.ChemPre.inlet.flow_mol_phase_comp[0, "Liq", "H_+"]
     )
     print(f"H_+ mass rejection: " f"{pyo.value(1 - H_recovery):.3g}")
+
+    # Display Precipitate
+    print("\n---- Precipitate Metrics ----")
+    CoFe2O4_precipitate = m.fs.ChemPre.flow_mass_precipitate["CoFe2O4(s)"]
+    print(f"CoFe2O4 precipitate: " f"{pyo.value(CoFe2O4_precipitate):.3g}")
+    Fe2O3_precipitate = m.fs.ChemPre.flow_mass_precipitate["Fe2O3(s)"]
+    print(f"Fe2O3 precipitate: " f"{pyo.value(Fe2O3_precipitate):.3g}")
+    Zn4OH6SO4_precipitate = m.fs.ChemPre.flow_mass_precipitate["Zn4(OH)6SO4(s)"]
+    print(f"Zn4(OH)6SO4 precipitate: " f"{pyo.value(Zn4OH6SO4_precipitate):.3g}")
 
 
 def display_costing(m):
