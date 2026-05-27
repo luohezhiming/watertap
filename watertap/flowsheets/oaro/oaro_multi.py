@@ -1,7 +1,7 @@
 #################################################################################
-# WaterTAP Copyright (c) 2020-2024, The Regents of the University of California,
+# WaterTAP Copyright (c) 2020-2026, The Regents of the University of California,
 # through Lawrence Berkeley National Laboratory, Oak Ridge National Laboratory,
-# National Renewable Energy Laboratory, and National Energy Technology
+# National Laboratory of the Rockies, and National Energy Technology
 # Laboratory (subject to receipt of any required approvals from the U.S. Dept.
 # of Energy). All rights reserved.
 #
@@ -251,8 +251,8 @@ def build(number_of_stages, erd_type=ERDtype.pump_as_turbine):
     m.fs.costing.reverse_osmosis.factor_membrane_replacement.fix(0.15)
     m.fs.costing.reverse_osmosis.membrane_cost.fix(30)
     m.fs.costing.reverse_osmosis.high_pressure_membrane_cost.fix(50)
-    m.fs.costing.high_pressure_pump.cost.fix(53 / 1e5 * 3600)
-    m.fs.costing.energy_recovery_device.pressure_exchanger_cost.fix(535)
+    m.fs.costing.high_pressure_pump.unit_cost.fix(53 / 1e5 * 3600)
+    m.fs.costing.energy_recovery_device.unit_cost.fix(535)
 
     m.fs.costing.cost_process()
 

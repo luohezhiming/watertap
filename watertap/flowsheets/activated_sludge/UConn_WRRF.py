@@ -449,4 +449,4 @@ if __name__ == "__main__":
     df["percent_difference"] = (df["watertap"] - df["julia"]) / df["julia"] * 100
     df["percent_difference"] = df["percent_difference"].round(1)
 
-    df
+    print(df)

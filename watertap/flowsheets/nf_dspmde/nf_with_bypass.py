@@ -1,7 +1,7 @@
 #################################################################################
-# WaterTAP Copyright (c) 2020-2024, The Regents of the University of California,
+# WaterTAP Copyright (c) 2020-2026, The Regents of the University of California,
 # through Lawrence Berkeley National Laboratory, Oak Ridge National Laboratory,
-# National Renewable Energy Laboratory, and National Energy Technology
+# National Laboratory of the Rockies, and National Energy Technology
 # Laboratory (subject to receipt of any required approvals from the U.S. Dept.
 # of Energy). All rights reserved.
 #
@@ -157,7 +157,7 @@ def fix_init_vars(m):
     # fix initial guess for splitter
     m.fs.by_pass_splitter.split_fraction[0, "bypass"].fix(0.9)
     m.fs.by_pass_splitter.split_fraction[0, "bypass"].setlb(0.05)
-    m.fs.by_pass_splitter.split_fraction[0, "bypass"].setub(None)
+    m.fs.by_pass_splitter.split_fraction[0, "bypass"].setub(1.001)
 
 
 def initialize(m, solver=None):
