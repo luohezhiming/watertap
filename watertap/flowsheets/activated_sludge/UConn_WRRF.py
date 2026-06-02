@@ -36,7 +36,7 @@ from enum import Enum, auto
 import pyomo.environ as pyo
 from pyomo.network import Arc, SequentialDecomposition
 
-from idaes.core import FlowsheetBlock
+from idaes.core import FlowsheetBlock, UnitModelCostingBlock, UnitModelBlockData
 from idaes.models.unit_models import Feed, Mixer, Separator, Product, MomentumMixingType
 from idaes.models.unit_models.separator import SplittingType
 from watertap.core.solvers import get_solver
@@ -64,6 +64,8 @@ from watertap.property_models.unit_specific.activated_sludge.asm3_reactions impo
     ASM3ReactionParameterBlock,
 )
 from watertap.core.util.initialization import check_solve, interval_initializer
+from watertap.costing import WaterTAPCosting
+from idaes.core.scaling import set_scaling_factor
 
 # Set up logger
 _log = idaeslog.getLogger(__name__)
@@ -341,6 +343,61 @@ def initialize_flowsheet(m):
     seq.run(m, function)
 
 
+def add_costing(m):
+    m.fs.costing = WaterTAPCosting()
+    m.fs.costing.base_currency = pyo.units.USD_2020
+
+    # Costing Blocks
+    m.fs.R1.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
+    m.fs.R2.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
+    m.fs.R3.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
+    m.fs.R4.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
+    m.fs.R5.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
+
+    # # Initialize electricity consumption values
+    # m.fs.R3.electricity_consumption[0].set_value(75)
+    # m.fs.R4.electricity_consumption[0].set_value(70)
+    # m.fs.R5.electricity_consumption[0].set_value(20)
+
+    # process costing and add system level metrics
+    m.fs.costing.cost_process()
+    m.fs.costing.add_annual_water_production(m.fs.S1.effluent.flow_vol[0])
+    m.fs.costing.add_LCOW(m.fs.S1.effluent.flow_vol[0])
+    m.fs.costing.add_specific_energy_consumption(m.fs.S1.effluent.flow_vol[0])
+
+    set_scaling_factor(m.fs.costing.total_capital_cost, 1e-7)
+    set_scaling_factor(m.fs.costing.aggregate_capital_cost, 1e-8)
+    set_scaling_factor(m.fs.costing.aggregate_flow_electricity, 1e-1)
+    set_scaling_factor(m.fs.costing.aggregate_flow_costs["electricity"], 1e-3)
+    set_scaling_factor(m.fs.costing.total_operating_cost, 1e-4)
+
+    for block in m.fs.component_objects(pyo.Block, descend_into=True):
+        if isinstance(block, UnitModelBlockData) and hasattr(block, "costing"):
+            set_scaling_factor(block.costing.capital_cost, 1e-7)
+
+
+def display_costing(m):
+    print("Levelized cost of water: %.3g $/m3" % pyo.value(m.fs.costing.LCOW))
+
+    print(
+        "Total operating cost: %.4g M$/yr"
+        % pyo.value(m.fs.costing.total_operating_cost / 1e6)
+    )
+    print(
+        "Total capital cost: %.4g M$" % pyo.value(m.fs.costing.total_capital_cost / 1e6)
+    )
+
+    print(
+        "Total annualized cost: %.4g M$/yr"
+        % pyo.value(m.fs.costing.total_annualized_cost / 1e6)
+    )
+    print("capital cost R1: %.4g M$" % pyo.value(m.fs.R1.costing.capital_cost / 1e6))
+    print("capital cost R2: %.4g M$" % pyo.value(m.fs.R2.costing.capital_cost / 1e6))
+    print("capital cost R3: %.4g M$" % pyo.value(m.fs.R3.costing.capital_cost / 1e6))
+    print("capital cost R4: %.4g M$" % pyo.value(m.fs.R4.costing.capital_cost / 1e6))
+    print("capital cost R5: %.4g M$" % pyo.value(m.fs.R5.costing.capital_cost / 1e6))
+
+
 def solve_flowsheet(m):
     # Solve overall flowsheet to close recycle loop
     solver = get_solver()
@@ -399,6 +456,9 @@ if __name__ == "__main__":
 
     scale_flowsheet(m)
 
+    add_costing(m)
+    m.fs.costing.initialize()
+
     res = solve_flowsheet(m)
 
     stream_table = create_stream_table_dataframe(
@@ -418,8 +478,10 @@ if __name__ == "__main__":
         time_point=0,
     )
     print(stream_table_dataframe_to_string(stream_table))
-    m.fs.R2._get_performance_contents()
-    m.fs.R4._get_performance_contents()
+    display_costing(m)
+
+    # m.fs.R2._get_performance_contents()
+    # m.fs.R4._get_performance_contents()
 
     solution = {
         "S_O": 6.07975,
