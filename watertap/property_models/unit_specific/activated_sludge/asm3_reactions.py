@@ -32,6 +32,7 @@ from idaes.core import (
     ReactionBlockDataBase,
     ReactionBlockBase,
 )
+from pyomo.common.config import ConfigValue
 from idaes.core.util.misc import add_object_reference
 from idaes.core.util.exceptions import BurntToast
 import idaes.logger as idaeslog
@@ -49,6 +50,21 @@ class ASM3ReactionParameterData(ReactionParameterBlock):
     """
     Reaction Parameter Block Class
     """
+
+    CONFIG = ReactionParameterBlock.CONFIG()
+    CONFIG.declare(
+        "calibrated_params",
+        ConfigValue(
+            default=None,
+            description="Optional dict of directly specified kinetic parameter values for mu_H and mu_A",
+            doc="""Optional dict for directly specifying mu_H and mu_A instead of computing them
+            from the two reference temperatures (10C and 20C) via Arrhenius interpolation.
+            **default** - None.
+            **Valid values:** {
+            **None** - mu_H and mu_A are temperature-indexed Vars computed via Arrhenius interpolation,
+            **dict** - mu_H and mu_A are declared as plain unindexed Vars fixed to the given values,""",
+        ),
+    )
 
     def build(self):
         """
@@ -196,13 +212,21 @@ class ASM3ReactionParameterData(ReactionParameterBlock):
             doc="Saturation constant for for X_STO (g-COD-X_STO / g-COD-X_H)",
         )
         mu_H_dict = {"10C": 1, "20C": 2}
-        self.mu_H = pyo.Var(
-            mu_H_dict.keys(),
-            domain=pyo.PositiveReals,
-            initialize=mu_H_dict,
-            units=pyo.units.day**-1,
-            doc="Heterotrophic max. growth rate of X_H (day^-1)",
-        )
+        if self.config.calibrated_params:
+            self.mu_H = pyo.Var(
+                initialize=self.config.calibrated_params["mu_H"],
+                domain=pyo.PositiveReals,
+                units=pyo.units.day**-1,
+                doc="Heterotrophic max. growth rate of X_H (day^-1)",
+            )
+        else:
+            self.mu_H = pyo.Var(
+                mu_H_dict.keys(),
+                domain=pyo.PositiveReals,
+                initialize=mu_H_dict["20C"],
+                units=pyo.units.day**-1,
+                doc="Heterotrophic max. growth rate of X_H (day^-1)",
+            )
         self.K_NH4 = pyo.Var(
             initialize=0.01e-3,
             units=pyo.units.kg / pyo.units.m**3,
@@ -250,13 +274,21 @@ class ASM3ReactionParameterData(ReactionParameterBlock):
 
         # Autotrophic organisms X_A, nitrifying activity
         mu_A_dict = {"10C": 0.35, "20C": 1}
-        self.mu_A = pyo.Var(
-            mu_A_dict.keys(),
-            domain=pyo.PositiveReals,
-            initialize=mu_A_dict,
-            units=pyo.units.day**-1,
-            doc="Autotrophic max. growth rate of X_A (day^-1)",
-        )
+        if self.config.calibrated_params:
+            self.mu_A = pyo.Var(
+                initialize=self.config.calibrated_params["mu_A"],
+                domain=pyo.PositiveReals,
+                units=pyo.units.day**-1,
+                doc="Autotrophic max. growth rate of X_A (day^-1)",
+            )
+        else:
+            self.mu_A = pyo.Var(
+                mu_A_dict.keys(),
+                domain=pyo.PositiveReals,
+                initialize=mu_A_dict["20C"],
+                units=pyo.units.day**-1,
+                doc="Autotrophic max. growth rate of X_A (day^-1)",
+            )
         self.K_A_NH4 = pyo.Var(
             initialize=1e-3,
             units=pyo.units.kg / pyo.units.m**3,
@@ -652,137 +684,37 @@ class ASM3ReactionBlockData(ReactionBlockDataBase):
             units=pyo.units.kg / pyo.units.m**3 / pyo.units.s,
         )
 
-        theta_T_k_H = pyo.log(self.params.k_H["10C"] / self.params.k_H["20C"]) / (
-            self.params.ref_temp_1 - self.params.ref_temp_2
-        )
-        theta_T_k_STO = pyo.log(self.params.k_STO["10C"] / self.params.k_STO["20C"]) / (
-            self.params.ref_temp_1 - self.params.ref_temp_2
-        )
-        theta_T_mu_H = pyo.log(self.params.mu_H["10C"] / self.params.mu_H["20C"]) / (
-            self.params.ref_temp_1 - self.params.ref_temp_2
-        )
-        theta_T_b_H_O2 = pyo.log(
-            self.params.b_H_O2["10C"] / self.params.b_H_O2["20C"]
-        ) / (self.params.ref_temp_1 - self.params.ref_temp_2)
-        theta_T_b_H_NOX = pyo.log(
-            self.params.b_H_NOX["10C"] / self.params.b_H_NOX["20C"]
-        ) / (self.params.ref_temp_1 - self.params.ref_temp_2)
-        theta_T_b_STO_O2 = pyo.log(
-            self.params.b_STO_O2["10C"] / self.params.b_STO_O2["20C"]
-        ) / (self.params.ref_temp_1 - self.params.ref_temp_2)
-        theta_T_b_STO_NOX = pyo.log(
-            self.params.b_STO_NOX["10C"] / self.params.b_STO_NOX["20C"]
-        ) / (self.params.ref_temp_1 - self.params.ref_temp_2)
-        theta_T_mu_A = pyo.log(self.params.mu_A["10C"] / self.params.mu_A["20C"]) / (
-            self.params.ref_temp_1 - self.params.ref_temp_2
-        )
-        theta_T_b_A_O2 = pyo.log(
-            self.params.b_A_O2["10C"] / self.params.b_A_O2["20C"]
-        ) / (self.params.ref_temp_1 - self.params.ref_temp_2)
-        theta_T_b_A_NOX = pyo.log(
-            self.params.b_A_NOX["10C"] / self.params.b_A_NOX["20C"]
-        ) / (self.params.ref_temp_1 - self.params.ref_temp_2)
+        def _arrhenius(param_var):
+            theta = pyo.log(param_var["10C"] / param_var["20C"]) / (
+                self.params.ref_temp_1 - self.params.ref_temp_2
+            )
+            return param_var["20C"] * pyo.exp(
+                theta
+                * (
+                    pyo.units.convert(
+                        self.state_ref.temperature / pyo.units.K,
+                        to_units=pyo.units.dimensionless,
+                    )
+                    - (self.params.ref_temp_2 + 273.15)
+                )
+            )
 
-        k_H = self.params.k_H["20C"] * pyo.exp(
-            theta_T_k_H
-            * (
-                pyo.units.convert(
-                    self.state_ref.temperature / pyo.units.K,
-                    to_units=pyo.units.dimensionless,
-                )
-                - (self.params.ref_temp_2 + 273.15)
-            )
-        )
-        k_STO = self.params.k_STO["20C"] * pyo.exp(
-            theta_T_k_STO
-            * (
-                pyo.units.convert(
-                    self.state_ref.temperature / pyo.units.K,
-                    to_units=pyo.units.dimensionless,
-                )
-                - (self.params.ref_temp_2 + 273.15)
-            )
-        )
-        mu_H = self.params.mu_H["20C"] * pyo.exp(
-            theta_T_mu_H
-            * (
-                pyo.units.convert(
-                    self.state_ref.temperature / pyo.units.K,
-                    to_units=pyo.units.dimensionless,
-                )
-                - (self.params.ref_temp_2 + 273.15)
-            )
-        )
-        b_H_O2 = self.params.b_H_O2["20C"] * pyo.exp(
-            theta_T_b_H_O2
-            * (
-                pyo.units.convert(
-                    self.state_ref.temperature / pyo.units.K,
-                    to_units=pyo.units.dimensionless,
-                )
-                - (self.params.ref_temp_2 + 273.15)
-            )
-        )
-        b_H_NOX = self.params.b_H_NOX["20C"] * pyo.exp(
-            theta_T_b_H_NOX
-            * (
-                pyo.units.convert(
-                    self.state_ref.temperature / pyo.units.K,
-                    to_units=pyo.units.dimensionless,
-                )
-                - (self.params.ref_temp_2 + 273.15)
-            )
-        )
-        b_STO_O2 = self.params.b_STO_O2["20C"] * pyo.exp(
-            theta_T_b_STO_O2
-            * (
-                pyo.units.convert(
-                    self.state_ref.temperature / pyo.units.K,
-                    to_units=pyo.units.dimensionless,
-                )
-                - (self.params.ref_temp_2 + 273.15)
-            )
-        )
-        b_STO_NOX = self.params.b_STO_NOX["20C"] * pyo.exp(
-            theta_T_b_STO_NOX
-            * (
-                pyo.units.convert(
-                    self.state_ref.temperature / pyo.units.K,
-                    to_units=pyo.units.dimensionless,
-                )
-                - (self.params.ref_temp_2 + 273.15)
-            )
-        )
-        mu_A = self.params.mu_A["20C"] * pyo.exp(
-            theta_T_mu_A
-            * (
-                pyo.units.convert(
-                    self.state_ref.temperature / pyo.units.K,
-                    to_units=pyo.units.dimensionless,
-                )
-                - (self.params.ref_temp_2 + 273.15)
-            )
-        )
-        b_A_O2 = self.params.b_A_O2["20C"] * pyo.exp(
-            theta_T_b_A_O2
-            * (
-                pyo.units.convert(
-                    self.state_ref.temperature / pyo.units.K,
-                    to_units=pyo.units.dimensionless,
-                )
-                - (self.params.ref_temp_2 + 273.15)
-            )
-        )
-        b_A_NOX = self.params.b_A_NOX["20C"] * pyo.exp(
-            theta_T_b_A_NOX
-            * (
-                pyo.units.convert(
-                    self.state_ref.temperature / pyo.units.K,
-                    to_units=pyo.units.dimensionless,
-                )
-                - (self.params.ref_temp_2 + 273.15)
-            )
-        )
+        k_H = _arrhenius(self.params.k_H)
+        k_STO = _arrhenius(self.params.k_STO)
+
+        if self.params.config.calibrated_params:
+            mu_H = self.params.mu_H
+            mu_A = self.params.mu_A
+        else:
+            mu_H = _arrhenius(self.params.mu_H)
+            mu_A = _arrhenius(self.params.mu_A)
+
+        b_H_O2 = _arrhenius(self.params.b_H_O2)
+        b_H_NOX = _arrhenius(self.params.b_H_NOX)
+        b_STO_O2 = _arrhenius(self.params.b_STO_O2)
+        b_STO_NOX = _arrhenius(self.params.b_STO_NOX)
+        b_A_O2 = _arrhenius(self.params.b_A_O2)
+        b_A_NOX = _arrhenius(self.params.b_A_NOX)
 
         try:
 
