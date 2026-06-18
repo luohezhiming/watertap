@@ -71,6 +71,9 @@ from watertap.costing.unit_models.clarifier import (
 )
 from idaes.core.scaling import set_scaling_factor
 
+from idaes.core.util.model_diagnostics import DegeneracyHunter
+from idaes.core.util import DiagnosticsToolbox
+
 # Set up logger
 _log = idaeslog.getLogger(__name__)
 
@@ -336,6 +339,9 @@ def set_operating_conditions(m, asm_model=ASMModel.asm1):
     m.fs.outgassing.split_fraction[0, "effluent", "S_O"].fix(0.1)
     m.fs.outgassing.split_fraction[0, "effluent", "S_N2"].fix(0.1)
 
+    # Touch variable
+    m.fs.Treated.conc_mass_comp
+
     # Check degrees of freedom
     print("DOF = ", degrees_of_freedom(m))
     assert degrees_of_freedom(m) == 0
@@ -345,11 +351,11 @@ def scale_flowsheet(m):
     # Apply scaling
     for var in m.fs.component_data_objects(pyo.Var, descend_into=True):
         if "flow_vol" in var.name:
-            iscale.set_scaling_factor(var, 1e1)
+            iscale.set_scaling_factor(var, 1e2)
         if "temperature" in var.name:
             iscale.set_scaling_factor(var, 1e-1)
         if "pressure" in var.name:
-            iscale.set_scaling_factor(var, 1e-4)
+            iscale.set_scaling_factor(var, 1e-5)
         if "conc_mass_comp" in var.name:
             iscale.set_scaling_factor(var, 1e2)
     iscale.calculate_scaling_factors(m.fs)
@@ -470,7 +476,7 @@ def initialize_flowsheet(m):
     #     print(o[0].name)
 
     def function(unit):
-        unit.initialize(outlvl=idaeslog.DEBUG)
+        unit.initialize(outlvl=idaeslog.CRITICAL)
 
     seq.run(m, function)
 
@@ -557,90 +563,287 @@ def reset_asm3_inlet_conditions(m, ini_dict):
             raise
 
 
+def set_validation_inlet_conditions(m):
+    # Influent conditions from the reference simulation, following Julia sequence:
+    # port.S_O   ~ comp[1]
+    # port.S_I   ~ frac_SI*comp[2]
+    # port.S_S   ~ frac_SS*comp[2]
+    # port.X_I   ~ frac_XI*comp[2]
+    # port.X_S   ~ frac_XS*comp[2]
+    # port.X_STO ~ frac_XSTO*comp[2]
+    # port.S_NH  ~ comp[3]
+    # port.S_N2  ~ comp[4]
+    # port.S_NO  ~ comp[5]
+    # port.S_ALK ~ comp[6]
+    # port.X_H   ~ comp[7]
+    # port.X_A   ~ comp[8]
+    # port.X_TS  ~ comp[9]
+    comp = [1e-9, 416.5, 21.0, 1e-9, 0.25, 2.3, 1e-9, 1e-9, 166.0]
+    frac_SI = 0.017517364307482627
+    frac_SS = 0.27354634374988246
+    frac_XI = 0.2117186104741312
+    frac_XS = 0.49721768146850376
+    frac_STO = 1 - frac_SI - frac_SS - frac_XI - frac_XS
+
+    m.fs.feed.flow_vol.fix(3785.42 * pyo.units.m**3 / pyo.units.day)
+    m.fs.feed.conc_mass_comp[0, "S_O"].fix(comp[0] * pyo.units.g / pyo.units.m**3)
+    m.fs.feed.conc_mass_comp[0, "S_I"].fix(
+        frac_SI * comp[1] * pyo.units.g / pyo.units.m**3
+    )
+    m.fs.feed.conc_mass_comp[0, "S_S"].fix(
+        frac_SS * comp[1] * pyo.units.g / pyo.units.m**3
+    )
+    m.fs.feed.conc_mass_comp[0, "X_I"].fix(
+        frac_XI * comp[1] * pyo.units.g / pyo.units.m**3
+    )
+    m.fs.feed.conc_mass_comp[0, "X_S"].fix(
+        frac_XS * comp[1] * pyo.units.g / pyo.units.m**3
+    )
+    m.fs.feed.conc_mass_comp[0, "X_STO"].fix(
+        frac_STO * comp[1] * pyo.units.g / pyo.units.m**3
+    )
+    m.fs.feed.conc_mass_comp[0, "S_NH4"].fix(comp[2] * pyo.units.g / pyo.units.m**3)
+    m.fs.feed.conc_mass_comp[0, "S_N2"].fix(comp[3] * pyo.units.g / pyo.units.m**3)
+    m.fs.feed.conc_mass_comp[0, "S_NOX"].fix(comp[4] * pyo.units.g / pyo.units.m**3)
+    m.fs.feed.alkalinity.fix(comp[5] * pyo.units.mol / pyo.units.m**3)
+    m.fs.feed.conc_mass_comp[0, "X_H"].fix(comp[6] * pyo.units.g / pyo.units.m**3)
+    m.fs.feed.conc_mass_comp[0, "X_A"].fix(comp[7] * pyo.units.g / pyo.units.m**3)
+    m.fs.feed.conc_mass_comp[0, "X_TSS"].fix(comp[8] * pyo.units.g / pyo.units.m**3)
+    m.fs.feed.temperature.fix(293.15 * pyo.units.K)
+    m.fs.feed.pressure.fix(1 * pyo.units.atm)
+
+
+def verify_effluent(m):
+    import pandas as pd
+
+    # COD = sum of all COD-bearing components in the effluent (kg/m3 -> mg/L via 1e3)
+    cod_components = ["S_I", "S_S", "X_I", "X_S", "X_H", "X_STO", "X_A"]
+    COD = (
+        sum(pyo.value(m.fs.Treated.conc_mass_comp[0, k]) for k in cod_components) * 1e3
+    )
+
+    reference = {
+        "COD": 8.720000568688235,
+        "S_NH4": 0.40000000408648667,
+        "S_NOX": 1.1400000271650608,
+    }
+
+    watertap = {
+        "COD": COD,
+        "S_NH4": pyo.value(m.fs.Treated.conc_mass_comp[0, "S_NH4"]) * 1e3,
+        "S_NOX": pyo.value(m.fs.Treated.conc_mass_comp[0, "S_NOX"]) * 1e3,
+    }
+
+    df = pd.DataFrame({"watertap": watertap, "reference": reference})
+    df["percent_difference"] = (
+        (df["watertap"] - df["reference"]) / df["reference"] * 100
+    )
+    df["percent_difference"] = df["percent_difference"].round(2)
+    print("\n=== Effluent Verification ===")
+    print(df)
+
+
+def print_reactor_comparison(m):
+    import pandas as pd
+
+    species = [
+        ("S_O", "S_O", False),
+        ("S_I", "S_I", False),
+        ("S_S", "S_S", False),
+        ("S_NH", "S_NH4", False),
+        ("S_N2", "S_N2", False),
+        ("S_NO", "S_NOX", False),
+        ("S_ALK", None, True),
+        ("X_I", "X_I", False),
+        ("X_S", "X_S", False),
+        ("X_H", "X_H", False),
+        ("X_STO", "X_STO", False),
+        ("X_A", "X_A", False),
+        ("X_TS", "X_TSS", False),
+    ]
+
+    julia_ref = {
+        "R1": {
+            "S_O": 1.0504047914855494e-5,
+            "S_I": 6.0905166358394265,
+            "S_S": 92.18304893295047,
+            "S_NH": 11.335637771683047,
+            "S_N2": 0.7260490980293832,
+            "S_NO": 0.039665993815954106,
+            "S_ALK": 1.4895832881218996,
+            "X_I": 1430.6324322233181,
+            "X_S": 146.26493174563302,
+            "X_H": 195.12995373117386,
+            "X_STO": 36.64357511481302,
+            "X_A": 31.991986333907928,
+            "X_TS": 595.2356886434673,
+        },
+        "R2": {
+            "S_O": 8.5621958332359,
+            "S_I": 6.0905166358394185,
+            "S_S": 0.1809661487380628,
+            "S_NH": 0.06545899701951757,
+            "S_N2": 0.7062638750018604,
+            "S_NO": 4.707552793144472,
+            "S_ALK": 0.35115003283675633,
+            "X_I": 1441.5997386904708,
+            "X_S": 27.886967673809004,
+            "X_H": 185.102074048344,
+            "X_STO": 33.34562438843271,
+            "X_A": 30.756291500189107,
+            "X_TS": 502.56349537574,
+        },
+        "R3": {
+            "S_O": 0.031520824989993146,
+            "S_I": 6.090516635839423,
+            "S_S": 52.059299774976715,
+            "S_NH": 7.132219765275167,
+            "S_N2": 1.7852890787969302,
+            "S_NO": 1.0708383332481712,
+            "S_ALK": 1.115683977704751,
+            "X_I": 1434.7245033937052,
+            "X_S": 98.28635921616005,
+            "X_H": 192.56863143839658,
+            "X_STO": 41.162960796242594,
+            "X_A": 31.603161181242456,
+            "X_TS": 562.3779949161902,
+        },
+        "R4": {
+            "S_O": 4.864264236364027,
+            "S_I": 6.090516635839423,
+            "S_S": 7.701030126290658,
+            "S_NH": 0.6804389916873439,
+            "S_N2": 5.054993357366321,
+            "S_NO": 5.4677023856382885,
+            "S_ALK": 0.34078077584918415,
+            "X_I": 1435.3709320529904,
+            "X_S": 85.07130062979549,
+            "X_H": 200.09468253727366,
+            "X_STO": 44.586021899231376,
+            "X_A": 33.10040798104239,
+            "X_TS": 563.1264216784342,
+        },
+        "R5": {
+            "S_O": 0.41245899215780024,
+            "S_I": 6.090516635839423,
+            "S_S": 2.6294839328488124,
+            "S_NH": 0.40000000408648667,
+            "S_N2": 9.816623212445112,
+            "S_NO": 1.1400000271650608,
+            "S_ALK": 0.6298710166257822,
+            "X_I": 1435.4911512790286,
+            "X_S": 82.07535099827011,
+            "X_H": 201.69930878387976,
+            "X_STO": 34.802026801814144,
+            "X_A": 33.15421997351044,
+            "X_TS": 556.5918431549485,
+        },
+    }
+
+    reactor_blocks = [
+        ("R1", m.fs.R1.control_volume.properties_out[0]),
+        ("R2", m.fs.R2.control_volume.properties_out[0]),
+        ("R3", m.fs.R3.control_volume.properties_out[0]),
+        ("R4", m.fs.R4.control_volume.properties_out[0]),
+        ("R5", m.fs.R5.control_volume.properties_out[0]),
+    ]
+
+    for rx_label, props in reactor_blocks:
+        rows = {}
+        for disp, wt_key, is_alk in species:
+            if is_alk:
+                wt_val = pyo.value(props.alkalinity) * 1e3
+            else:
+                wt_val = pyo.value(props.conc_mass_comp[wt_key]) * 1e3
+            julia_val = julia_ref[rx_label][disp]
+            pct = (
+                (wt_val - julia_val) / julia_val * 100
+                if julia_val != 0
+                else float("nan")
+            )
+            rows[disp] = {
+                "WaterTAP (mg/L)": round(wt_val, 4),
+                "Julia (mg/L)": julia_val,
+                "% diff": round(pct, 2),
+            }
+        df_rx = pd.DataFrame(rows).T
+        print(f"\n=== Reactor {rx_label} ===")
+        print(df_rx.to_string())
+
+
 if __name__ == "__main__":
     # This method builds and runs a steady state activated sludge
     # flowsheet.
-    # m, results = build_flowsheet()
     m = build_flowsheet(asm_model=ASMModel.asm3)
     set_operating_conditions(m, asm_model=ASMModel.asm3)
-    ini2 = {
-        "S_O": 2.00000074088136,
-        "S_I": 30,
-        "S_S": 1.99999995166373,
-        "S_NH4": 20.0000000011385,
-        "S_N2": 1.30283567480963e-18,
-        "S_NOX": 9.07971541001396e-10,
-        "alkalinity": 5.00000000001647,
-        "X_I": 100.000000001382,
-        "X_S": 39.9999999624405,
-        "X_H": 100.000000012367,
-        "X_STO": 40.0000000397251,
-        "X_A": 1.0000000001811,
-        "X_TSS": 200.000000007995,
-        "flow_vol": 36892,
-        "temperature": 14.8581001531874,
-    }
 
-    reset_asm3_inlet_conditions(m, ini2)
+    # # --- Phase 1: fully converge with non-zero biomass (ini2) to build a good warm start ---
+    # ini2 = {
+    #     "S_O": 2,
+    #     "S_I": 30,
+    #     "S_S": 2,
+    #     "S_NH4": 20,
+    #     "S_N2": 0,
+    #     "S_NOX": 0,
+    #     "X_I": 100,
+    #     "X_S": 40,
+    #     "X_H": 100,
+    #     "X_STO": 40,
+    #     "X_A": 1,
+    #     "X_TSS": 200,
+    # }
+    # reset_asm3_inlet_conditions(m, ini2)
     scale_flowsheet(m)
-
     initialize_flowsheet(m)
+    # solve_flowsheet(m)  # fully close recycle with ini2 so biomass is established everywhere
 
-    scale_flowsheet(m)
+    # --- Phase 2: rescale based on converged Phase 1 solution, then switch inlet and resolve ---
+    set_validation_inlet_conditions(m)
 
-    add_costing(m)
-    m.fs.costing.initialize()
+    print("---Structural Issues---")
+    dt = DiagnosticsToolbox(m)
+    dt.report_structural_issues()
+    dt.display_potential_evaluation_errors()
 
-    res = solve_flowsheet(m)
+    try:
+        res = solve_flowsheet(m)
+        print("---Numerical Issues---")
+        dt.report_numerical_issues()
+        dt.display_constraints_with_large_residuals()
+        dt.display_variables_at_or_outside_bounds()
+        dt.display_variables_with_extreme_jacobians()
+    except:
+        print("---Numerical Issues---")
+        dt.report_numerical_issues()
+        dt.display_constraints_with_large_residuals()
+        dt.display_variables_at_or_outside_bounds()
+        dt.display_variables_with_extreme_jacobians()
+        # dt.compute_infeasibility_explanation()
+        # dt.display_variables_at_or_outside_bounds()
+        # dt.display_variables_with_extreme_jacobians()
+        # dt.display_constraints_with_extreme_jacobians()
 
+    # --- Stream table (same as original) ---
     stream_table = create_stream_table_dataframe(
         {
             "Feed": m.fs.feed.outlet,
-            "M1": m.fs.M1.outlet,
+            # "M1": m.fs.M1.outlet,
             "R1": m.fs.R1.outlet,
-            "M2": m.fs.M2.outlet,
+            # "M2": m.fs.M2.outlet,
             "R2": m.fs.R2.outlet,
             "R3": m.fs.R3.outlet,
             "R4": m.fs.R4.outlet,
             "R5": m.fs.R5.outlet,
-            "S1 to M1": m.fs.S1.M1_inlet,
-            "S1 to R2": m.fs.S1.R2_inlet,
+            # "S1 to M1": m.fs.S1.M1_inlet,
+            # "S1 to R2": m.fs.S1.R2_inlet,
             "Effluent": m.fs.Treated.inlet,
         },
         time_point=0,
     )
     print(stream_table_dataframe_to_string(stream_table))
-    display_costing(m)
 
-    # m.fs.R2._get_performance_contents()
-    # m.fs.R4._get_performance_contents()
+    # --- Effluent verification ---
+    verify_effluent(m)
 
-    solution = {
-        "S_O": 6.07975,
-        "S_I": 30.0,
-        "S_S": 0.428786,
-        "S_NH4": 19.8235,
-        "S_N2": 0.0350126,
-        "S_NOX": 0.283642,
-        "alkalinity": 4.96736,
-        "X_I": 100.643,
-        "X_S": 31.7643,
-        "X_H": 103.536,
-        "X_STO": 39.5003,
-        "X_A": 1.08686,
-        "X_TSS": 197.27,
-    }
-
-    my_solution = {
-        k: pyo.value(m.fs.Treated.conc_mass_comp[0, k]) * 1e3
-        for k in solution.keys()
-        if k != "alkalinity"
-    }
-    import pandas as pd
-
-    df = pd.DataFrame({"watertap": my_solution, "julia": solution})
-    df.loc["alkalinity", "watertap"] = pyo.value(m.fs.Treated.alkalinity[0]) * 1e3
-    df["percent_difference"] = (df["watertap"] - df["julia"]) / df["julia"] * 100
-    df["percent_difference"] = df["percent_difference"].round(1)
-
-    print(df)
+    # --- Per-reactor comparison table vs Julia (uncomment when flowsheet issues resolved) ---
+    # print_reactor_comparison(m)
