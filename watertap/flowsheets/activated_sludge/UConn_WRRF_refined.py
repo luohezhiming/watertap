@@ -73,14 +73,107 @@ from idaes.core.scaling import set_scaling_factor
 
 from idaes.core.util.model_diagnostics import DegeneracyHunter
 from idaes.core.util import DiagnosticsToolbox
+from idaes.core.surrogate.pysmo_surrogate import PysmoSurrogate
+
+import os
 
 # Set up logger
 _log = idaeslog.getLogger(__name__)
+
+_SURROGATE_DIR = os.path.join(
+    os.path.dirname(__file__), "..", "..", "unit_models", "aerator_surrogate"
+)
+_POWER_SURROGATE_PATH = os.path.join(_SURROGATE_DIR, "aerator_power_surrogate.json")
+_OXYGEN_SURROGATE_PATH = os.path.join(_SURROGATE_DIR, "aerator_oxygen_surrogate.json")
+
+_HP_TO_KW = 0.74569987  # 1 HP = 0.74569987 kW
+_LB_HR_TO_KG_S = 1.0 / 7936.64  # 1 lb/hr = 1/7936.64 kg/s
 
 
 class ASMModel(auto):
     asm1 = auto()
     asm3 = auto()
+
+
+def apply_aerator_surrogate(
+    m,
+    use_surrogate=True,
+    R2_immersion_depth=0.0,
+    R2_capacity=80.0,
+    R4_immersion_depth=0.0,
+    R4_capacity=80.0,
+    power_surrogate_path=_POWER_SURROGATE_PATH,
+    oxygen_surrogate_path=_OXYGEN_SURROGATE_PATH,
+):
+    """
+    Replace KLa-based aeration constraints on R2 and R4 with polynomial
+    surrogates for power draw and oxygen transfer (WesTech Landy-7 data).
+    Call after set_operating_conditions().
+    """
+    if not use_surrogate:
+        return
+
+    power_surr = PysmoSurrogate.load_from_file(power_surrogate_path)
+    oxygen_surr = PysmoSurrogate.load_from_file(oxygen_surrogate_path)
+
+    if "S_O" in m.fs.props.component_list:
+        oxygen_str = "S_O"
+    elif "S_O2" in m.fs.props.component_list:
+        oxygen_str = "S_O2"
+    else:
+        raise ValueError(
+            "Oxygen component (S_O or S_O2) not found in property package."
+        )
+
+    for reactor, name, depth_val, capacity_val in [
+        (m.fs.R2, "R2", R2_immersion_depth, R2_capacity),
+        (m.fs.R4, "R4", R4_immersion_depth, R4_capacity),
+    ]:
+        # Deactivate KLa-based constraints
+        reactor.eq_mass_transfer.deactivate()
+        reactor.eq_electricity_consumption.deactivate()
+
+        # immersion_depth: valid range [-5.12, 5.94] in
+        # capacity: valid range [50, 100] % of rated speed (30-60 Hz)
+        reactor.immersion_depth = pyo.Var(
+            initialize=depth_val,
+            bounds=(-5.12, 5.94),
+            units=pyo.units.inch,
+        )
+        reactor.capacity = pyo.Var(
+            initialize=capacity_val,
+            bounds=(50.0, 100.0),
+            units=pyo.units.dimensionless,
+        )
+        reactor.immersion_depth.fix(depth_val)
+        reactor.capacity.fix(capacity_val)
+
+        @reactor.Constraint(m.fs.config.time)
+        def eq_surrogate_oxygen(b, t):
+            # Surrogate output in lb/hr, convert to kg/s
+            oxygen_lb_hr = oxygen_surr.evaluate(
+                {
+                    "Immersion Depth (in)": pyo.value(b.immersion_depth),
+                    "Capacity": pyo.value(b.capacity),
+                }
+            )["Oxygen Mass Flowrate(lb/hr)"]
+            return (
+                b.control_volume.mass_transfer_term[t, "Liq", oxygen_str]
+                == oxygen_lb_hr * _LB_HR_TO_KG_S
+            )
+
+        @reactor.Constraint(m.fs.config.time)
+        def eq_surrogate_power(b, t):
+            # Surrogate output in HP, convert to kW
+            power_hp = power_surr.evaluate(
+                {
+                    "Immersion Depth (in)": pyo.value(b.immersion_depth),
+                    "Capacity": pyo.value(b.capacity),
+                }
+            )["Power Drawn (HP)"]
+            return b.electricity_consumption[t] == power_hp * _HP_TO_KW
+
+    print(f"Aerator surrogate applied. DOF = {degrees_of_freedom(m)}")
 
 
 def build_flowsheet(asm_model=ASMModel.asm1):
@@ -840,6 +933,16 @@ if __name__ == "__main__":
     # flowsheet.
     m = build_flowsheet(asm_model=ASMModel.asm3)
     set_operating_conditions(m, asm_model=ASMModel.asm3)
+
+    # Surrogate aerator model (set use_surrogate=True to activate)
+    apply_aerator_surrogate(
+        m,
+        use_surrogate=True,
+        R2_immersion_depth=0.0,
+        R2_capacity=80.0,
+        R4_immersion_depth=0.0,
+        R4_capacity=80.0,
+    )
 
     # --- Phase 1: biomass-rich warm start to establish recycle concentrations ---
     # Without biomass in recycles, IPOPT finds the trivial zero-reaction solution.
