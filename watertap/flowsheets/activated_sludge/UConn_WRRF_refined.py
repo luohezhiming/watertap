@@ -348,16 +348,59 @@ def set_operating_conditions(m, asm_model=ASMModel.asm1):
 
 
 def scale_flowsheet(m):
-    # Apply scaling
+    # Apply scaling based on actual variable magnitudes observed from diagnostics
+    # Condition number was 6e28 -- key issues were reaction_rate, flow_vol, alkalinity
     for var in m.fs.component_data_objects(pyo.Var, descend_into=True):
         if "flow_vol" in var.name:
-            iscale.set_scaling_factor(var, 1e2)
+            if "gas_state" in var.name or "GHG" in var.name:
+                # outgassing gas stream ~ 2e-9 m3/s
+                iscale.set_scaling_factor(var, 1e8)
+            else:
+                # internal flow_vol ~ 4e-5 to 2e-4 m3/s
+                iscale.set_scaling_factor(var, 1e2)
         if "temperature" in var.name:
             iscale.set_scaling_factor(var, 1e-1)
         if "pressure" in var.name:
             iscale.set_scaling_factor(var, 1e-5)
         if "conc_mass_comp" in var.name:
-            iscale.set_scaling_factor(var, 1e2)
+            if "gas_state" in var.name or "GHG" in var.name:
+                # gas concentrations blow up due to tiny flow
+                iscale.set_scaling_factor(var, 1e-9)
+            # elif any(s in var.name for s in ["S_O", "S_N2", "X_H", "X_A", "X_STO",
+            #                                   "S_NH4", "S_NOX", "S_I"]):
+            #     # low-conc species ~ 1e-5 to 1e-6 kg/m3
+            #     iscale.set_scaling_factor(var, 1e5)
+            else:
+                # bulk species (X_S, X_I, X_TSS, S_S) ~ 1e-4 to 2e-4 kg/m3
+                iscale.set_scaling_factor(var, 1e2)
+        if "alkalinity" in var.name:
+            # alkalinity ~ 6e-6 mol/m3 internally (IDAES units)
+            iscale.set_scaling_factor(var, 1e5)
+        if "rate_reaction_extent" in var.name:
+            # extents ~ 1e-10 to 1e-7
+            iscale.set_scaling_factor(var, 1e8)
+        if "rate_reaction_generation" in var.name:
+            # generation ~ 1e-9 to 1e-6
+            iscale.set_scaling_factor(var, 1e7)
+        if "reaction_rate" in var.name:
+            # reaction_rate ~ 1e-10 (biggest scaling problem: was 1e10 Jacobian norm)
+            iscale.set_scaling_factor(var, 1e10)
+        if "hydraulic_retention_time" in var.name:
+            # HRT ~ 1e3 to 4e4 s
+            iscale.set_scaling_factor(var, 1e-4)
+        if "split_fraction" in var.name:
+            # split fractions are O(1)
+            iscale.set_scaling_factor(var, 1.0)
+        if "electricity_consumption" in var.name:
+            iscale.set_scaling_factor(var, 1e-3)
+        if "surface_area" in var.name:
+            iscale.set_scaling_factor(var, 1e-2)
+        if "mass_transfer_term" in var.name:
+            # mass transfer ~ 3e-6 to 9e-6
+            iscale.set_scaling_factor(var, 1e6)
+        if "volume" in var.name and "control_volume" not in var.name:
+            # reactor volumes ~ 200-3200 m3
+            iscale.set_scaling_factor(var, 1e-3)
     iscale.calculate_scaling_factors(m.fs)
 
 
@@ -542,6 +585,27 @@ def solve_flowsheet(m):
     results = solver.solve(m, tee=True)
     check_solve(results, checkpoint="closing recycle", logger=_log, fail_flag=True)
 
+    return results
+
+
+def solve_flowsheet_phase1(m):
+    """Phase 1 warm-start solve with relaxed tolerances.
+    We only need a feasible biomass-rich point, not a tight solution.
+    Does not crash on non-optimal exit — the near-feasible point is still
+    a good warm start for Phase 2.
+    """
+    solver = get_solver(
+        options={
+            "tol": 1e-6,
+            "constr_viol_tol": 1e-6,
+            "acceptable_tol": 1e-4,
+            "acceptable_constr_viol_tol": 1e-4,
+            "max_iter": 1500,
+        }
+    )
+    results = solver.solve(m, tee=True)
+    # Log but do not crash — a near-feasible point is still useful
+    check_solve(results, checkpoint="Phase 1 warm start", logger=_log, fail_flag=False)
     return results
 
 
@@ -777,51 +841,69 @@ if __name__ == "__main__":
     m = build_flowsheet(asm_model=ASMModel.asm3)
     set_operating_conditions(m, asm_model=ASMModel.asm3)
 
-    # # --- Phase 1: fully converge with non-zero biomass (ini2) to build a good warm start ---
-    # ini2 = {
-    #     "S_O": 2,
-    #     "S_I": 30,
-    #     "S_S": 2,
-    #     "S_NH4": 20,
-    #     "S_N2": 0,
-    #     "S_NOX": 0,
-    #     "X_I": 100,
-    #     "X_S": 40,
-    #     "X_H": 100,
-    #     "X_STO": 40,
-    #     "X_A": 1,
-    #     "X_TSS": 200,
-    # }
-    # reset_asm3_inlet_conditions(m, ini2)
+    # --- Phase 1: biomass-rich warm start to establish recycle concentrations ---
+    # Without biomass in recycles, IPOPT finds the trivial zero-reaction solution.
+    # We use the validation flow rate so Phase 2 needs no flow adjustment.
+    ini2 = {
+        "flow_vol": 3785.42,
+        "temperature": 20.0,
+        "alkalinity": 2.3,
+        "S_O": 2.0,
+        "S_I": 7.3,
+        "S_S": 113.9,
+        "S_NH4": 21.0,
+        "S_N2": 1e-9,
+        "S_NOX": 0.25,
+        "X_I": 88.2,
+        "X_S": 207.0,
+        "X_H": 500.0,  # high biomass to break degeneracy
+        "X_STO": 50.0,
+        "X_A": 30.0,
+        "X_TSS": 166.0,
+    }
+    reset_asm3_inlet_conditions(m, ini2)
     scale_flowsheet(m)
     initialize_flowsheet(m)
-    # solve_flowsheet(m)  # fully close recycle with ini2 so biomass is established everywhere
+    # scale_flowsheet(m)
+    # # Phase 1 solve: relaxed tolerances, establish biomass in recycles
+    # solve_flowsheet_phase1(m)
 
-    # --- Phase 2: rescale based on converged Phase 1 solution, then switch inlet and resolve ---
+    # --- Phase 2: switch to validation inlet, resolve tightly ---
     set_validation_inlet_conditions(m)
+    # scale_flowsheet(m)
+
+    # --- Print Jacobian condition number to diagnose scaling ---
+    print("\n--- Scaling diagnostics before solve ---")
+    from idaes.core.util.model_statistics import (
+        large_residuals_set,
+        variables_near_bounds_set,
+    )
+    import idaes.core.util.scaling as iscale
+
+    jac, nlp = iscale.get_jacobian(m, scaled=True)
+    print(f"Jacobian condition number (scaled): {iscale.jacobian_cond(jac=jac):.3e}")
+    # Print variables with extreme scaling
+    print("\nVariables with extreme Jacobian entries:")
+    iscale.report_scaling_issues(m)
 
     print("---Structural Issues---")
     dt = DiagnosticsToolbox(m)
     dt.report_structural_issues()
     dt.display_potential_evaluation_errors()
 
+    # Always run Jacobian diagnostics -- reveals scaling problems
+    print("---Variables with extreme Jacobian entries (scaled)---")
+    dt.display_variables_with_extreme_jacobians()
+    print("---Constraints with extreme Jacobian entries (scaled)---")
+    dt.display_constraints_with_extreme_jacobians()
+
     try:
         res = solve_flowsheet(m)
-        print("---Numerical Issues---")
-        dt.report_numerical_issues()
-        dt.display_constraints_with_large_residuals()
-        dt.display_variables_at_or_outside_bounds()
-        dt.display_variables_with_extreme_jacobians()
     except:
-        print("---Numerical Issues---")
+        print("---Numerical Issues post-solve---")
         dt.report_numerical_issues()
         dt.display_constraints_with_large_residuals()
         dt.display_variables_at_or_outside_bounds()
-        dt.display_variables_with_extreme_jacobians()
-        # dt.compute_infeasibility_explanation()
-        # dt.display_variables_at_or_outside_bounds()
-        # dt.display_variables_with_extreme_jacobians()
-        # dt.display_constraints_with_extreme_jacobians()
 
     # --- Stream table (same as original) ---
     stream_table = create_stream_table_dataframe(
@@ -846,4 +928,4 @@ if __name__ == "__main__":
     verify_effluent(m)
 
     # --- Per-reactor comparison table vs Julia (uncomment when flowsheet issues resolved) ---
-    # print_reactor_comparison(m)
+    print_reactor_comparison(m)
