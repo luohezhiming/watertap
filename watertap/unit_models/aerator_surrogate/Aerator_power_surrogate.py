@@ -13,7 +13,7 @@ from idaes.core.surrogate.sampling.data_utils import split_training_validation
 from idaes.core.surrogate.plotting.sm_plotter import surrogate_parity
 from idaes.core.surrogate.metrics import compute_fit_metrics
 
-# ── 1. Load and prepare data ──────────────────────────────────────────────────
+# 1. Load and prepare data
 raw = pd.read_csv("power.csv")
 
 # Keep only the two inputs and one output
@@ -22,11 +22,11 @@ df = raw[["Immersion Depth (in)", "Capacity", "Power Drawn (HP)"]].copy()
 input_labels = ["Immersion Depth (in)", "Capacity"]
 output_labels = ["Power Drawn (HP)"]
 
-# ── 2. Train / validation split (80/20) ───────────────────────────────────────
+# 2. Train / validation split (80/20)
 n_data = len(df)
 data_training, data_validation = split_training_validation(df, 0.8, seed=n_data)
 
-# ── 3. Set up polynomial trainer ──────────────────────────────────────────────
+# 3. Set up polynomial trainer
 surrogate_trainer = PysmoPolyTrainer(
     input_labels=input_labels,
     output_labels=output_labels,
@@ -39,20 +39,20 @@ surrogate_trainer.config.maximum_polynomial_order = (
 surrogate_trainer.config.multinomials = True  # include cross term d*C
 surrogate_trainer.config.training_split = 0.8
 
-# ── 4. Train ──────────────────────────────────────────────────────────────────
+# 4. Train
 poly_train = surrogate_trainer.train_surrogate()
 
-# ── 5. Build callable surrogate with input bounds ─────────────────────────────
+# 5. Build callable surrogate with input bounds
 xmin = [-5.12, 50.0]  # [min immersion depth (in), min capacity (%)]
 xmax = [5.94, 100.0]  # [max immersion depth (in), max capacity (%)]
 input_bounds = {input_labels[i]: (xmin[i], xmax[i]) for i in range(len(input_labels))}
 
 poly_surr = PysmoSurrogate(poly_train, input_labels, output_labels, input_bounds)
 
-# ── 6. Save surrogate to JSON ─────────────────────────────────────────────────
+# 6. Save surrogate to JSON
 poly_surr.save_to_file("aerator_power_surrogate.json", overwrite=True)
 
-# ── 7. Compute and print fit metrics ──────────────────────────────────────────
+# 7. Compute and print fit metrics
 metrics_training = compute_fit_metrics(poly_surr, data_training)
 metrics_validation = compute_fit_metrics(poly_surr, data_validation)
 
@@ -76,7 +76,7 @@ def print_metrics(label, metrics):
 print_metrics("Training Metrics", metrics_training)
 print_metrics("Validation Metrics", metrics_validation)
 
-# ── 8. Parity plots (saved to PDF, no interactive window) ─────────────────────
+# 8. Parity plots (saved to PDF, no interactive window)
 surrogate_parity(poly_surr, data_training, filename="aerator_poly_train_parity.pdf")
 plt.close("all")
 surrogate_parity(poly_surr, data_validation, filename="aerator_poly_val_parity.pdf")

@@ -157,7 +157,7 @@ class ASM3ReactionParameterData(ReactionParameterBlock):
         add_object_reference(self, "i_SSSTO", self.config.property_package.i_SSSTO)
 
         # Kinetic Parameters
-        k_H_dict = {"10C": 2, "20C": 3}
+        k_H_dict = {"ref_temp_1": 2, "ref_temp_2": 3}
         self.k_H = pyo.Var(
             k_H_dict.keys(),
             domain=pyo.PositiveReals,
@@ -173,7 +173,7 @@ class ASM3ReactionParameterData(ReactionParameterBlock):
         )
 
         # Heterotrophic organisms X_H, aerobic and denitrifying activity
-        k_STO_dict = {"10C": 2.5, "20C": 5}
+        k_STO_dict = {"ref_temp_1": 2.5, "ref_temp_2": 5}
         self.k_STO = pyo.Var(
             k_STO_dict.keys(),
             domain=pyo.PositiveReals,
@@ -211,7 +211,7 @@ class ASM3ReactionParameterData(ReactionParameterBlock):
             domain=pyo.PositiveReals,
             doc="Saturation constant for for X_STO (g-COD-X_STO / g-COD-X_H)",
         )
-        mu_H_dict = {"10C": 1, "20C": 2}
+        mu_H_dict = {"ref_temp_1": 1, "ref_temp_2": 2}
         if self.config.calibrated_params:
             self.mu_H = pyo.Var(
                 initialize=self.config.calibrated_params["mu_H"],
@@ -223,7 +223,7 @@ class ASM3ReactionParameterData(ReactionParameterBlock):
             self.mu_H = pyo.Var(
                 mu_H_dict.keys(),
                 domain=pyo.PositiveReals,
-                initialize=mu_H_dict["20C"],
+                initialize=mu_H_dict,
                 units=pyo.units.day**-1,
                 doc="Heterotrophic max. growth rate of X_H (day^-1)",
             )
@@ -239,7 +239,7 @@ class ASM3ReactionParameterData(ReactionParameterBlock):
             domain=pyo.PositiveReals,
             doc="Saturation constant for alkalinity for X_H (kmol-HCO3- / m3)",
         )
-        b_H_O2_dict = {"10C": 0.1, "20C": 0.2}
+        b_H_O2_dict = {"ref_temp_1": 0.1, "ref_temp_2": 0.2}
         self.b_H_O2 = pyo.Var(
             b_H_O2_dict.keys(),
             domain=pyo.PositiveReals,
@@ -247,7 +247,7 @@ class ASM3ReactionParameterData(ReactionParameterBlock):
             units=pyo.units.day**-1,
             doc="Aerobic endogenous respiration rate of X_H (day^-1)",
         )
-        b_H_NOX_dict = {"10C": 0.05, "20C": 0.1}
+        b_H_NOX_dict = {"ref_temp_1": 0.05, "ref_temp_2": 0.1}
         self.b_H_NOX = pyo.Var(
             b_H_NOX_dict.keys(),
             domain=pyo.PositiveReals,
@@ -255,7 +255,7 @@ class ASM3ReactionParameterData(ReactionParameterBlock):
             units=pyo.units.day**-1,
             doc="Anoxic endogenous respiration rate of X_H (day^-1)",
         )
-        b_STO_O2_dict = {"10C": 0.1, "20C": 0.2}
+        b_STO_O2_dict = {"ref_temp_1": 0.1, "ref_temp_2": 0.2}
         self.b_STO_O2 = pyo.Var(
             b_STO_O2_dict.keys(),
             domain=pyo.PositiveReals,
@@ -263,7 +263,7 @@ class ASM3ReactionParameterData(ReactionParameterBlock):
             units=pyo.units.day**-1,
             doc="Aerobic respiration rate for X_STO (day^-1)",
         )
-        b_STO_NOX_dict = {"10C": 0.05, "20C": 0.1}
+        b_STO_NOX_dict = {"ref_temp_1": 0.05, "ref_temp_2": 0.1}
         self.b_STO_NOX = pyo.Var(
             b_STO_NOX_dict.keys(),
             domain=pyo.PositiveReals,
@@ -273,7 +273,7 @@ class ASM3ReactionParameterData(ReactionParameterBlock):
         )
 
         # Autotrophic organisms X_A, nitrifying activity
-        mu_A_dict = {"10C": 0.35, "20C": 1}
+        mu_A_dict = {"ref_temp_1": 0.35, "ref_temp_2": 1}
         if self.config.calibrated_params:
             self.mu_A = pyo.Var(
                 initialize=self.config.calibrated_params["mu_A"],
@@ -285,7 +285,7 @@ class ASM3ReactionParameterData(ReactionParameterBlock):
             self.mu_A = pyo.Var(
                 mu_A_dict.keys(),
                 domain=pyo.PositiveReals,
-                initialize=mu_A_dict["20C"],
+                initialize=mu_A_dict,
                 units=pyo.units.day**-1,
                 doc="Autotrophic max. growth rate of X_A (day^-1)",
             )
@@ -307,7 +307,7 @@ class ASM3ReactionParameterData(ReactionParameterBlock):
             domain=pyo.PositiveReals,
             doc="Bicarbonate saturation for nitrifiers (kmol-HCO3- / m3)",
         )
-        b_A_O2_dict = {"10C": 0.05, "20C": 0.15}
+        b_A_O2_dict = {"ref_temp_1": 0.05, "ref_temp_2": 0.15}
         self.b_A_O2 = pyo.Var(
             b_A_O2_dict.keys(),
             domain=pyo.PositiveReals,
@@ -315,13 +315,28 @@ class ASM3ReactionParameterData(ReactionParameterBlock):
             units=pyo.units.day**-1,
             doc="Aerobic endogenous respiration rate of X_A (day^-1)",
         )
-        b_A_NOX_dict = {"10C": 0.02, "20C": 0.05}
+        b_A_NOX_dict = {"ref_temp_1": 0.02, "ref_temp_2": 0.05}
         self.b_A_NOX = pyo.Var(
             b_A_NOX_dict.keys(),
             domain=pyo.PositiveReals,
             initialize=b_A_NOX_dict,
             units=pyo.units.day**-1,
             doc="Anoxic endogenous respiration rate of X_A (day^-1)",
+        )
+
+        # Reference temperature parameters
+        self.ref_temp_1 = pyo.Param(
+            domain=pyo.Reals,
+            initialize=10,
+            units=pyo.units.dimensionless,
+            doc="Dimensionless reference temperature (10 Celsius degree) for kinetic parameters",
+        )
+
+        self.ref_temp_2 = pyo.Param(
+            domain=pyo.Reals,
+            initialize=20,
+            units=pyo.units.dimensionless,
+            doc="Dimensionless reference temperature (20 Celsius degree) for kinetic parameters",
         )
 
         # Reference temperature parameters
@@ -685,10 +700,10 @@ class ASM3ReactionBlockData(ReactionBlockDataBase):
         )
 
         def _arrhenius(param_var):
-            theta = pyo.log(param_var["10C"] / param_var["20C"]) / (
+            theta = pyo.log(param_var["ref_temp_1"] / param_var["ref_temp_2"]) / (
                 self.params.ref_temp_1 - self.params.ref_temp_2
             )
-            return param_var["20C"] * pyo.exp(
+            return param_var["ref_temp_2"] * pyo.exp(
                 theta
                 * (
                     pyo.units.convert(

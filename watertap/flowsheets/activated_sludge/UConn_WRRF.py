@@ -16,7 +16,7 @@ Layout:
     * 5 reactors
         * R1, R3, R5: anoxic
         * R2 and R4: aerobic
-    * 2 Mixers: 
+    * 2 Mixers:
         * M1 mixes feed and R5 split fraction, outlet to R1 inlet
         * M2 mixes R1 outlet, R2 outlet, outlet to R3 inlet
     * 1 Splitter:
@@ -32,6 +32,7 @@ Unit operations are modeled as follows:
 
 __author__ = "Adam Atia"
 
+import pandas as pd
 from enum import Enum, auto
 import pyomo.environ as pyo
 from pyomo.network import Arc, SequentialDecomposition
@@ -65,15 +66,179 @@ from watertap.property_models.unit_specific.activated_sludge.asm3_reactions impo
 )
 from watertap.core.util.initialization import check_solve, interval_initializer
 from watertap.costing import WaterTAPCosting
+from watertap.costing.unit_models.clarifier import (
+    cost_circular_clarifier,
+    cost_primary_clarifier,
+)
 from idaes.core.scaling import set_scaling_factor
+from idaes.core.surrogate.surrogate_block import SurrogateBlock
+from idaes.core.surrogate.pysmo_surrogate import PysmoSurrogate
+import os
 
 # Set up logger
 _log = idaeslog.getLogger(__name__)
+
+_SURROGATE_DIR = os.path.join(
+    os.path.dirname(__file__), "..", "..", "unit_models", "aerator_surrogate"
+)
+_POWER_SURROGATE_PATH = os.path.join(_SURROGATE_DIR, "aerator_power_surrogate.json")
+_OXYGEN_SURROGATE_PATH = os.path.join(_SURROGATE_DIR, "aerator_oxygen_surrogate.json")
+
+_HP_TO_KW = 0.74569987  # 1 HP = 0.74569987 kW
+_LB_HR_TO_KG_S = 1.0 / 7936.64  # 1 lb/hr = 1/7936.64 kg/s
 
 
 class ASMModel(auto):
     asm1 = auto()
     asm3 = auto()
+
+
+def apply_aerator_surrogate(
+    m,
+    use_surrogate=True,
+    R2_immersion_depth=0.0,
+    R2_capacity=80.0,
+    R4_immersion_depth=0.0,
+    R4_capacity=80.0,
+    power_surrogate_path=_POWER_SURROGATE_PATH,
+    oxygen_surrogate_path=_OXYGEN_SURROGATE_PATH,
+):
+    """
+    Replace KLa-based aeration constraints on R2 and R4 with polynomial
+    surrogates for power draw and oxygen transfer (WesTech Landy-7 data).
+    Call after set_operating_conditions().
+    """
+    if not use_surrogate:
+        return
+
+    power_surr = PysmoSurrogate.load_from_file(power_surrogate_path)
+    oxygen_surr = PysmoSurrogate.load_from_file(oxygen_surrogate_path)
+
+    if "S_O" in m.fs.props.component_list:
+        oxygen_str = "S_O"
+    elif "S_O2" in m.fs.props.component_list:
+        oxygen_str = "S_O2"
+    else:
+        raise ValueError(
+            "Oxygen component (S_O or S_O2) not found in property package."
+        )
+
+    for reactor, name, depth_val, capacity_val in [
+        (m.fs.R2, "R2", R2_immersion_depth, R2_capacity),
+        (m.fs.R4, "R4", R4_immersion_depth, R4_capacity),
+    ]:
+        # Deactivate KLa-based constraints
+        reactor.eq_mass_transfer.deactivate()
+        reactor.eq_electricity_consumption.deactivate()
+
+        # Surrogate input vars (dimensionless)
+        # immersion_depth: valid range [-5.12, 5.94] in
+        # capacity: valid range [50, 100] % of rated speed (30-60 Hz)
+        reactor.immersion_depth = pyo.Var(
+            initialize=depth_val,
+            bounds=(-5.12, 5.94),
+            units=pyo.units.dimensionless,
+        )
+        reactor.capacity = pyo.Var(
+            initialize=capacity_val,
+            bounds=(50.0, 100.0),
+            units=pyo.units.dimensionless,
+        )
+        reactor.immersion_depth.fix(depth_val)
+        reactor.capacity.fix(capacity_val)
+
+        # Surrogate output vars (dimensionless)
+        # Power surrogate output in HP
+        reactor.power_surrogate = pyo.Var(
+            initialize=50.0,
+            bounds=(0, None),
+            units=pyo.units.dimensionless,
+        )
+        # Oxygen surrogate output in lb/hr
+        reactor.oxygen_surrogate = pyo.Var(
+            initialize=100.0,
+            bounds=(0, None),
+            units=pyo.units.dimensionless,
+        )
+
+        # Wire surrogates via SurrogateBlock
+        reactor.surrogate_power_block = SurrogateBlock(concrete=True)
+        reactor.surrogate_power_block.build_model(
+            power_surr,
+            input_vars=[reactor.immersion_depth, reactor.capacity],
+            output_vars=[reactor.power_surrogate],
+        )
+
+        reactor.surrogate_oxygen_block = SurrogateBlock(concrete=True)
+        reactor.surrogate_oxygen_block.build_model(
+            oxygen_surr,
+            input_vars=[reactor.immersion_depth, reactor.capacity],
+            output_vars=[reactor.oxygen_surrogate],
+        )
+
+        # Unit conversion constraints
+        # Power: HP to kW
+        @reactor.Constraint(m.fs.config.time)
+        def eq_surrogate_power(b, t):
+            return b.electricity_consumption[t] == b.power_surrogate * _HP_TO_KW
+
+        # Oxygen: lb/hr to kg/s
+        @reactor.Constraint(m.fs.config.time)
+        def eq_surrogate_oxygen(b, t):
+            return (
+                b.control_volume.mass_transfer_term[t, "Liq", oxygen_str]
+                == b.oxygen_surrogate * _LB_HR_TO_KG_S
+            )
+
+    print(f"Aerator surrogate applied. DOF = {degrees_of_freedom(m)}")
+
+
+def add_costing(m):
+    m.fs.costing = WaterTAPCosting()
+    m.fs.costing.base_currency = pyo.units.USD_2020
+
+    # Costing Blocks
+    m.fs.R1.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
+    m.fs.R2.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
+    m.fs.R3.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
+    m.fs.R4.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
+    m.fs.R5.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
+
+    # process costing and add system level metrics
+    m.fs.costing.cost_process()
+    m.fs.costing.add_annual_water_production(m.fs.S1.effluent.flow_vol[0])
+    m.fs.costing.add_LCOW(m.fs.S1.effluent.flow_vol[0])
+    m.fs.costing.add_specific_energy_consumption(m.fs.S1.effluent.flow_vol[0])
+
+    set_scaling_factor(m.fs.costing.total_capital_cost, 1e-7)
+    set_scaling_factor(m.fs.costing.aggregate_capital_cost, 1e-8)
+    set_scaling_factor(m.fs.costing.aggregate_flow_electricity, 1e-1)
+    set_scaling_factor(m.fs.costing.aggregate_flow_costs["electricity"], 1e-3)
+    set_scaling_factor(m.fs.costing.total_operating_cost, 1e-4)
+
+    for block in m.fs.component_objects(pyo.Block, descend_into=True):
+        if isinstance(block, UnitModelBlockData) and hasattr(block, "costing"):
+            set_scaling_factor(block.costing.capital_cost, 1e-7)
+
+
+def display_costing(m):
+    print("Levelized cost of water: %.3g $/m3" % pyo.value(m.fs.costing.LCOW))
+    print(
+        "Total operating cost: %.4g M$/yr"
+        % pyo.value(m.fs.costing.total_operating_cost / 1e6)
+    )
+    print(
+        "Total capital cost: %.4g M$" % pyo.value(m.fs.costing.total_capital_cost / 1e6)
+    )
+    print(
+        "Total annualized cost: %.4g M$/yr"
+        % pyo.value(m.fs.costing.total_annualized_cost / 1e6)
+    )
+    print("capital cost R1: %.4g M$" % pyo.value(m.fs.R1.costing.capital_cost / 1e6))
+    print("capital cost R2: %.4g M$" % pyo.value(m.fs.R2.costing.capital_cost / 1e6))
+    print("capital cost R3: %.4g M$" % pyo.value(m.fs.R3.costing.capital_cost / 1e6))
+    print("capital cost R4: %.4g M$" % pyo.value(m.fs.R4.costing.capital_cost / 1e6))
+    print("capital cost R5: %.4g M$" % pyo.value(m.fs.R5.costing.capital_cost / 1e6))
 
 
 def build_flowsheet(asm_model=ASMModel.asm1):
@@ -343,61 +508,6 @@ def initialize_flowsheet(m):
     seq.run(m, function)
 
 
-def add_costing(m):
-    m.fs.costing = WaterTAPCosting()
-    m.fs.costing.base_currency = pyo.units.USD_2020
-
-    # Costing Blocks
-    m.fs.R1.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
-    m.fs.R2.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
-    m.fs.R3.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
-    m.fs.R4.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
-    m.fs.R5.costing = UnitModelCostingBlock(flowsheet_costing_block=m.fs.costing)
-
-    # # Initialize electricity consumption values
-    # m.fs.R3.electricity_consumption[0].set_value(75)
-    # m.fs.R4.electricity_consumption[0].set_value(70)
-    # m.fs.R5.electricity_consumption[0].set_value(20)
-
-    # process costing and add system level metrics
-    m.fs.costing.cost_process()
-    m.fs.costing.add_annual_water_production(m.fs.S1.effluent.flow_vol[0])
-    m.fs.costing.add_LCOW(m.fs.S1.effluent.flow_vol[0])
-    m.fs.costing.add_specific_energy_consumption(m.fs.S1.effluent.flow_vol[0])
-
-    set_scaling_factor(m.fs.costing.total_capital_cost, 1e-7)
-    set_scaling_factor(m.fs.costing.aggregate_capital_cost, 1e-8)
-    set_scaling_factor(m.fs.costing.aggregate_flow_electricity, 1e-1)
-    set_scaling_factor(m.fs.costing.aggregate_flow_costs["electricity"], 1e-3)
-    set_scaling_factor(m.fs.costing.total_operating_cost, 1e-4)
-
-    for block in m.fs.component_objects(pyo.Block, descend_into=True):
-        if isinstance(block, UnitModelBlockData) and hasattr(block, "costing"):
-            set_scaling_factor(block.costing.capital_cost, 1e-7)
-
-
-def display_costing(m):
-    print("Levelized cost of water: %.3g $/m3" % pyo.value(m.fs.costing.LCOW))
-
-    print(
-        "Total operating cost: %.4g M$/yr"
-        % pyo.value(m.fs.costing.total_operating_cost / 1e6)
-    )
-    print(
-        "Total capital cost: %.4g M$" % pyo.value(m.fs.costing.total_capital_cost / 1e6)
-    )
-
-    print(
-        "Total annualized cost: %.4g M$/yr"
-        % pyo.value(m.fs.costing.total_annualized_cost / 1e6)
-    )
-    print("capital cost R1: %.4g M$" % pyo.value(m.fs.R1.costing.capital_cost / 1e6))
-    print("capital cost R2: %.4g M$" % pyo.value(m.fs.R2.costing.capital_cost / 1e6))
-    print("capital cost R3: %.4g M$" % pyo.value(m.fs.R3.costing.capital_cost / 1e6))
-    print("capital cost R4: %.4g M$" % pyo.value(m.fs.R4.costing.capital_cost / 1e6))
-    print("capital cost R5: %.4g M$" % pyo.value(m.fs.R5.costing.capital_cost / 1e6))
-
-
 def solve_flowsheet(m):
     # Solve overall flowsheet to close recycle loop
     solver = get_solver()
@@ -405,6 +515,42 @@ def solve_flowsheet(m):
     check_solve(results, checkpoint="closing recycle", logger=_log, fail_flag=True)
 
     return results
+
+
+def validate_results(m):
+    # init1 Julia reference solution for R5
+    solution_R5 = {
+        "S_O": 0.09259299274040665,
+        "S_I": 29.999999999999904,
+        "S_S": 0.254591951173486,
+        "S_NH4": 3.702987579661963,
+        "S_N2": 28.7024276740098,
+        "S_NOX": 5.148918477118473,
+        "alkalinity": 4.642433507324409,
+        "X_I": 1462.7153942780158,
+        "X_S": 213.59814155397257,
+        "X_H": 1630.5032543499726,
+        "X_STO": 312.5222537389754,
+        "X_A": 131.48604445510662,
+        "X_TSS": 3030.538873042037,
+        "flowrate": 230575.0,
+    }
+
+    my_solution_R5 = {
+        k: pyo.value(m.fs.R5.outlet.conc_mass_comp[0, k]) * 1e3
+        for k in solution_R5.keys()
+        if k != "alkalinity" and k != "flowrate"
+    }
+
+    df_R5 = pd.DataFrame({"watertap": my_solution_R5, "julia": solution_R5})
+    df_R5.loc["alkalinity", "watertap"] = pyo.value(m.fs.R5.outlet.alkalinity[0]) * 1e3
+    df_R5.loc["flowrate", "watertap"] = pyo.value(m.fs.R5.outlet.flow_vol[0]) * 86400
+    df_R5["percent_difference"] = (
+        (df_R5["watertap"] - df_R5["julia"]) / df_R5["julia"] * 100
+    )
+    df_R5["percent_difference"] = df_R5["percent_difference"].round(1)
+
+    print(df_R5)
 
 
 def reset_asm3_inlet_conditions(m, ini_dict):
@@ -431,6 +577,23 @@ if __name__ == "__main__":
     # m, results = build_flowsheet()
     m = build_flowsheet(asm_model=ASMModel.asm3)
     set_operating_conditions(m, asm_model=ASMModel.asm3)
+    ini1 = {
+        "S_O": 0.0333140769653528,
+        "S_I": 29.9999999999999,
+        "S_S": 1.79253833233150,
+        "S_NH4": 7.47840572528914,
+        "S_N2": 25.0222401125193,
+        "S_NOX": 4.49343937121928,
+        "alkalinity": 4.95892616814772,
+        "X_I": 1460.88032984731,
+        "X_S": 239.049918909639,
+        "X_H": 1624.51533042293,
+        "X_STO": 316.937373308996,
+        "X_A": 130.798830163795,
+        "X_TSS": 3044.89285508125,
+        "flow_vol": 92230,
+        "temperature": 15,
+    }
     ini2 = {
         "S_O": 2.00000074088136,
         "S_I": 30,
@@ -449,66 +612,30 @@ if __name__ == "__main__":
         "temperature": 14.8581001531874,
     }
 
-    reset_asm3_inlet_conditions(m, ini2)
+    reset_asm3_inlet_conditions(m, ini1)
     scale_flowsheet(m)
 
     initialize_flowsheet(m)
 
     scale_flowsheet(m)
 
-    add_costing(m)
-    m.fs.costing.initialize()
-
     res = solve_flowsheet(m)
 
-    stream_table = create_stream_table_dataframe(
-        {
-            "Feed": m.fs.feed.outlet,
-            "M1": m.fs.M1.outlet,
-            "R1": m.fs.R1.outlet,
-            "M2": m.fs.M2.outlet,
-            "R2": m.fs.R2.outlet,
-            "R3": m.fs.R3.outlet,
-            "R4": m.fs.R4.outlet,
-            "R5": m.fs.R5.outlet,
-            "S1 to M1": m.fs.S1.M1_inlet,
-            "S1 to R2": m.fs.S1.R2_inlet,
-            "Effluent": m.fs.Treated.inlet,
-        },
-        time_point=0,
+    # Surrogate aerator model (set use_surrogate=True to activate)
+    # Reference conditions: 54 Hz (90% capacity), +1 inch submergence (WesTech recommendation)
+    apply_aerator_surrogate(
+        m,
+        use_surrogate=False,
+        R2_immersion_depth=1.0,
+        R2_capacity=90.0,
+        R4_immersion_depth=1.0,
+        R4_capacity=90.0,
     )
-    print(stream_table_dataframe_to_string(stream_table))
+
+    # Costing
+    add_costing(m)
+    m.fs.costing.initialize()
+    res = solve_flowsheet(m)
     display_costing(m)
 
-    # m.fs.R2._get_performance_contents()
-    # m.fs.R4._get_performance_contents()
-
-    solution = {
-        "S_O": 6.07975,
-        "S_I": 30.0,
-        "S_S": 0.428786,
-        "S_NH4": 19.8235,
-        "S_N2": 0.0350126,
-        "S_NOX": 0.283642,
-        "alkalinity": 4.96736,
-        "X_I": 100.643,
-        "X_S": 31.7643,
-        "X_H": 103.536,
-        "X_STO": 39.5003,
-        "X_A": 1.08686,
-        "X_TSS": 197.27,
-    }
-
-    my_solution = {
-        k: pyo.value(m.fs.Treated.conc_mass_comp[0, k]) * 1e3
-        for k in solution.keys()
-        if k != "alkalinity"
-    }
-    import pandas as pd
-
-    df = pd.DataFrame({"watertap": my_solution, "julia": solution})
-    df.loc["alkalinity", "watertap"] = pyo.value(m.fs.Treated.alkalinity[0]) * 1e3
-    df["percent_difference"] = (df["watertap"] - df["julia"]) / df["julia"] * 100
-    df["percent_difference"] = df["percent_difference"].round(1)
-
-    print(df)
+    validate_results(m)
