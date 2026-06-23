@@ -30,7 +30,7 @@ Unit operations are modeled as follows:
 
 """
 
-__author__ = "Adam Atia"
+__author__ = "Chenyu Wang, Adam Atia"
 
 from enum import Enum, auto
 import pyomo.environ as pyo
@@ -73,6 +73,7 @@ from idaes.core.scaling import set_scaling_factor
 
 from idaes.core.util.model_diagnostics import DegeneracyHunter
 from idaes.core.util import DiagnosticsToolbox
+from idaes.core.surrogate.surrogate_block import SurrogateBlock
 from idaes.core.surrogate.pysmo_surrogate import PysmoSurrogate
 
 import os
@@ -133,12 +134,13 @@ def apply_aerator_surrogate(
         reactor.eq_mass_transfer.deactivate()
         reactor.eq_electricity_consumption.deactivate()
 
+        # ── Surrogate input vars (dimensionless, as required by SurrogateBlock) ──
         # immersion_depth: valid range [-5.12, 5.94] in
         # capacity: valid range [50, 100] % of rated speed (30-60 Hz)
         reactor.immersion_depth = pyo.Var(
             initialize=depth_val,
             bounds=(-5.12, 5.94),
-            units=pyo.units.inch,
+            units=pyo.units.dimensionless,
         )
         reactor.capacity = pyo.Var(
             initialize=capacity_val,
@@ -148,30 +150,48 @@ def apply_aerator_surrogate(
         reactor.immersion_depth.fix(depth_val)
         reactor.capacity.fix(capacity_val)
 
-        @reactor.Constraint(m.fs.config.time)
-        def eq_surrogate_oxygen(b, t):
-            # Surrogate output in lb/hr, convert to kg/s
-            oxygen_lb_hr = oxygen_surr.evaluate(
-                {
-                    "Immersion Depth (in)": pyo.value(b.immersion_depth),
-                    "Capacity": pyo.value(b.capacity),
-                }
-            )["Oxygen Mass Flowrate(lb/hr)"]
-            return (
-                b.control_volume.mass_transfer_term[t, "Liq", oxygen_str]
-                == oxygen_lb_hr * _LB_HR_TO_KG_S
-            )
+        # ── Surrogate output vars (dimensionless, unit conversion applied below) ─
+        # Power surrogate output in HP
+        reactor.power_surrogate = pyo.Var(
+            initialize=50.0,
+            bounds=(0, None),
+            units=pyo.units.dimensionless,
+        )
+        # Oxygen surrogate output in lb/hr
+        reactor.oxygen_surrogate = pyo.Var(
+            initialize=100.0,
+            bounds=(0, None),
+            units=pyo.units.dimensionless,
+        )
 
+        # ── Wire surrogates via SurrogateBlock ────────────────────────────────
+        reactor.surrogate_power_block = SurrogateBlock(concrete=True)
+        reactor.surrogate_power_block.build_model(
+            power_surr,
+            input_vars=[reactor.immersion_depth, reactor.capacity],
+            output_vars=[reactor.power_surrogate],
+        )
+
+        reactor.surrogate_oxygen_block = SurrogateBlock(concrete=True)
+        reactor.surrogate_oxygen_block.build_model(
+            oxygen_surr,
+            input_vars=[reactor.immersion_depth, reactor.capacity],
+            output_vars=[reactor.oxygen_surrogate],
+        )
+
+        # ── Unit conversion constraints ───────────────────────────────────────
+        # Power: HP → kW
         @reactor.Constraint(m.fs.config.time)
         def eq_surrogate_power(b, t):
-            # Surrogate output in HP, convert to kW
-            power_hp = power_surr.evaluate(
-                {
-                    "Immersion Depth (in)": pyo.value(b.immersion_depth),
-                    "Capacity": pyo.value(b.capacity),
-                }
-            )["Power Drawn (HP)"]
-            return b.electricity_consumption[t] == power_hp * _HP_TO_KW
+            return b.electricity_consumption[t] == b.power_surrogate * _HP_TO_KW
+
+        # Oxygen: lb/hr → kg/s
+        @reactor.Constraint(m.fs.config.time)
+        def eq_surrogate_oxygen(b, t):
+            return (
+                b.control_volume.mass_transfer_term[t, "Liq", oxygen_str]
+                == b.oxygen_surrogate * _LB_HR_TO_KG_S
+            )
 
     print(f"Aerator surrogate applied. DOF = {degrees_of_freedom(m)}")
 
@@ -935,13 +955,14 @@ if __name__ == "__main__":
     set_operating_conditions(m, asm_model=ASMModel.asm3)
 
     # Surrogate aerator model (set use_surrogate=True to activate)
+    # Reference conditions: 54 Hz (90% capacity), +1 inch submergence (WesTech recommendation)
     apply_aerator_surrogate(
         m,
         use_surrogate=True,
-        R2_immersion_depth=0.0,
-        R2_capacity=80.0,
-        R4_immersion_depth=0.0,
-        R4_capacity=80.0,
+        R2_immersion_depth=1.0,
+        R2_capacity=90.0,
+        R4_immersion_depth=1.0,
+        R4_capacity=90.0,
     )
 
     # --- Phase 1: biomass-rich warm start to establish recycle concentrations ---
