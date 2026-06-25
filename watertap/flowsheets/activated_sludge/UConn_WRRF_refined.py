@@ -77,6 +77,7 @@ from idaes.core.surrogate.surrogate_block import SurrogateBlock
 from idaes.core.surrogate.pysmo_surrogate import PysmoSurrogate
 
 import os
+import idaes.core.util.scaling as iscale
 
 # Set up logger
 _log = idaeslog.getLogger(__name__)
@@ -134,7 +135,7 @@ def apply_aerator_surrogate(
         reactor.eq_mass_transfer.deactivate()
         reactor.eq_electricity_consumption.deactivate()
 
-        # ── Surrogate input vars (dimensionless, as required by SurrogateBlock) ──
+        # Surrogate input vars (dimensionless)
         # immersion_depth: valid range [-5.12, 5.94] in
         # capacity: valid range [50, 100] % of rated speed (30-60 Hz)
         reactor.immersion_depth = pyo.Var(
@@ -150,7 +151,7 @@ def apply_aerator_surrogate(
         reactor.immersion_depth.fix(depth_val)
         reactor.capacity.fix(capacity_val)
 
-        # ── Surrogate output vars (dimensionless, unit conversion applied below) ─
+        # Surrogate output vars (dimensionless)
         # Power surrogate output in HP
         reactor.power_surrogate = pyo.Var(
             initialize=50.0,
@@ -164,7 +165,7 @@ def apply_aerator_surrogate(
             units=pyo.units.dimensionless,
         )
 
-        # ── Wire surrogates via SurrogateBlock ────────────────────────────────
+        # Wire surrogates via SurrogateBlock
         reactor.surrogate_power_block = SurrogateBlock(concrete=True)
         reactor.surrogate_power_block.build_model(
             power_surr,
@@ -179,7 +180,7 @@ def apply_aerator_surrogate(
             output_vars=[reactor.oxygen_surrogate],
         )
 
-        # ── Unit conversion constraints ───────────────────────────────────────
+        # Unit conversion constraints
         # Power: HP → kW
         @reactor.Constraint(m.fs.config.time)
         def eq_surrogate_power(b, t):
@@ -702,11 +703,7 @@ def solve_flowsheet(m):
 
 
 def solve_flowsheet_phase1(m):
-    """Phase 1 warm-start solve with relaxed tolerances.
-    We only need a feasible biomass-rich point, not a tight solution.
-    Does not crash on non-optimal exit — the near-feasible point is still
-    a good warm start for Phase 2.
-    """
+    """Phase 1 warm-start solve with relaxed tolerances."""
     solver = get_solver(
         options={
             "tol": 1e-6,
@@ -949,8 +946,7 @@ def print_reactor_comparison(m):
 
 
 if __name__ == "__main__":
-    # This method builds and runs a steady state activated sludge
-    # flowsheet.
+
     m = build_flowsheet(asm_model=ASMModel.asm3)
     set_operating_conditions(m, asm_model=ASMModel.asm3)
 
@@ -958,16 +954,14 @@ if __name__ == "__main__":
     # Reference conditions: 54 Hz (90% capacity), +1 inch submergence (WesTech recommendation)
     apply_aerator_surrogate(
         m,
-        use_surrogate=True,
+        use_surrogate=False,
         R2_immersion_depth=1.0,
         R2_capacity=90.0,
         R4_immersion_depth=1.0,
         R4_capacity=90.0,
     )
 
-    # --- Phase 1: biomass-rich warm start to establish recycle concentrations ---
-    # Without biomass in recycles, IPOPT finds the trivial zero-reaction solution.
-    # We use the validation flow rate so Phase 2 needs no flow adjustment.
+    # --- Step 1: biomass-rich warm start to establish recycle concentrations ---
     ini2 = {
         "flow_vol": 3785.42,
         "temperature": 20.0,
@@ -988,25 +982,16 @@ if __name__ == "__main__":
     reset_asm3_inlet_conditions(m, ini2)
     scale_flowsheet(m)
     initialize_flowsheet(m)
-    # scale_flowsheet(m)
-    # # Phase 1 solve: relaxed tolerances, establish biomass in recycles
     # solve_flowsheet_phase1(m)
 
-    # --- Phase 2: switch to validation inlet, resolve tightly ---
+    # --- Step 2: switch to validation inlet, resolve tightly ---
     set_validation_inlet_conditions(m)
     # scale_flowsheet(m)
 
     # --- Print Jacobian condition number to diagnose scaling ---
     print("\n--- Scaling diagnostics before solve ---")
-    from idaes.core.util.model_statistics import (
-        large_residuals_set,
-        variables_near_bounds_set,
-    )
-    import idaes.core.util.scaling as iscale
-
     jac, nlp = iscale.get_jacobian(m, scaled=True)
     print(f"Jacobian condition number (scaled): {iscale.jacobian_cond(jac=jac):.3e}")
-    # Print variables with extreme scaling
     print("\nVariables with extreme Jacobian entries:")
     iscale.report_scaling_issues(m)
 
@@ -1015,7 +1000,6 @@ if __name__ == "__main__":
     dt.report_structural_issues()
     dt.display_potential_evaluation_errors()
 
-    # Always run Jacobian diagnostics -- reveals scaling problems
     print("---Variables with extreme Jacobian entries (scaled)---")
     dt.display_variables_with_extreme_jacobians()
     print("---Constraints with extreme Jacobian entries (scaled)---")
@@ -1029,7 +1013,7 @@ if __name__ == "__main__":
         dt.display_constraints_with_large_residuals()
         dt.display_variables_at_or_outside_bounds()
 
-    # --- Stream table (same as original) ---
+    # --- Stream table ---
     stream_table = create_stream_table_dataframe(
         {
             "Feed": m.fs.feed.outlet,
@@ -1051,5 +1035,5 @@ if __name__ == "__main__":
     # --- Effluent verification ---
     verify_effluent(m)
 
-    # --- Per-reactor comparison table vs Julia (uncomment when flowsheet issues resolved) ---
+    # --- Reactor comparison table vs Julia ---
     print_reactor_comparison(m)
