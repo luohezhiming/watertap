@@ -197,6 +197,7 @@ def multi_run(
     display_design(m_min)
 
     display_performance_metrics(m_min)
+    display_TP_table(m_min)
     display_costing(m_min)
 
     return m_min, obj_set, m_set, cp_opt, r_AV_opt
@@ -292,6 +293,7 @@ def main(
     display_design(m)
 
     display_performance_metrics(m)
+    display_TP_table(m)
     display_costing(m)
 
     return m, results
@@ -1599,6 +1601,113 @@ def display_costing(m):
     )
 
 
+def _TP_conc(m, props):
+    """Return total phosphorus [kg P / m3] for any ModifiedASM2d StateBlockData."""
+    p = m.fs.props_ASM2D
+    c = props.conc_mass_comp
+    return (
+        c["S_PO4"]
+        + p.i_PSI * c["S_I"]
+        + p.i_PSF * c["S_F"]
+        + p.i_PXI * c["X_I"]
+        + p.i_PXS * c["X_S"]
+        + p.i_PBM * (c["X_H"] + c["X_PAO"] + c["X_AUT"])
+        + c["X_PP"]
+    )
+
+
+def _TP_conc_adm1(m, props):
+    """Return total phosphorus [kg P / m3] for any ModifiedADM1 StateBlockData.
+
+    TP = S_IP  (already kg P/m3)
+       + sum over all particulates with Pi defined: X_comp * Pi[comp] * mw_p
+    Mirrors the same logic as _TP_conc for ASM2d.
+    """
+    p = m.fs.rxn_props_ADM1
+    c = props.conc_mass_comp
+    mw_p = 31  # kg/kmol — same as defined locally in the reaction package
+    return (
+        c["S_IP"]
+        + p.Pi["S_I"] * mw_p * c["S_I"]
+        + p.Pi["X_li"] * mw_p * c["X_li"]
+        + p.Pi["X_su"] * mw_p * c["X_su"]
+        + p.Pi["X_aa"] * mw_p * c["X_aa"]
+        + p.Pi["X_fa"] * mw_p * c["X_fa"]
+        + p.Pi["X_c4"] * mw_p * c["X_c4"]
+        + p.Pi["X_pro"] * mw_p * c["X_pro"]
+        + p.Pi["X_ac"] * mw_p * c["X_ac"]
+        + p.Pi["X_h2"] * mw_p * c["X_h2"]
+        + p.Pi["X_I"] * mw_p * c["X_I"]
+        + p.Pi["X_PP"] * mw_p * c["X_PP"]
+        + p.Pi["X_PAO"] * mw_p * c["X_PAO"]
+    )
+
+
+def display_TP_table(m):
+    streams = {
+        "Feed": m.fs.FeedWater.properties[0],
+        "CL effluent": m.fs.CL.effluent_state[0],
+        "CL underflow": m.fs.CL.underflow_state[0],
+        "MX1 outlet": m.fs.MX1.mixed_state[0],
+        "R1 outlet": m.fs.R1.control_volume.properties_out[0],
+        "R2 outlet": m.fs.R2.control_volume.properties_out[0],
+        "R3 outlet": m.fs.R3.control_volume.properties_out[0],
+        "R4 outlet": m.fs.R4.control_volume.properties_out[0],
+        "R5 outlet": m.fs.R5.control_volume.properties_out[0],
+        "R6 outlet": m.fs.R6.control_volume.properties_out[0],
+        "R7 outlet": m.fs.R7.control_volume.properties_out[0],
+        "CL2 effluent": m.fs.CL2.effluent_state[0],
+        "CL2 underflow": m.fs.CL2.underflow_state[0],
+        "Thickener underflow": m.fs.thickener.underflow_state[0],
+        "Thickener overflow": m.fs.thickener.overflow_state[0],
+        "Dewater underflow": m.fs.dewater.underflow_state[0],
+        "Dewater overflow": m.fs.dewater.overflow_state[0],
+        "Sludge": m.fs.Sludge.properties[0],
+        "Treated": m.fs.Treated.properties[0],
+    }
+    if m.fs.has_electroNP:
+        streams["ElectroNP inlet"] = m.fs.electroNP.properties_in[0]
+        streams["ElectroNP treated"] = m.fs.electroNP.properties_treated[0]
+
+    # ADM1 streams (MX4 → trans_asm2d_adm1 → AD → trans_adm1_asm2d → dewater)
+    adm1_streams = {
+        "Trans ASM2d-ADM1 inlet": (
+            m.fs.translator_asm2d_adm1.properties_in[0],
+            "asm2d",
+        ),
+        "Trans ASM2d-ADM1 outlet": (
+            m.fs.translator_asm2d_adm1.properties_out[0],
+            "adm1",
+        ),
+        "AD outlet": (m.fs.AD.liquid_phase.properties_out[0], "adm1"),
+        "Trans ADM1-ASM2d inlet": (m.fs.translator_adm1_asm2d.properties_in[0], "adm1"),
+        "Trans ADM1-ASM2d outlet": (
+            m.fs.translator_adm1_asm2d.properties_out[0],
+            "asm2d",
+        ),
+    }
+
+    print("\n--- Total Phosphorus by Stream ---")
+    print(f"{'Stream':<26}  {'TP (mg/L)':>12}  {'TP flow (g P/s)':>16}")
+    print("-" * 60)
+    for name, props in streams.items():
+        tp_conc = pyo.value(_TP_conc(m, props))
+        tp_flow = pyo.value(_TP_conc(m, props) * props.flow_vol)
+        print(f"{name:<26}  {tp_conc * 1e3:>12.2f}  {tp_flow * 1e3:>16.4f}")
+
+    print("-" * 60)
+    print(f"  {'--- Sludge digestion loop (MX4 → AD → dewater) ---'}")
+    print("-" * 60)
+    for name, (props, kind) in adm1_streams.items():
+        if kind == "asm2d":
+            tp_conc = pyo.value(_TP_conc(m, props))
+            tp_flow = pyo.value(_TP_conc(m, props) * props.flow_vol)
+        else:
+            tp_conc = pyo.value(_TP_conc_adm1(m, props))
+            tp_flow = pyo.value(_TP_conc_adm1(m, props) * props.flow_vol)
+        print(f"{name:<26}  {tp_conc * 1e3:>12.2f}  {tp_flow * 1e3:>16.4f}")
+
+
 def display_performance_metrics(m):
     print("\n--- Influent Metrics ---")
     Q_in = pyo.units.convert(
@@ -1633,8 +1742,10 @@ def display_performance_metrics(m):
         "Inorganic phosphorus concentration: %.1f mg/L"
         % pyo.value(m.fs.FeedWater.properties[0].SP_inorganic * 1e3)
     )
-
-    print("\n--- Effluent Metrics ---")
+    print(
+        "Total phosphorus (TP) concentration: %.2f mg/L"
+        % (pyo.value(_TP_conc(m, m.fs.FeedWater.properties[0])) * 1e3)
+    )
     Q_out = pyo.units.convert(
         m.fs.Treated.flow_vol[0], to_units=pyo.units.gallon / pyo.units.day
     )
@@ -1664,13 +1775,11 @@ def display_performance_metrics(m):
         "Inorganic phosphorus concentration: %.1f mg/L"
         % pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
     )
-    # print(
-    #     "Inlet total phosphorus concentration: %.1f mg/L" % pyo.value(m.fs.TP_in * 1e3)
-    # )
-    # print(
-    #     "Treated total phosphorus concentration: %.1f mg/L"
-    #     % pyo.value(m.fs.TP_treated * 1e3)
-    # )
+    print(
+        "Total phosphorus (TP) concentration: %.2f mg/L"
+        % (pyo.value(_TP_conc(m, m.fs.Treated.properties[0])) * 1e3)
+    )
+
     # print("Inlet total nitrogen concentration: %.1f mg/L" % pyo.value(m.fs.TN_in * 1e3))
     # print(
     #     "Treated total nitrogen concentration: %.1f mg/L"
@@ -1792,8 +1901,8 @@ def display_design(m):
 if __name__ == "__main__":
     # # This method builds and runs a steady state activated sludge flowsheet.
     m, results = main(
-        has_electroNP=True,
-        has_optimization=False,
+        has_electroNP=False,
+        has_optimization=True,
         objective=objective_fun.LCOW,
         has_effluent_constraints=True,
     )
