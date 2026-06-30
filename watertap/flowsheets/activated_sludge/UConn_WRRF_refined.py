@@ -208,23 +208,23 @@ def build_flowsheet(asm_model=ASMModel.asm1):
         m.fs.props = ASM3ParameterBlock()
         m.fs.rxn_props_R1 = ASM3ReactionParameterBlock(
             property_package=m.fs.props,
-            calibrated_params={"mu_H": 3.8775085806642027, "mu_A": 3.3518116774465154},
+            calibrated_params={"mu_H": 2.7441113149445235, "mu_A": 3.722441313448151},
         )
         m.fs.rxn_props_R2 = ASM3ReactionParameterBlock(
             property_package=m.fs.props,
-            calibrated_params={"mu_H": 0.756835055976454, "mu_A": 1.6539082531538427},
+            calibrated_params={"mu_H": 0.22557810779134918, "mu_A": 2.4028777896132607},
         )
         m.fs.rxn_props_R3 = ASM3ReactionParameterBlock(
             property_package=m.fs.props,
-            calibrated_params={"mu_H": 3.9865680124441614, "mu_A": 3.4079349519441977},
+            calibrated_params={"mu_H": 2.3077207189736275, "mu_A": 4.716863337568789},
         )
         m.fs.rxn_props_R4 = ASM3ReactionParameterBlock(
             property_package=m.fs.props,
-            calibrated_params={"mu_H": 5.1722430085814945, "mu_A": 5.061581300506415},
+            calibrated_params={"mu_H": 0.6568856662907344, "mu_A": 5.733670908160685},
         )
         m.fs.rxn_props_R5 = ASM3ReactionParameterBlock(
             property_package=m.fs.props,
-            calibrated_params={"mu_H": 6.1246767396578266, "mu_A": 2.54857697848309},
+            calibrated_params={"mu_H": 3.2152215952160126, "mu_A": 4.631903427543424},
         )
 
     # Feed water stream
@@ -391,10 +391,10 @@ def set_operating_conditions(m, asm_model=ASMModel.asm1):
 
     # optimal size
     m.fs.R1.volume.fix(1135.6 * pyo.units.m**3)
-    m.fs.R2.volume.fix(3189.8202435126686 * pyo.units.m**3)
-    m.fs.R3.volume.fix(286.5426495471911 * pyo.units.m**3)
-    m.fs.R4.volume.fix(865.306823334365 * pyo.units.m**3)
-    m.fs.R5.volume.fix(200.7302836057747 * pyo.units.m**3)
+    m.fs.R2.volume.fix(3077.8186727373936 * pyo.units.m**3)
+    m.fs.R3.volume.fix(300.6551638823627 * pyo.units.m**3)
+    m.fs.R4.volume.fix(961.9015227464279 * pyo.units.m**3)
+    m.fs.R5.volume.fix(202.02464063381427 * pyo.units.m**3)
 
     # Injection rates to Reactors 2 and 4
     for j in m.fs.props.component_list:
@@ -407,37 +407,46 @@ def set_operating_conditions(m, asm_model=ASMModel.asm1):
     m.fs.R4.KLa.fix(10 / pyo.units.hour)
 
     # Per-reactor calibrated scalar parameters
-    m.fs.rxn_props_R1.K_NOX.fix(0.6521662103758377e-3)
-    m.fs.rxn_props_R1.Y_STO_O2.fix(0.6157572364788948)
-    m.fs.rxn_props_R1.Y_H_NOX.fix(0.6304518942319962)
+    m.fs.rxn_props_R1.K_NOX.fix(0.662744537546551e-3)
+    m.fs.rxn_props_R1.Y_STO_O2.fix(0.598031273330616)
+    m.fs.rxn_props_R1.Y_H_NOX.fix(0.6217434149054809)
 
-    m.fs.rxn_props_R2.K_NOX.fix(0.4997646425030894e-3)
-    m.fs.rxn_props_R2.Y_STO_O2.fix(0.35507602926814985)
-    m.fs.rxn_props_R2.Y_H_NOX.fix(0.4719869825604356)
+    m.fs.rxn_props_R2.K_NOX.fix(0.4946569070893697e-3)
+    m.fs.rxn_props_R2.Y_STO_O2.fix(0.6527850814322534)
+    m.fs.rxn_props_R2.Y_H_NOX.fix(0.47413046475869364)
 
-    m.fs.rxn_props_R3.K_NOX.fix(0.4574898084185497e-3)
-    m.fs.rxn_props_R3.Y_STO_O2.fix(0.6725156878167102)
-    m.fs.rxn_props_R3.Y_H_NOX.fix(0.5016855245491173)
+    m.fs.rxn_props_R3.K_NOX.fix(0.5441482611062716e-3)
+    m.fs.rxn_props_R3.Y_STO_O2.fix(0.6408712027966857)
+    m.fs.rxn_props_R3.Y_H_NOX.fix(0.43712156973993466)
 
-    m.fs.rxn_props_R4.K_NOX.fix(0.4690073247163132e-3)
-    m.fs.rxn_props_R4.Y_STO_O2.fix(0.5056406029311666)
-    m.fs.rxn_props_R4.Y_H_NOX.fix(0.025005615332414445)
+    m.fs.rxn_props_R4.K_NOX.fix(0.5043368444554696e-3)
+    m.fs.rxn_props_R4.Y_STO_O2.fix(0.8704159107130067)
+    m.fs.rxn_props_R4.Y_H_NOX.fix(0.49369156547828436)
 
-    m.fs.rxn_props_R5.K_NOX.fix(0.3562487847199742e-3)
-    m.fs.rxn_props_R5.Y_STO_O2.fix(0.8405542351740866)
-    m.fs.rxn_props_R5.Y_H_NOX.fix(0.02873805034642949)
+    m.fs.rxn_props_R5.K_NOX.fix(0.3836926826617984e-3)
+    m.fs.rxn_props_R5.Y_STO_O2.fix(0.7567686537609652)
+    m.fs.rxn_props_R5.Y_H_NOX.fix(0.05070737414858183)
 
     # Clarifier
-    CL_R1 = 0.16522320909698857
-    CL_W1 = 0.011936750818302306
-    m.fs.CL.split_fraction[0, "underflow", :].fix(CL_R1 + CL_W1)
+    CL_R1 = 0.47918644727352017
+    CL_W1 = 0.011536971119954921
+    # m.fs.CL.split_fraction[0, "underflow", :].fix(CL_R1 + CL_W1)
+    m.fs.CL.split_fraction[0, "underflow", :].fix(CL_R1 + CL_W1 * (1 - CL_R1))
+    # m.fs.CL.split_fraction[0, "underflow", :].fix(1e-9)
+    m.fs.CL.split_fraction[0, "underflow", "X_I"].fix(1 - 1e-9)
+    m.fs.CL.split_fraction[0, "underflow", "X_S"].fix(1 - 1e-9)
+    m.fs.CL.split_fraction[0, "underflow", "X_H"].fix(1 - 1e-9)
+    m.fs.CL.split_fraction[0, "underflow", "X_STO"].fix(1 - 1e-9)
+    m.fs.CL.split_fraction[0, "underflow", "X_A"].fix(1 - 1e-9)
+    m.fs.CL.split_fraction[0, "underflow", "X_TSS"].fix(1 - 1e-9)
 
     # S2
-    m.fs.S2.split_fraction[:, "recycle"].fix(CL_R1 / (CL_R1 + CL_W1))
+    # m.fs.S2.split_fraction[:, "recycle"].fix(CL_R1 / (CL_R1 + CL_W1))
+    m.fs.S2.split_fraction[:, "recycle"].fix(CL_R1 / (CL_R1 + CL_W1 * (1 - CL_R1)))
 
     # S1
-    s1_out_factor_1 = 0.3650004473797573
-    s1_out_factor_2 = 0.38672345599067465
+    s1_out_factor_1 = 0.3630887758125217
+    s1_out_factor_2 = 0.40685806084408344
     # Set fraction of outflow from reactor 5 that recycles to M1 mixer
     m.fs.S1.split_fraction[:, "M1_inlet"].fix(1 - s1_out_factor_1 - s1_out_factor_2)
     # Set fraction of outflow from reactor 5 that goes to effluent
@@ -753,10 +762,10 @@ def set_validation_inlet_conditions(m):
     # port.X_A   ~ comp[8]
     # port.X_TS  ~ comp[9]
     comp = [1e-9, 416.5, 21.0, 1e-9, 0.25, 2.3, 1e-9, 1e-9, 166.0]
-    frac_SI = 0.017517364307482627
-    frac_SS = 0.27354634374988246
-    frac_XI = 0.2117186104741312
-    frac_XS = 0.49721768146850376
+    frac_SI = 0.034055628231391986
+    frac_SS = 0.33545402826973353
+    frac_XI = 0.18164007388730358
+    frac_XS = 0.44885026961157093
     frac_STO = 1 - frac_SI - frac_SS - frac_XI - frac_XS
 
     m.fs.feed.flow_vol.fix(3785.42 * pyo.units.m**3 / pyo.units.day)
@@ -791,21 +800,26 @@ def verify_effluent(m):
     import pandas as pd
 
     # COD = sum of all COD-bearing components in the effluent (kg/m3 -> mg/L via 1e3)
-    cod_components = ["S_I", "S_S", "X_I", "X_S", "X_H", "X_STO", "X_A"]
+    cod_components = ["S_I", "S_S"]
     COD = (
         sum(pyo.value(m.fs.Treated.conc_mass_comp[0, k]) for k in cod_components) * 1e3
     )
+
+    # WAS flowrate: S2 waste stream volumetric flow, converted m3/s -> m3/day
+    WAS_flowrate = pyo.value(m.fs.S2.waste_state[0].flow_vol) * 86400
 
     reference = {
         "COD": 8.720000568688235,
         "S_NH4": 0.40000000408648667,
         "S_NOX": 1.1400000271650608,
+        "WAS_flowrate": 45.18561528261792,
     }
 
     watertap = {
         "COD": COD,
         "S_NH4": pyo.value(m.fs.Treated.conc_mass_comp[0, "S_NH4"]) * 1e3,
         "S_NOX": pyo.value(m.fs.Treated.conc_mass_comp[0, "S_NOX"]) * 1e3,
+        "WAS_flowrate": WAS_flowrate,
     }
 
     df = pd.DataFrame({"watertap": watertap, "reference": reference})
@@ -982,11 +996,12 @@ if __name__ == "__main__":
     reset_asm3_inlet_conditions(m, ini2)
     scale_flowsheet(m)
     initialize_flowsheet(m)
-    # solve_flowsheet_phase1(m)
+    solve_flowsheet_phase1(m)
 
     # --- Step 2: switch to validation inlet, resolve tightly ---
     set_validation_inlet_conditions(m)
     # scale_flowsheet(m)
+    # initialize_flowsheet(m)
 
     # --- Print Jacobian condition number to diagnose scaling ---
     print("\n--- Scaling diagnostics before solve ---")
