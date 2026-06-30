@@ -80,6 +80,47 @@ solver = get_solver()
 
 
 # -----------------------------------------------------------------------------
+# Total Phosphorus helpers
+def _TP_adm1(m, props):
+    """
+    Total phosphorus [kg P / m3] for a ModifiedADM1 StateBlockData.
+    """
+    p = m.fs.ADM1_rxn_props
+    c = props.conc_mass_comp
+    mw_p = 31  # kg/kmol
+    return (
+        c["S_IP"]
+        + p.Pi["S_I"] * mw_p * c["S_I"]
+        + p.Pi["X_li"] * mw_p * c["X_li"]
+        + p.Pi["X_su"] * mw_p * c["X_su"]
+        + p.Pi["X_aa"] * mw_p * c["X_aa"]
+        + p.Pi["X_fa"] * mw_p * c["X_fa"]
+        + p.Pi["X_c4"] * mw_p * c["X_c4"]
+        + p.Pi["X_pro"] * mw_p * c["X_pro"]
+        + p.Pi["X_ac"] * mw_p * c["X_ac"]
+        + p.Pi["X_h2"] * mw_p * c["X_h2"]
+        + p.Pi["X_I"] * mw_p * c["X_I"]
+        + p.Pi["X_PP"] * mw_p * c["X_PP"]
+        + p.Pi["X_PAO"] * mw_p * c["X_PAO"]
+    )
+
+
+def _TP_asm2d(m, props):
+    """Total phosphorus [kg P / m3] for a ModifiedASM2d StateBlockData."""
+    p = m.fs.props_ASM2D
+    c = props.conc_mass_comp
+    return (
+        c["S_PO4"]
+        + p.i_PSI * c["S_I"]
+        + p.i_PSF * c["S_F"]
+        + p.i_PXI * c["X_I"]
+        + p.i_PXS * c["X_S"]
+        + p.i_PBM * (c["X_H"] + c["X_PAO"] + c["X_AUT"])
+        + c["X_PP"]
+    )
+
+
+# -----------------------------------------------------------------------------
 @pytest.mark.unit
 def test_config():
     m = ConcreteModel()
@@ -341,6 +382,17 @@ class TestAdm1Asm2d(object):
             )
             <= 1e-6
         )
+
+        # Total phosphorus conservation
+        TP_in = value(
+            _TP_adm1(asmadm, asmadm.fs.unit.properties_in[0])
+            * asmadm.fs.unit.inlet.flow_vol[0]
+        )
+        TP_out = value(
+            _TP_asm2d(asmadm, asmadm.fs.unit.properties_out[0])
+            * asmadm.fs.unit.outlet.flow_vol[0]
+        )
+        assert TP_in == pytest.approx(TP_out, rel=1e-3)
 
 
 class TestADM1ASM2dScaler:
