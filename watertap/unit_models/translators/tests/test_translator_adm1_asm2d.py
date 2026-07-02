@@ -82,8 +82,12 @@ solver = get_solver()
 # -----------------------------------------------------------------------------
 # Total Phosphorus helpers
 def _TP_adm1(m, props):
-    """
-    Total phosphorus [kg P / m3] for a ModifiedADM1 StateBlockData.
+    """Return total phosphorus [kg P / m3] for a ModifiedADM1 StateBlockData.
+
+    TP = S_IP + sum_i( Pi[i] * mw_p * X_i ) for all components in Pi_dict.
+    X_PP is stored as kg polyphosphate compound/m3 (MW=300.41 g/mol per Gujer
+    Matrix), so Pi["X_PP"] = 1/300.41 kmol P/kg. X_ch and X_pr have no Pi
+    entry (P_ch = 0) and are correctly excluded.
     """
     p = m.fs.ADM1_rxn_props
     c = props.conc_mass_comp
@@ -384,6 +388,7 @@ class TestAdm1Asm2d(object):
         )
 
         # Total phosphorus conservation
+        # With Pi["X_PP"] = 1/300.41 kmol P/kg (MW of polyphosphate compound),
         TP_in = value(
             _TP_adm1(asmadm, asmadm.fs.unit.properties_in[0])
             * asmadm.fs.unit.inlet.flow_vol[0]
