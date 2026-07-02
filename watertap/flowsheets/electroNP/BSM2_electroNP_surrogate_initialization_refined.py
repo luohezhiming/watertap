@@ -869,6 +869,35 @@ def set_scaling(m):
         overwrite=True,
     )
 
+    # Scaling adjustments for Pi["X_PP"] = 1/31 change
+    # X_PP in ADM1 is now treated as kg P/m3 (like S_IP), so the
+    # SPO4_output constraint and related translator constraints have
+    # smaller magnitudes and need rescaling
+    csb.scale_constraint_by_nominal_value(
+        m.fs.translator_adm1_asm2d.SPO4_output[0],
+        scheme=ConstraintScalingScheme.inverseMaximum,
+        overwrite=True,
+    )
+    csb.scale_constraint_by_nominal_value(
+        m.fs.translator_adm1_asm2d.SK_output[0],
+        scheme=ConstraintScalingScheme.inverseMaximum,
+        overwrite=True,
+    )
+    csb.scale_constraint_by_nominal_value(
+        m.fs.translator_adm1_asm2d.SMg_output[0],
+        scheme=ConstraintScalingScheme.inverseMaximum,
+        overwrite=True,
+    )
+    # X_PP in ADM1 properties — now comparable to S_IP magnitude
+    for props in [
+        m.fs.AD.liquid_phase.properties_in[0],
+        m.fs.AD.liquid_phase.properties_out[0],
+        m.fs.translator_asm2d_adm1.properties_out[0],
+        m.fs.translator_adm1_asm2d.properties_in[0],
+    ]:
+        iscale.set_scaling_factor(props.conc_mass_comp["X_PP"], 1e1)
+        iscale.set_scaling_factor(props.conc_mass_comp["S_IP"], 1e1)
+
     iscale.calculate_scaling_factors(m)
 
 
@@ -1902,7 +1931,7 @@ if __name__ == "__main__":
     # # This method builds and runs a steady state activated sludge flowsheet.
     m, results = main(
         has_electroNP=False,
-        has_optimization=True,
+        has_optimization=False,
         objective=objective_fun.LCOW,
         has_effluent_constraints=True,
     )
