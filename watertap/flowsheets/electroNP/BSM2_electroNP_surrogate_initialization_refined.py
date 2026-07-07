@@ -108,6 +108,10 @@ from idaes.core.util.misc import StrEnum
 # Set up logger
 _log = idaeslog.getLogger(__name__)
 
+import logging
+
+logging.getLogger("idaes.core.util.scaling").setLevel(logging.ERROR)
+
 
 class objective_fun(StrEnum):
     LCOW = "LCOW"
@@ -213,7 +217,7 @@ def main(
     set_operating_conditions(m)
     set_scaling(m)
 
-    # print("----------------   scaling V0  ----------------")
+    # print("\n================ Badly Scaled Vars AFTER set_scaling ================")
     # badly_scaled_var_list = iscale.badly_scaled_var_generator(m, large=1e1, small=1e-1)
     # for x in badly_scaled_var_list:
     #     print(f"{x[0].name}\t{x[0].value}\tsf: {iscale.get_scaling_factor(x[0])}")
@@ -222,56 +226,142 @@ def main(
 
     add_costing(m)
 
-    # print("----------------   scaling V1  ----------------")
-    # badly_scaled_var_list = iscale.badly_scaled_var_generator(m, large=1e1, small=1e-1)
-    # for x in badly_scaled_var_list:
-    #     print(f"{x[0].name}\t{x[0].value}\tsf: {iscale.get_scaling_factor(x[0])}")
-
     m.fs.costing.initialize()
 
     interval_initializer(m.fs.costing)
     assert_degrees_of_freedom(m, 0)
 
-    # results = solve(m)
-    # pyo.assert_optimal_termination(results)
+    # dt = DiagnosticsToolbox(m)
+    # print("\n================ Structural Issues ================")
+    # dt.report_structural_issues()
+    # dt.display_potential_evaluation_errors()
 
-    # # resolve with oxygen fixed
-    # m.fs.R5.outlet.conc_mass_comp[:, "S_O2"].unfix()
-    # m.fs.R5.injection[0, "Liq", "S_O2"].fix(0.05332)
-    #
-    # m.fs.R6.outlet.conc_mass_comp[:, "S_O2"].unfix()
-    # m.fs.R6.injection[0, "Liq", "S_O2"].fix(0.03025)
-    #
-    # m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].unfix()
-    # m.fs.R7.injection[0, "Liq", "S_O2"].fix(0.02351)
-    #
-    # results = solve(m)
-    # pyo.assert_optimal_termination(results)
+    # print("\n================ Numerical Issues AFTER initialization ================")
+    # dt.report_numerical_issues()
+    # dt.display_variables_with_extreme_jacobians()
+    # dt.display_constraints_with_extreme_jacobians()
 
-    if has_optimization:
-        setup_optimization(
-            m,
-            objective=objective,
-            has_effluent_constraints=has_effluent_constraints,
-            reactor_volume_equalities=False,
-        )
-
-    # # Use of Degeneracy Hunter for troubleshooting model.
-    # m.obj = pyo.Objective(expr=0)
-    # solver = get_solver()
-    # solver.options["max_iter"] = 10000
-    # results = solver.solve(m, tee=True)
-    # dh = DegeneracyHunter(m, solver=pyo.SolverFactory("cbc"))
-    # # badly_scaled_var_list = iscale.badly_scaled_var_generator(m, large=1e1, small=1e-1)
-    # # for x in badly_scaled_var_list:
-    # #     print(f"{x[0].name}\t{x[0].value}\tsf: {iscale.get_scaling_factor(x[0])}")
-    # dh.check_residuals(tol=1e-8)
-    # # dh.check_variable_bounds(tol=1e-8)
-    # # dh.check_rank_equality_constraints(dense=True)
-    # # ds = dh.find_candidate_equations(verbose=True, tee=True)
-    # # ids = dh.find_irreducible_degenerate_sets(verbose=True)
-    # # print_close_to_bounds(m)
-    # # print_infeasible_constraints(m)
+    if m.fs.has_electroNP is True:
+        # m.fs.electroNP.eq_P_removal_surrogate.deactivate()
+        # m.fs.electroNP.P_removal.fix(0.95)
+        m.fs.electroNP.cathodic_potential.fix(-1.1 * pyo.units.V)
+        m.fs.electroNP.area_volume_ratio.fix(0.1)
+        m.fs.electroNP.settling_time.fix(30 * pyo.units.min)
+        m.fs.electroNP.magnesium_chloride_dosage.fix(0.388)
+        # homotopy_steps = (
+        #     # 1e-6,
+        #     0.05,
+        #     0.1,
+        #     # 0.15,
+        #     0.2,
+        #     # 0.25,
+        #     0.3,
+        #     # 0.35,
+        #     # 0.36,
+        #     # 0.37,
+        #     # 0.38,
+        #     # 0.39,
+        #     0.40,
+        #     # 0.41,
+        #     # 0.42,
+        #     # 0.43,
+        #     # 0.44,
+        #     # 0.45,
+        #     # 0.46,
+        #     # 0.47,
+        #     # 0.48,
+        #     # 0.49,
+        #     0.50,
+        #     # 0.51,
+        #     # 0.52,
+        #     0.6,
+        #     0.9,
+        #     0.95,
+        # )
+        m.fs.electroNP.frac_mass_H2O_treated[0].fix(0.9)
+    #     for p_removal_step in homotopy_steps:
+    #         m.fs.electroNP.P_removal.fix(p_removal_step)
+    #         print(
+    #             f"\n================ Homotopy step: P_removal={p_removal_step} "
+    #             f"(frac_mass_H2O_treated held at 0.95) ================"
+    #         )
+    #         def print_step_diagnostics():
+    #             S_IP_into_AD = pyo.value(
+    #                 m.fs.translator_asm2d_adm1.properties_out[0].conc_mass_comp[
+    #                     "S_IP"
+    #                 ]
+    #             )
+    #             K_S_IP_mass = pyo.value(m.fs.rxn_props_ADM1.K_S_IP) * 31
+    #             print(
+    #                 f"S_IP into AD: {S_IP_into_AD:.6g} kg/m3  "
+    #                 f"(K_S_IP ~ {K_S_IP_mass:.6g} kg/m3, ratio "
+    #                 f"{S_IP_into_AD / K_S_IP_mass:.3g})"
+    #             )
+    #             K_MAX = pyo.value(m.fs.rxn_props_ASM2D.K_MAX)
+    #             for name, block in (
+    #                 ("R1", m.fs.R1),
+    #                 ("R3", m.fs.R3),
+    #                 ("R5", m.fs.R5),
+    #                 ("R7", m.fs.R7),
+    #             ):
+    #                 X_PP = pyo.value(
+    #                     block.control_volume.properties_out[0].conc_mass_comp[
+    #                         "X_PP"
+    #                     ]
+    #                 )
+    #                 X_PAO = pyo.value(
+    #                     block.control_volume.properties_out[0].conc_mass_comp[
+    #                         "X_PAO"
+    #                     ]
+    #                 )
+    #                 margin = K_MAX * X_PAO - X_PP
+    #                 print(
+    #                     f"  {name} outlet: X_PP={X_PP:.4g}, X_PAO={X_PAO:.4g}, "
+    #                     f"K_MAX*X_PAO={K_MAX * X_PAO:.4g}, margin={margin:.4g} "
+    #                     f"({100 * margin / (K_MAX * X_PAO):.1f}% of capacity "
+    #                     "remaining)"
+    #                 )
+    #             display_stream_table(m)
+    #
+    #         try:
+    #             results = solve(m)
+    #         except Exception:
+    #             print(
+    #                 f"Homotopy step P_removal={p_removal_step} FAILED. "
+    #                 "Leaving value fixed at this step and constraint "
+    #                 "deactivated for inspection -- NOT reverting."
+    #             )
+    #
+    #             print(
+    #                 "\n================ Constraints with Large Residuals "
+    #                 "(at failed step) ================"
+    #             )
+    #             dt_fail = DiagnosticsToolbox(m)
+    #             dt_fail.display_constraints_with_large_residuals()
+    #             print(
+    #                 "\n================ Variables At or Outside Bounds "
+    #                 "(at failed step) ================"
+    #             )
+    #             dt_fail.display_variables_at_or_outside_bounds()
+    #
+    #             print(
+    #                 "\n================ TP table / diagnostics AT FAILED "
+    #                 "(near-feasible) POINT ================"
+    #             )
+    #             print_step_diagnostics()
+    #             raise
+    #         print_step_diagnostics()
+    #
+    # else:
+    #     try:
+    #         results = solve(m)
+    #     except Exception:
+    #         print("\n================ Constraints with Large Residuals ================")
+    #         dt_fail = DiagnosticsToolbox(m)
+    #         dt_fail.display_constraints_with_large_residuals()
+    #         print("\n================ Variables At or Outside Bounds ================")
+    #         dt_fail.display_variables_at_or_outside_bounds()
+    #         raise
 
     results = solve(m)
     pyo.assert_optimal_termination(results)
@@ -283,12 +373,18 @@ def main(
         fail_flag=True,
     )
 
-    dt = DiagnosticsToolbox(m)
-    print("---Numerical Issues---")
-    dt.report_numerical_issues()
-    # # dt.display_variables_at_or_outside_bounds()
+    # print("\n================ Numerical Issues AFTER solve ================")
+    # dt.report_numerical_issues()
     # dt.display_variables_with_extreme_jacobians()
     # dt.display_constraints_with_extreme_jacobians()
+
+    if has_optimization:
+        setup_optimization(
+            m,
+            objective=objective,
+            has_effluent_constraints=has_effluent_constraints,
+            reactor_volume_equalities=False,
+        )
 
     display_design(m)
 
@@ -580,7 +676,7 @@ def build_flowsheet(has_electroNP=False):
 
 def set_operating_conditions(m):
     # Feed Water Conditions
-    print(f"DOF before feed: {degrees_of_freedom(m)}")
+    # print(f"DOF before feed: {degrees_of_freedom(m)}")
     m.fs.FeedWater.flow_vol.fix(20935.15 * pyo.units.m**3 / pyo.units.day)
     m.fs.FeedWater.temperature.fix(308.15 * pyo.units.K)
     m.fs.FeedWater.pressure.fix(1 * pyo.units.atm)
@@ -589,7 +685,8 @@ def set_operating_conditions(m):
     m.fs.FeedWater.conc_mass_comp[0, "S_A"].fix(70 * pyo.units.g / pyo.units.m**3)
     m.fs.FeedWater.conc_mass_comp[0, "S_NH4"].fix(26.6 * pyo.units.g / pyo.units.m**3)
     m.fs.FeedWater.conc_mass_comp[0, "S_NO3"].fix(1e-6 * pyo.units.g / pyo.units.m**3)
-    m.fs.FeedWater.conc_mass_comp[0, "S_PO4"].fix(1e-6 * pyo.units.g / pyo.units.m**3)
+    # m.fs.FeedWater.conc_mass_comp[0, "S_PO4"].fix(1e-6 * pyo.units.g / pyo.units.m**3)
+    m.fs.FeedWater.conc_mass_comp[0, "S_PO4"].fix(20 * pyo.units.g / pyo.units.m**3)
     m.fs.FeedWater.conc_mass_comp[0, "S_I"].fix(57.45 * pyo.units.g / pyo.units.m**3)
     m.fs.FeedWater.conc_mass_comp[0, "S_N2"].fix(25.19 * pyo.units.g / pyo.units.m**3)
     m.fs.FeedWater.conc_mass_comp[0, "X_I"].fix(84 * pyo.units.g / pyo.units.m**3)
@@ -598,7 +695,9 @@ def set_operating_conditions(m):
     m.fs.FeedWater.conc_mass_comp[0, "X_PAO"].fix(
         51.5262 * pyo.units.g / pyo.units.m**3
     )
+    # m.fs.FeedWater.conc_mass_comp[0, "X_PAO"].fix(500 * pyo.units.g / pyo.units.m ** 3)
     m.fs.FeedWater.conc_mass_comp[0, "X_PP"].fix(1e-6 * pyo.units.g / pyo.units.m**3)
+    # m.fs.FeedWater.conc_mass_comp[0, "X_PP"].fix(10 * pyo.units.g / pyo.units.m ** 3)
     m.fs.FeedWater.conc_mass_comp[0, "X_PHA"].fix(1e-6 * pyo.units.g / pyo.units.m**3)
     m.fs.FeedWater.conc_mass_comp[0, "X_AUT"].fix(1e-6 * pyo.units.g / pyo.units.m**3)
     m.fs.FeedWater.conc_mass_comp[0, "S_IC"].fix(5.652 * pyo.units.g / pyo.units.m**3)
@@ -713,9 +812,41 @@ def set_operating_conditions(m):
         # m.fs.electroNP.area[0].fix(5)
         m.fs.electroNP.HRT.fix(0.5 * pyo.units.hr)
 
-        # iscale.set_scaling_factor(m.fs.electroNP.cathodic_potential, 1e0)
-        # iscale.set_scaling_factor(m.fs.electroNP.area_volume_ratio, 1e0)
-        # iscale.set_scaling_factor(m.fs.electroNP.settling_time, 1e-1)
+        # These electroNP-specific variables were entirely unscaled (only
+        # inlet.flow_vol had a factor below) -- with has_electroNP=True the
+        # model gains 117 vars/constraints from this block, and the
+        # "closing recycle" solve now diverges explosively in the first
+        # ~17 iterations (inf_du: 3e3 -> 5.6e11) before falling into
+        # restoration and ending at genuine local infeasibility. This is
+        # the classic signature of newly-introduced unscaled variables.
+        #   HRT / settling_time fixed at 1800 s (0.5 hr / 30 min) -- same
+        #   order as the reactor HRTs already scaled elsewhere at 1e-3.
+        #   cathodic_potential ~ -1.1 V, area_volume_ratio ~ 0.1 cm^-1,
+        #   frac_mass_H2O_treated ~ 0.9 (dimensionless fraction) -- all
+        #   O(1e-1 - 1e0), moderate factors below.
+        iscale.set_scaling_factor(m.fs.electroNP.cathodic_potential, 1e0)
+        iscale.set_scaling_factor(m.fs.electroNP.area_volume_ratio, 1e1)
+        iscale.set_scaling_factor(m.fs.electroNP.settling_time, 1e-3)
+        iscale.set_scaling_factor(m.fs.electroNP.HRT, 1e-3)
+        iscale.set_scaling_factor(m.fs.electroNP.frac_mass_H2O_treated, 1e0)
+
+        # T_surrogate, t_ss_surrogate, P_removal_surrogate, EI_surrogate are
+        # PySMO RBF surrogate OUTPUT variables. The latest diagnostics run
+        # (has_electroNP=True) now shows their real values with sf:None --
+        # entirely unscaled, since these names don't match any pattern in
+        # scale_variables():
+        #   T_surrogate = 25, t_ss_surrogate = 30, P_removal_surrogate = 90,
+        #   EI_surrogate = 0.044
+        # The "closing recycle" solve fails at exactly this stage (inf_du
+        # explodes 3e3 -> 5.6e11 within the first ~17 iterations before
+        # ending in genuine local infeasibility), consistent with these
+        # four unscaled variables being the last piece of the electroNP
+        # block without a scaling factor. Now grounded in real values
+        # rather than guessed.
+        iscale.set_scaling_factor(m.fs.electroNP.T_surrogate, 1e-1)
+        iscale.set_scaling_factor(m.fs.electroNP.t_ss_surrogate, 1e-1)
+        iscale.set_scaling_factor(m.fs.electroNP.P_removal_surrogate, 1e-2)
+        iscale.set_scaling_factor(m.fs.electroNP.EI_surrogate, 1e2)
 
     # Expressions
     m.fs.water_recovery = Expression(
@@ -753,16 +884,30 @@ def set_scaling(m):
         iscale.set_scaling_factor(
             block.control_volume.reactions[0.0].rate_expression, 1e3
         )
+        # rate_reaction_extent was previously unscaled (default sf=1), which
+        # is the source of the bulk of "Missing scaling factor" warnings and
+        # is why rate_reaction_extent[0.0,R18] shows up as an extreme
+        # Jacobian column (~1.9E+04) unchanged across every diagnostic run so
+        # far. It is ~ rate_expression * volume, so start at the same order
+        # of magnitude as rate_expression; re-check diagnostics afterward --
+        # R18 specifically may need its own override if it's still extreme.
+        iscale.set_scaling_factor(block.control_volume.rate_reaction_extent, 1e3)
         iscale.set_scaling_factor(block.cstr_performance_eqn, 1e3)
         iscale.set_scaling_factor(
             block.control_volume.rate_reaction_stoichiometry_constraint, 1e3
         )
         iscale.set_scaling_factor(block.control_volume.material_balances, 1e3)
+        # control_volume.volume had no scaling factor at all -- BSM2
+        # reactor volumes are typically O(1e3) m3, so sf ~1e-3 brings the
+        # scaled value to O(1); adjust if the next diagnostic run still
+        # flags it.
+        iscale.set_scaling_factor(block.control_volume.volume, 1e-3)
 
-    # m.fs.aerobic_reactors = (m.fs.R5, m.fs.R6, m.fs.R7)
-    # for R in m.fs.aerobic_reactors:
-    #     iscale.set_scaling_factor(R.KLa, 1e0)
-    #     iscale.set_scaling_factor(R.hydraulic_retention_time[0], 1e-2)
+    # HRT for R5-R7 is ~1460 s and had no scaling factor at all (flagged as
+    # badly scaled with sf: None in diagnostics) -> fix with a direct factor.
+    m.fs.aerobic_reactors = (m.fs.R5, m.fs.R6, m.fs.R7)
+    for R in m.fs.aerobic_reactors:
+        iscale.set_scaling_factor(R.hydraulic_retention_time[0], 1e-3)
 
     # scaling factor for low flowrate units
     if m.fs.has_electroNP is True:
@@ -817,6 +962,11 @@ def set_scaling(m):
     iscale.set_scaling_factor(m.fs.CL2.surface_area, 1e-3)
     iscale.set_scaling_factor(m.fs.dewater.volume[0.0], 1e-3)
     iscale.set_scaling_factor(m.fs.thickener.volume[0.0], 1e-3)
+    # P1.control_volume.work had no scaling factor at all -- recycle pump
+    # work on a low-pressure-rise stream like this is typically small
+    # relative to the aeration/costing-scale quantities elsewhere in the
+    # model; sf=1e-2 is a starting point, adjust if flagged in diagnostics.
+    iscale.set_scaling_factor(m.fs.P1.control_volume.work, 1e-2)
 
     # Apply scaling
     scale_variables(m)
@@ -827,15 +977,28 @@ def set_scaling(m):
     # scaling factor of variables with extreme Jacobian
     auto.scale_variables_by_magnitude(m.fs.dewater.mixed_state[0.0].flow_vol)
     auto.scale_variables_by_magnitude(m.fs.AD.liquid_phase.properties_in[0.0].flow_vol)
-    auto.scale_variables_by_magnitude(
-        m.fs.AD.liquid_phase.reactions[0.0].reaction_rate["R24"]
-    )
 
-    # scaling factor of constraints with extreme Jacobians
-    csb.scale_constraint_by_nominal_value(
-        m.fs.AD.liquid_phase.reactions[0.0].rate_expression["R24"],
-        scheme=ConstraintScalingScheme.inverseMaximum,
-        overwrite=True,
+    # R24 (Lysis of X_PP) was previously scaled with
+    # auto.scale_variables_by_magnitude(...) / scale_constraint_by_nominal_value(...),
+    # both of which are evaluated HERE in set_scaling(), i.e. BEFORE
+    # initialize_system(m) runs. At this point conc_mass_comp["X_PP"] still
+    # holds its un-initialized placeholder value (~0), so inverseMaximum
+    # scaling divided by a near-zero coefficient and produced an enormous
+    # scaling factor. Diagnostics confirmed this: rate_expression[R24] and
+    # conc_mass_comp[X_PP] both showed Jacobian norms of 6.75E+09 -- five
+    # orders of magnitude worse than the next-worst entry (~7.3E+08).
+    #
+    # Fix: use fixed, physically-derived scaling factors instead of a
+    # value-dependent scheme.
+    #   b_PP ~ 0.2 /day = 0.2/86400 /s ~ 2.3e-6 /s
+    #   X_PP (ADM1, kg P/m3, post 1/31 fix) ~ O(0.01-1)
+    #   => rate_expression[R24] = b_PP * X_PP ~ O(1e-8 - 1e-6) kg/m3/s
+    #   => scaling factor (1/magnitude) ~ 1e7
+    iscale.set_scaling_factor(
+        m.fs.AD.liquid_phase.reactions[0.0].reaction_rate["R24"], 1e7
+    )
+    iscale.set_scaling_factor(
+        m.fs.AD.liquid_phase.reactions[0.0].rate_expression["R24"], 1e7
     )
     csb.scale_constraint_by_nominal_value(
         m.fs.AD.AD_retention_time[0.0],
@@ -896,7 +1059,50 @@ def set_scaling(m):
         m.fs.translator_adm1_asm2d.properties_in[0],
     ]:
         iscale.set_scaling_factor(props.conc_mass_comp["X_PP"], 1e1)
-        iscale.set_scaling_factor(props.conc_mass_comp["S_IP"], 1e1)
+        iscale.set_scaling_factor(props.conc_mass_comp["S_IP"], 1e0)
+
+    # The blanket "conc_mass_comp -> sf 1e2" rule in scale_variables() spans
+    # ~9 orders of magnitude on the ADM1 side (S_ch4 ~1e-9 to X_I ~13) and is
+    # the real source of the "badly scaled vars" list -- almost every entry
+    # in it is one of these four property blocks. Override per-species with
+    # factors tuned to their typical magnitude in this flowsheet.
+    adm1_conc_sf = {
+        "S_su": 1e0,
+        "S_aa": 1e0,
+        "S_fa": 1e0,
+        "S_va": 1e1,
+        "S_bu": 1e1,
+        "S_pro": 1e1,
+        "S_ac": 1e1,
+        "S_h2": 1e6,
+        "S_ch4": 1e2,
+        "S_IC": 1e0,
+        "S_IN": 1e0,
+        "X_ch": 1e1,
+        "X_pr": 1e1,
+        "X_li": 1e1,
+        "X_su": 1e6,
+        "X_aa": 1e1,
+        "X_fa": 1e2,
+        "X_c4": 1e2,
+        "X_pro": 1e2,
+        "X_ac": 1e2,
+        "X_h2": 1e1,
+        "X_I": 1e0,
+        "X_PHA": 1e0,
+        "X_PAO": 1e1,
+        "S_K": 1e1,
+        "S_Mg": 1e1,
+    }
+    for props in [
+        m.fs.AD.liquid_phase.properties_in[0],
+        m.fs.AD.liquid_phase.properties_out[0],
+        m.fs.translator_asm2d_adm1.properties_out[0],
+        m.fs.translator_adm1_asm2d.properties_in[0],
+    ]:
+        for comp, sf in adm1_conc_sf.items():
+            if comp in props.conc_mass_comp:
+                iscale.set_scaling_factor(props.conc_mass_comp[comp], sf)
 
     iscale.calculate_scaling_factors(m)
 
@@ -907,12 +1113,16 @@ def initialize_system(m):
         mx.pressure_equality_constraints[0.0, 2].deactivate()
     m.fs.MX3.pressure_equality_constraints[0.0, 2].deactivate()
     m.fs.MX3.pressure_equality_constraints[0.0, 3].deactivate()
-    print(f"DOF before initialization: {degrees_of_freedom(m)}")
+    # print(f"DOF before initialization: {degrees_of_freedom(m)}")
 
     # Initialize flowsheet
     # Apply sequential decomposition - 1 iteration should suffice
     seq = SequentialDecomposition()
     seq.options.tear_method = "Direct"
+    # Reverted: iterLim=5 caused seq.run() itself to fail (a Mixer's
+    # initialize_build hit a hard solver error), earlier and worse than
+    # every prior run in this session, all of which got past seq.run fine
+    # and only failed later at the "closing recycle" solve. Back to 1.
     seq.options.iterLim = 1
     # seq.options.tear_set = [m.fs.stream5, m.fs.stream10adm]
     seq.options.tear_set = [m.fs.stream2, m.fs.stream5, m.fs.stream10adm]
@@ -1004,26 +1214,37 @@ def initialize_system(m):
         #     "pressure": {0: 101325},
         # }
 
+        # Bootstrapped from the near-feasible point (same one as before --
+        # Using the EXACT SAME tear guesses as has_electroNP=False. Combined
+        # with the pass-through homotopy (P_removal~0, frac_mass_H2O_treated
+        # ~1), the system should be nearly mathematically identical to
+        # has_electroNP=False, which we know converges cleanly with these
+        # exact values. If this still fails at the very first homotopy
+        # step, that rules out tear guesses as a factor too and points to
+        # something structural (e.g. AD's own initialize_build(), which
+        # has failed with its own "locally infeasible" warning in every
+        # has_electroNP=True run this session, independent of anything
+        # we've changed downstream of it).
         tear_guesses0 = {
             "flow_vol": {0: 0.495},
             "conc_mass_comp": {
                 (0, "S_A"): 0.08,
                 (0, "S_F"): 0.13,
                 (0, "S_I"): 0.057,
-                (0, "S_N2"): 0.044,
-                (0, "S_NH4"): 0.020,
-                (0, "S_NO3"): 0.004,
+                (0, "S_N2"): 0.05,
+                (0, "S_NH4"): 0.025,
+                (0, "S_NO3"): 0.005,
                 (0, "S_O2"): 0.0016,
-                (0, "S_PO4"): 0.042,
+                (0, "S_PO4"): 0.65,
                 (0, "S_K"): 0.37,
                 (0, "S_Mg"): 0.02,
                 (0, "S_IC"): 0.085,
-                (0, "X_AUT"): 0.15,
-                (0, "X_H"): 3.6,
+                (0, "X_AUT"): 0.18,
+                (0, "X_H"): 3.7,
                 (0, "X_I"): 3.2,
-                (0, "X_PAO"): 3.0,
-                (0, "X_PHA"): 0.0013,
-                (0, "X_PP"): 0.98,
+                (0, "X_PAO"): 2.8,
+                (0, "X_PHA"): 0.0011,
+                (0, "X_PP"): 0.92,
                 (0, "X_S"): 0.08,
             },
             "temperature": {0: 308.15},
@@ -1031,25 +1252,25 @@ def initialize_system(m):
         }
 
         tear_guesses = {
-            "flow_vol": {0: 1.235},
+            "flow_vol": {0: 1.237},
             "conc_mass_comp": {
-                (0, "S_A"): 0.00075,
+                (0, "S_A"): 0.0008,
                 (0, "S_F"): 0.0004,
                 (0, "S_I"): 0.057,
-                (0, "S_N2"): 0.056,
-                (0, "S_NH4"): 0.0092,
-                (0, "S_NO3"): 0.005,
+                (0, "S_N2"): 0.06,
+                (0, "S_NH4"): 0.01,
+                (0, "S_NO3"): 0.006,
                 (0, "S_O2"): 0.0019,
-                (0, "S_PO4"): 0.033,
+                (0, "S_PO4"): 0.64,
                 (0, "S_K"): 0.37,
                 (0, "S_Mg"): 0.020,
                 (0, "S_IC"): 0.13,
-                (0, "X_AUT"): 0.15,
-                (0, "X_H"): 3.6,
+                (0, "X_AUT"): 0.18,
+                (0, "X_H"): 3.7,
                 (0, "X_I"): 3.2,
-                (0, "X_PAO"): 3.0,
-                (0, "X_PHA"): 0.08,
-                (0, "X_PP"): 0.99,
+                (0, "X_PAO"): 2.8,
+                (0, "X_PHA"): 0.076,
+                (0, "X_PP"): 0.93,
                 (0, "X_S"): 0.057,
             },
             "temperature": {0: 308.15},
@@ -1063,19 +1284,19 @@ def initialize_system(m):
                 (0, "S_F"): 0.15,
                 (0, "S_I"): 0.057,
                 (0, "S_N2"): 0.04,
-                (0, "S_NH4"): 0.02,
-                (0, "S_NO3"): 0.003,
+                (0, "S_NH4"): 0.03,
+                (0, "S_NO3"): 0.004,
                 (0, "S_O2"): 0.0013,
-                (0, "S_PO4"): 0.045,
+                (0, "S_PO4"): 0.65,
                 (0, "S_K"): 0.38,
                 (0, "S_Mg"): 0.024,
                 (0, "S_IC"): 0.07,
-                (0, "X_AUT"): 0.39,
+                (0, "X_AUT"): 0.47,
                 (0, "X_H"): 24,
                 (0, "X_I"): 12,
-                (0, "X_PAO"): 9.6,
-                (0, "X_PHA"): 0.0035,
-                (0, "X_PP"): 2.5,
+                (0, "X_PAO"): 9.2,
+                (0, "X_PHA"): 0.0028,
+                (0, "X_PP"): 2.4,
                 (0, "X_S"): 4.0,
             },
             "temperature": {0: 308.15},
@@ -1173,12 +1394,31 @@ def initialize_system(m):
 
     results = seq.run(m, function)
 
+    # # Print actual tear-stream values after seq.run so we can build new,
+    # # grounded tear_guesses for has_electroNP=True (the current guesses
+    # # predate the Pi["X_PP"] fix, translator fix, and all scaling changes
+    # # made this session). These reflect what the real unit models/
+    # # constraints produce given the current guess as a starting point --
+    # # not another blind estimate.
+    # if m.fs.has_electroNP is True:
+    #     for name, port in (
+    #         ("R1.inlet", m.fs.R1.inlet),
+    #         ("R3.inlet", m.fs.R3.inlet),
+    #         ("translator_asm2d_adm1.inlet", m.fs.translator_asm2d_adm1.inlet),
+    #     ):
+    #         print(f"\n---- {name} after seq.run ----")
+    #         print(f"flow_vol: {pyo.value(port.flow_vol[0])}")
+    #         print(f"temperature: {pyo.value(port.temperature[0])}")
+    #         print(f"pressure: {pyo.value(port.pressure[0])}")
+    #         for (t, j), v in port.conc_mass_comp.items():
+    #             print(f'(0, "{j}"): {pyo.value(v)},')
+
     # Deactivate extra constraints
     for mx in m.fs.mixers:
         mx.pressure_equality_constraints[0.0, 2].deactivate()
     m.fs.MX3.pressure_equality_constraints[0.0, 2].deactivate()
     m.fs.MX3.pressure_equality_constraints[0.0, 3].deactivate()
-    print(f"DOF before initialization: {degrees_of_freedom(m)}")
+    # print(f"DOF before initialization: {degrees_of_freedom(m)}")
 
     return m, results
 
@@ -1449,9 +1689,9 @@ def setup_optimization(
 
     if has_effluent_constraints:
         add_effluent_violations(m)
-        if m.fs.has_electroNP is False:
-            m.fs.total_P_max.unfix()
-            m.fs.total_P_max.fix(0.6)
+        # if m.fs.has_electroNP is False:
+        #     m.fs.total_P_max.unfix()
+        #     m.fs.total_P_max.fix(0.6)
 
 
 def add_reactor_volume_equalities(m):
@@ -1670,6 +1910,52 @@ def _TP_conc_adm1(m, props):
         + p.Pi["X_PP"] * mw_p * c["X_PP"]
         + p.Pi["X_PAO"] * mw_p * c["X_PAO"]
     )
+
+
+def display_stream_table(m):
+    """Print the full per-species stream table (flow, concentrations,
+    temperature, pressure) across the main process streams -- same table
+    shown at the end of __main__, but callable anywhere (including inside
+    the homotopy failure handler) to see the actual near-feasible state."""
+    if m.fs.has_electroNP is False:
+        stream_table = create_stream_table_dataframe(
+            {
+                "Feed": m.fs.FeedWater.outlet,
+                "R1": m.fs.R1.outlet,
+                "R2": m.fs.R2.outlet,
+                "R3": m.fs.R3.outlet,
+                "R4": m.fs.R4.outlet,
+                "R5": m.fs.R5.outlet,
+                "R6": m.fs.R6.outlet,
+                "R7": m.fs.R7.outlet,
+                "ASM-ADM inlet": m.fs.translator_asm2d_adm1.inlet,
+                "ADM-ASM outlet": m.fs.translator_adm1_asm2d.outlet,
+                "Treated water": m.fs.Treated.inlet,
+            },
+            time_point=0,
+        )
+    else:
+        stream_table = create_stream_table_dataframe(
+            {
+                "Feed": m.fs.FeedWater.outlet,
+                # "R1": m.fs.R1.outlet,
+                # "R2": m.fs.R2.outlet,
+                # "R3": m.fs.R3.outlet,
+                # "R4": m.fs.R4.outlet,
+                # "R5": m.fs.R5.outlet,
+                # "R6": m.fs.R6.outlet,
+                # "R7": m.fs.R7.outlet,
+                "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
+                "ADM-ASM translator outlet": m.fs.translator_adm1_asm2d.outlet,
+                "electroNP inlet": m.fs.electroNP.inlet,
+                "electroNP treated": m.fs.electroNP.treated,
+                # "electroNP byproduct": m.fs.electroNP.byproduct,
+                "Treated water": m.fs.Treated.inlet,
+                # "Sludge": m.fs.Sludge.inlet,
+            },
+            time_point=0,
+        )
+    print(stream_table_dataframe_to_string(stream_table))
 
 
 def display_TP_table(m):
@@ -1939,9 +2225,9 @@ if __name__ == "__main__":
         stream_table = create_stream_table_dataframe(
             {
                 "Feed": m.fs.FeedWater.outlet,
-                "R1 inlet": m.fs.R1.inlet,
-                "R3 inlet": m.fs.R3.inlet,
-                "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
+                # "R1 inlet": m.fs.R1.inlet,
+                # "R3 inlet": m.fs.R3.inlet,
+                # "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
                 # "R1": m.fs.R1.outlet,
                 # "R2": m.fs.R2.outlet,
                 # "R3": m.fs.R3.outlet,
@@ -1950,8 +2236,9 @@ if __name__ == "__main__":
                 # "R6": m.fs.R6.outlet,
                 # "R7": m.fs.R7.outlet,
                 # "thickener outlet": m.fs.thickener.underflow,
-                # "ADM-ASM translator outlet": m.fs.translator_adm1_asm2d.outlet,
-                # "dewater outlet": m.fs.dewater.overflow,
+                "ASM-ADM inlet": m.fs.translator_asm2d_adm1.inlet,
+                "ADM-ASM outlet": m.fs.translator_adm1_asm2d.outlet,
+                "dewater outlet": m.fs.dewater.overflow,
                 "Treated water": m.fs.Treated.inlet,
                 # "Sludge": m.fs.Sludge.inlet,
             },
@@ -1974,15 +2261,14 @@ if __name__ == "__main__":
                 # "R7": m.fs.R7.outlet,
                 # # "thickener inlet": m.fs.thickener.inlet,
                 # "thickener outlet": m.fs.thickener.underflow,
-                # "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
-                # "ADM-ASM translator outlet": m.fs.translator_adm1_asm2d.outlet,
+                "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
+                "ADM-ASM translator outlet": m.fs.translator_adm1_asm2d.outlet,
                 # "dewater outlet": m.fs.dewater.overflow,
-                # "electroNP inlet": m.fs.electroNP.inlet,
-                # "electroNP treated": m.fs.electroNP.treated,
-                # # "electroNP byproduct": m.fs.electroNP.byproduct,
-                # # "electroNP byproduct": m.fs.electroNP.byproduct,
+                "electroNP inlet": m.fs.electroNP.inlet,
+                "electroNP treated": m.fs.electroNP.treated,
+                # "electroNP byproduct": m.fs.electroNP.byproduct,
                 "Treated water": m.fs.Treated.inlet,
-                "Sludge": m.fs.Sludge.inlet,
+                # "Sludge": m.fs.Sludge.inlet,
                 # "MX1": m.fs.MX1.outlet,
                 # "MX2": m.fs.MX2.outlet,
                 # "MX3": m.fs.MX3.outlet,
