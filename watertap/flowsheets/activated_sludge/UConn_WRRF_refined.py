@@ -41,6 +41,7 @@ from idaes.models.unit_models import Feed, Mixer, Separator, Product, MomentumMi
 from idaes.models.unit_models.separator import SplittingType
 from watertap.core.solvers import get_solver
 from idaes.core.util.model_statistics import degrees_of_freedom
+import warnings
 import idaes.logger as idaeslog
 import idaes.core.util.scaling as iscale
 from idaes.core.util.tables import (
@@ -78,6 +79,7 @@ import idaes.core.util.scaling as iscale
 from idaes.core.util.model_diagnostics import DegeneracyHunter
 from idaes.core.util import DiagnosticsToolbox
 from pyomo.contrib.preprocessing.plugins.strip_bounds import VariableBoundStripper
+from pyomo.opt import TerminationCondition
 
 # Set up logger
 _log = idaeslog.getLogger(__name__)
@@ -471,64 +473,102 @@ def set_operating_conditions(m, asm_model=ASMModel.asm1):
 
 
 def scale_flowsheet(m):
-    # Apply scaling based on actual variable magnitudes observed from diagnostics
-    # Condition number was 6e28 -- key issues were reaction_rate, flow_vol, alkalinity
+    # Scaling factors based on observed variable magnitudes from badly_scaled_var report.
+    # Target: scaled value = var * sf should be O(1).
     for var in m.fs.component_data_objects(pyo.Var, descend_into=True):
-        if "flow_vol" in var.name:
-            if "gas_state" in var.name or "GHG" in var.name:
-                # outgassing gas stream ~ 2e-9 m3/s
-                iscale.set_scaling_factor(var, 1e8)
+        name = var.name
+
+        if "flow_vol" in name:
+            if "gas_state" in name or "GHG" in name:
+                iscale.set_scaling_factor(var, 1e8)  # gas flow ~ 3e-11 m3/s
             else:
-                # internal flow_vol ~ 4e-5 to 2e-4 m3/s
-                iscale.set_scaling_factor(var, 1e2)
-        if "temperature" in var.name:
-            iscale.set_scaling_factor(var, 1e-1)
-        if "pressure" in var.name:
-            iscale.set_scaling_factor(var, 1e-5)
-        if "conc_mass_comp" in var.name:
-            if "gas_state" in var.name or "GHG" in var.name:
-                # gas concentrations blow up due to tiny flow
+                iscale.set_scaling_factor(var, 10)  # liquid flow ~ 0.04-0.3 m3/s
+
+        elif "temperature" in name:
+            iscale.set_scaling_factor(var, 1e-2)  # ~293 K
+
+        elif "pressure" in name:
+            iscale.set_scaling_factor(var, 1e-5)  # ~1e5 Pa
+
+        elif "conc_mass_comp" in name:
+            if "gas_state" in name or "GHG" in name:
                 iscale.set_scaling_factor(var, 1e-9)
-            # elif any(s in var.name for s in ["S_O", "S_N2", "X_H", "X_A", "X_STO",
-            #                                   "S_NH4", "S_NOX", "S_I"]):
-            #     # low-conc species ~ 1e-5 to 1e-6 kg/m3
-            #     iscale.set_scaling_factor(var, 1e5)
+            # Scale by expected SS magnitude from Julia results (kg/m3):
+            elif "S_O" in name:
+                iscale.set_scaling_factor(var, 1e2)  # SS ~0.4e-3 to 8e-3
+            elif "S_N2" in name:
+                iscale.set_scaling_factor(var, 1e2)  # SS ~0.6e-3 to 6e-3
+            elif "S_NOX" in name:
+                iscale.set_scaling_factor(var, 1e2)  # SS ~0.03e-3 to 5e-3
+            elif "S_NH4" in name:
+                iscale.set_scaling_factor(var, 1e2)  # SS ~0.4e-3 to 7e-3
+            elif "S_I" in name:
+                iscale.set_scaling_factor(var, 1e2)  # SS ~7e-3
+            elif "S_S" in name:
+                iscale.set_scaling_factor(var, 10)  # SS ~1e-3 to 66e-3
+            elif "X_H" in name:
+                iscale.set_scaling_factor(var, 10)  # SS ~0.23-0.24 kg/m3
+            elif "X_STO" in name:
+                iscale.set_scaling_factor(var, 10)  # SS ~0.41-0.46 kg/m3
+            elif "X_A" in name:
+                iscale.set_scaling_factor(var, 10)  # SS ~0.04 kg/m3
+            elif "X_I" in name:
+                iscale.set_scaling_factor(var, 1)  # SS ~3.67 kg/m3
+            elif "X_S" in name:
+                iscale.set_scaling_factor(var, 10)  # SS ~0.06-0.10 kg/m3
+            elif "X_TSS" in name:
+                iscale.set_scaling_factor(var, 1)  # SS ~2.0 kg/m3
             else:
-                # bulk species (X_S, X_I, X_TSS, S_S) ~ 1e-4 to 2e-4 kg/m3
-                iscale.set_scaling_factor(var, 1e2)
-        if "alkalinity" in var.name:
-            # alkalinity ~ 6e-6 mol/m3 internally (IDAES units)
-            iscale.set_scaling_factor(var, 1e5)
-        if "rate_reaction_extent" in var.name:
-            # extents ~ 1e-10 to 1e-7
-            iscale.set_scaling_factor(var, 1e8)
-        if "rate_reaction_generation" in var.name:
-            # generation ~ 1e-9 to 1e-6
-            iscale.set_scaling_factor(var, 1e7)
-        if "reaction_rate" in var.name:
-            # reaction_rate ~ 1e-10 (biggest scaling problem: was 1e10 Jacobian norm)
-            iscale.set_scaling_factor(var, 1e10)
-        if "hydraulic_retention_time" in var.name:
-            # HRT ~ 1e3 to 4e4 s
-            iscale.set_scaling_factor(var, 1e-4)
-        if "split_fraction" in var.name:
-            # split fractions are O(1)
-            iscale.set_scaling_factor(var, 1.0)
-        if "electricity_consumption" in var.name:
-            iscale.set_scaling_factor(var, 1e-3)
-        if "surface_area" in var.name:
-            iscale.set_scaling_factor(var, 1e-2)
-        if "mass_transfer_term" in var.name:
-            # mass transfer ~ 3e-6 to 9e-6
+                iscale.set_scaling_factor(var, 10)
+
+        elif "alkalinity" in name:
+            iscale.set_scaling_factor(var, 1e3)  # ~2.3e-3 mol/m3 shown in output
+
+        elif "rate_reaction_extent" in name:
+            # R1 (no kinetics) ~ 1e-11, R2 (aerobic) ~ 4e-3
+            # Use intermediate: 1e4 scales R2 extents to ~1, acceptable for R1
+            iscale.set_scaling_factor(var, 1e4)
+
+        elif "rate_reaction_generation" in name:
+            # R1 ~ 1e-10, R2 ~ 1e-3
+            iscale.set_scaling_factor(var, 1e3)
+
+        elif "reaction_rate" in name:
+            # R1 (no kinetics) ~ 1e-14, R2 (aerobic) ~ 1e-6
+            # 1e6 scales R2 to O(1)
             iscale.set_scaling_factor(var, 1e6)
-        if "volume" in var.name and "control_volume" not in var.name:
-            # reactor volumes ~ 200-3200 m3
-            iscale.set_scaling_factor(var, 1e-3)
+
+        elif "hydraulic_retention_time" in name:
+            iscale.set_scaling_factor(var, 1e-3)  # ~682 s
+
+        elif "split_fraction" in name:
+            iscale.set_scaling_factor(var, 1.0)
+
+        elif "electricity_consumption" in name:
+            iscale.set_scaling_factor(var, 1e-2)  # ~3-43 kW
+
+        elif "surface_area" in name:
+            iscale.set_scaling_factor(var, 1e-3)  # ~1500 m2
+
+        elif "mass_transfer_term" in name:
+            iscale.set_scaling_factor(var, 1e2)  # ~7e-3 kg/m3/s
+
+    # Reactor volumes — both the unit-level var and the control_volume internal var
+    for R, sf in [
+        (m.fs.R1, 1e-3),
+        (m.fs.R2, 1e-3),
+        (m.fs.R3, 1e-3),
+        (m.fs.R4, 1e-3),
+        (m.fs.R5, 1e-3),
+    ]:
+        iscale.set_scaling_factor(R.volume, sf)
+        iscale.set_scaling_factor(R.control_volume.volume, sf)
+
     iscale.calculate_scaling_factors(m.fs)
 
 
 def init_and_propagate(blk, arc=None, source=None, destination=None):
-    blk.initialize()
+    blk.initialize(outlvl=idaeslog.WARNING)
     if arc is not None:
         propagate_state(arc)
     elif source is not None:
@@ -538,90 +578,91 @@ def init_and_propagate(blk, arc=None, source=None, destination=None):
 def initialize_flowsheet(m):
     # Initialize flowsheet
     # interval_initializer(m)
-    m.fs.feed.initialize()
+    _outlvl = idaeslog.WARNING
+    m.fs.feed.initialize(outlvl=_outlvl)
     propagate_state(m.fs.feed_to_m1)
     propagate_state(source=m.fs.feed.outlet, destination=m.fs.M1.recycle)
 
-    m.fs.M1.initialize()
+    m.fs.M1.initialize(outlvl=_outlvl)
     propagate_state(m.fs.m1_to_m3)
     propagate_state(source=m.fs.M1.outlet, destination=m.fs.M3.recycle)
 
-    m.fs.M3.initialize()
+    m.fs.M3.initialize(outlvl=_outlvl)
     propagate_state(m.fs.m3_to_r1)
 
-    m.fs.R1.initialize()
+    m.fs.R1.initialize(outlvl=_outlvl)
     propagate_state(m.fs.r1_to_m2)
     propagate_state(source=m.fs.R1.outlet, destination=m.fs.M2.R2_outlet)
 
-    m.fs.M2.initialize()
+    m.fs.M2.initialize(outlvl=_outlvl)
     propagate_state(m.fs.m2_to_r3)
 
-    m.fs.R3.initialize()
+    m.fs.R3.initialize(outlvl=_outlvl)
     propagate_state(m.fs.r3_to_r4)
 
-    m.fs.R4.initialize()
+    m.fs.R4.initialize(outlvl=_outlvl)
     propagate_state(m.fs.r4_to_r5)
 
-    m.fs.R5.initialize()
+    m.fs.R5.initialize(outlvl=_outlvl)
     propagate_state(m.fs.r5_to_outgas)
 
-    m.fs.outgassing.initialize()
+    m.fs.outgassing.initialize(outlvl=_outlvl)
     propagate_state(m.fs.outgas_to_s1)
 
-    m.fs.S1.initialize()
+    m.fs.S1.initialize(outlvl=_outlvl)
     propagate_state(m.fs.s1_to_CL)
     propagate_state(m.fs.s1_to_m1)
     propagate_state(m.fs.s1_to_r2)
 
     # R2
-    m.fs.R2.initialize()
+    m.fs.R2.initialize(outlvl=_outlvl)
     propagate_state(m.fs.r2_to_m2)
 
     # Clarifier
-    m.fs.CL.initialize()
+    m.fs.CL.initialize(outlvl=_outlvl)
     propagate_state(m.fs.CL_to_s2)
 
-    m.fs.S2.initialize()
+    m.fs.S2.initialize(outlvl=_outlvl)
     propagate_state(m.fs.s2_to_m3)
 
     # Reinitialization
     # reinitialize M1 after s1_to_m1
-    m.fs.M1.initialize()
+    m.fs.M1.initialize(outlvl=_outlvl)
     propagate_state(m.fs.m1_to_m3)
 
     # reinitialize M3 after s2_to_m3
-    m.fs.M3.initialize()
+    m.fs.M3.initialize(outlvl=_outlvl)
     propagate_state(m.fs.m3_to_r1)
 
-    m.fs.R1.initialize()
+    m.fs.R1.initialize(outlvl=_outlvl)
     propagate_state(m.fs.r1_to_m2)
 
     # reinitialize M2 after r2_to_m2
-    m.fs.M2.initialize()
+    m.fs.M2.initialize(outlvl=_outlvl)
     propagate_state(m.fs.m2_to_r3)
 
-    m.fs.R3.initialize()
+    m.fs.R3.initialize(outlvl=_outlvl)
     propagate_state(m.fs.r3_to_r4)
 
-    m.fs.R4.initialize()
+    m.fs.R4.initialize(outlvl=_outlvl)
     propagate_state(m.fs.r4_to_r5)
 
-    m.fs.R5.initialize()
+    m.fs.R5.initialize(outlvl=_outlvl)
     propagate_state(m.fs.r5_to_outgas)
 
-    m.fs.outgassing.initialize()
+    m.fs.outgassing.initialize(outlvl=_outlvl)
     propagate_state(m.fs.outgas_to_s1)
 
-    m.fs.S1.initialize()
+    m.fs.S1.initialize(outlvl=_outlvl)
     propagate_state(m.fs.s1_to_CL)
     propagate_state(m.fs.s1_to_m1)
     propagate_state(m.fs.s1_to_r2)
 
-    m.fs.CL.initialize()
+    m.fs.CL.initialize(outlvl=_outlvl)
     propagate_state(m.fs.CL_to_s2)
     propagate_state(m.fs.CL_to_effluent)
 
-    m.fs.Treated.initialize()
+    m.fs.Treated.initialize(outlvl=_outlvl)
 
     interval_initializer(m)
 
@@ -642,7 +683,7 @@ def initialize_flowsheet(m):
     #     print(o[0].name)
 
     def function(unit):
-        unit.initialize(outlvl=idaeslog.CRITICAL)
+        unit.initialize(outlvl=idaeslog.WARNING)
 
     seq.run(m, function)
 
@@ -761,7 +802,7 @@ def set_validation_inlet_conditions(m):
     # port.X_H   ~ comp[6]
     # port.X_A   ~ comp[7]
     # port.X_TS  ~ comp[8]
-    comp = [1e-9, 416.5, 21.0, 1e-9, 0.25, 2.3, 1e-9, 1e-9, 166.0]
+    comp = [1e-6, 416.5, 21.0, 1e-6, 0.25, 2.3, 1e-6, 1e-6, 166.0]
     frac_SI = 0.034055628231391986
     frac_SS = 0.33545402826973353
     frac_XI = 0.18164007388730358
@@ -887,37 +928,39 @@ def initialize_from_julia_ss(m):
         },
     }
 
-    # From Julia: feed = 3785.42 m3/day = 0.043813 m3/s
-    # S1 splits R5 outlet into: effluent (s1_out_factor_2), M1_inlet, R2_inlet
-    # s1_out_factor_2 = 0.40685806, s1_R2 = 0.36309, s1_M1 = rest
-    feed_flow = pyo.value(m.fs.feed.flow_vol[0])  # m3/s
+    # Flows derived directly from Julia SS mixer data (ss_simulation_results.txt)
+    # Mixer 2 In2 (=R2 outlet) = 6486.37 m3/day; Mixer 3 Out1 (=R1 inlet) = 11378.05 m3/day
+    feed_flow = pyo.value(m.fs.feed.flow_vol[0])  # 0.043813 m3/s
     s1_eff_frac = 0.40685806084408344
     s1_r2_frac = 0.36308877581252170
     s1_m1_frac = 1.0 - s1_eff_frac - s1_r2_frac
-    s1_total = feed_flow / s1_eff_frac  # R5 outlet flow
-    m1_rec_flow = s1_m1_frac * s1_total
-    r2_flow = s1_r2_frac * s1_total
-    eff_flow = s1_eff_frac * s1_total  # effluent to CL
 
-    # Clarifier: underflow split fractions
+    # Julia SS flows (m3/s)
+    r2_flow = 6486.369639737528 / 86400.0  # R2 = S1.R2_inlet
+    m3_in_flow = 11378.04829833368 / 86400.0  # M3 outlet = R1 inlet
+    s1_total = r2_flow + m3_in_flow  # R3=R4=R5=outgassing=S1 mixed flow
+    m2_out_flow = s1_total  # M2 outlet = R3 inlet (same as R5)
+
+    # S1 outlet flows
+    eff_flow = s1_eff_frac * s1_total  # S1.effluent → CL
+    m1_rec_flow = s1_m1_frac * s1_total  # S1.M1_inlet → M1 recycle
+
+    # Clarifier and S2
     CL_R1 = 0.47918644727352017
     CL_W1 = 0.011536971119954921
     CL_underflow_frac = CL_R1 + CL_W1 * (1.0 - CL_R1)
     s2_rec_frac = CL_R1 / CL_underflow_frac
-    cl_under_flow = eff_flow * CL_underflow_frac
-    m3_rec_flow = cl_under_flow * s2_rec_frac
-
-    # M3 inlet = feed + S2 recycle; R1 inlet = M3 outlet ≈ same
-    m3_in_flow = feed_flow + m3_rec_flow
-    # M2 outlet = R1 outlet + R2 outlet
-    m2_out_flow = m3_in_flow + r2_flow
+    cl_under_flow = m3_in_flow - feed_flow - m1_rec_flow  # = S2.mixed flow
+    m3_rec_flow = cl_under_flow * s2_rec_frac  # S2.recycle → M3
+    cl_eff_flow = eff_flow - cl_under_flow  # CL.effluent → Treated
+    m1_out_flow = feed_flow + m1_rec_flow  # M1 outlet = M3.feed
 
     # Flow map: unit -> (flow_vol, conc_key)
     # For M1/M3/M2 mixers, use R5 concentrations as approximation for mixed state
     r5 = julia["R5"]
 
     def _set_state(state, flow, concs, alk=None):
-        """Set flow_vol, conc_mass_comp, and alkalinity on a state block."""
+        """Set flow_vol, conc_mass_comp, and alkalinity from Julia SS values."""
         if not state.flow_vol.is_fixed():
             state.flow_vol.set_value(flow)
         for k, v in concs.items():
@@ -1014,20 +1057,23 @@ def initialize_from_julia_ss(m):
 
     # --- Mixer states ---
     # M1: feed + S1_M1_inlet -> R1
-    _set_state(m.fs.M1.feed_state[0], feed_flow, julia["R5"], julia["R5"]["alkalinity"])
+    # M1.feed_state = fresh wastewater; keep from initialize_flowsheet (do NOT override)
+    # M1.recycle_state = S1.M1_inlet = R5 concentrations
     _set_state(
         m.fs.M1.recycle_state[0], m1_rec_flow, julia["R5"], julia["R5"]["alkalinity"]
     )
+    # M1.mixed_state = M1 outlet = M3 feed inlet; use R5 as approx (mix of feed + R5 recycle)
     _set_state(
-        m.fs.M1.mixed_state[0], m3_in_flow, julia["R1"], julia["R1"]["alkalinity"]
+        m.fs.M1.mixed_state[0], m1_out_flow, julia["R5"], julia["R5"]["alkalinity"]
     )
 
     # M3: M1_out + S2_recycle -> R1
+    # M3.feed_state = M1 outlet (approx R5); M3.recycle_state = S2 recycle (R5)
     _set_state(
         m.fs.M3.feed_state[0],
-        m3_in_flow - m3_rec_flow,
-        julia["R1"],
-        julia["R1"]["alkalinity"],
+        m1_out_flow,
+        julia["R5"],
+        julia["R5"]["alkalinity"],
     )
     _set_state(
         m.fs.M3.recycle_state[0], m3_rec_flow, julia["R5"], julia["R5"]["alkalinity"]
@@ -1047,16 +1093,19 @@ def initialize_from_julia_ss(m):
         m.fs.M2.mixed_state[0], m2_out_flow, julia["R3"], julia["R3"]["alkalinity"]
     )
 
-    # --- Splitter S1 ---
-    for state in [
-        m.fs.S1.mixed_state[0],
-        m.fs.S1.effluent_state[0],
-        m.fs.S1.M1_inlet_state[0],
-        m.fs.S1.R2_inlet_state[0],
-    ]:
-        _set_state(state, s1_total, julia["R5"], julia["R5"]["alkalinity"])
+    # --- Splitter S1 (all outlets carry R5 concentrations) ---
+    _set_state(m.fs.S1.mixed_state[0], s1_total, julia["R5"], julia["R5"]["alkalinity"])
+    _set_state(
+        m.fs.S1.effluent_state[0], eff_flow, julia["R5"], julia["R5"]["alkalinity"]
+    )
+    _set_state(
+        m.fs.S1.M1_inlet_state[0], m1_rec_flow, julia["R5"], julia["R5"]["alkalinity"]
+    )
+    _set_state(
+        m.fs.S1.R2_inlet_state[0], r2_flow, julia["R5"], julia["R5"]["alkalinity"]
+    )
 
-    # --- Outgassing ---
+    # --- Outgassing (R5 outlet → S1) ---
     _set_state(
         m.fs.outgassing.mixed_state[0], s1_total, julia["R5"], julia["R5"]["alkalinity"]
     )
@@ -1070,10 +1119,7 @@ def initialize_from_julia_ss(m):
     # --- Clarifier and S2 ---
     _set_state(m.fs.CL.mixed_state[0], eff_flow, julia["R5"], julia["R5"]["alkalinity"])
     _set_state(
-        m.fs.CL.effluent_state[0],
-        eff_flow * (1 - CL_underflow_frac),
-        julia["R5"],
-        julia["R5"]["alkalinity"],
+        m.fs.CL.effluent_state[0], cl_eff_flow, julia["R5"], julia["R5"]["alkalinity"]
     )
     _set_state(
         m.fs.CL.underflow_state[0],
@@ -1093,6 +1139,17 @@ def initialize_from_julia_ss(m):
         julia["R5"],
         julia["R5"]["alkalinity"],
     )
+
+    # --- Treated effluent ---
+    _set_state(
+        m.fs.Treated.properties[0], cl_eff_flow, julia["R5"], julia["R5"]["alkalinity"]
+    )
+
+    # Explicitly seed S2 waste split fraction — degeneracy from uniform split causes
+    # IPOPT to drive waste_frac → 0; seed it correctly so sum_split_frac = 0
+    s2_waste_frac = 1.0 - CL_R1 / (CL_R1 + CL_W1 * (1.0 - CL_R1))
+    if not m.fs.S2.split_fraction[0, "waste"].is_fixed():
+        m.fs.S2.split_fraction[0, "waste"].set_value(s2_waste_frac)
 
     print(
         f"Initialized all state blocks from Julia SS (X_H R5 = {julia['R5']['X_H']*1e3:.1f} mg/L)"
@@ -1398,11 +1455,16 @@ def print_reactor_comparison(m):
 
 if __name__ == "__main__":
 
+    # Suppress warnings before anything is built
+    warnings.filterwarnings("ignore", message=".*scaling_factor.*")
+    warnings.filterwarnings("ignore", message=".*Implicitly replacing.*")
+    warnings.filterwarnings("ignore", message=".*Missing scaling factor.*")
+    # Suppress IDAES init/warning logging — only show ERRORs during setup
+    idaeslog.getLogger("idaes").setLevel(idaeslog.ERROR)
+
     m = build_flowsheet(asm_model=ASMModel.asm3)
     set_operating_conditions(m, asm_model=ASMModel.asm3)
 
-    # Surrogate aerator model (set use_surrogate=True to activate)
-    # Reference conditions: 54 Hz (90% capacity), +1 inch submergence (WesTech recommendation)
     apply_aerator_surrogate(
         m,
         use_surrogate=False,
@@ -1412,50 +1474,74 @@ if __name__ == "__main__":
         R4_capacity=90.0,
     )
 
-    # Set validation inlet and scale
     set_validation_inlet_conditions(m)
     scale_flowsheet(m)
 
-    # Initialize directly from the Julia SS solution, then restore bounds.
-    # This avoids the degeneracy problem: instead of propagating near-zero
-    # feed concentrations and hoping IPOPT finds the biological SS, we start
-    # at the known solution so IPOPT only needs to close small residuals.
+    initialize_flowsheet(m)
     initialize_from_julia_ss(m)
-    restore_concentration_bounds(m)
 
-    dt = DiagnosticsToolbox(m)
+    # --- Scaling report (enable to debug) ---
+    # badly_scaled_var_list = iscale.badly_scaled_var_generator(m, large=1e1, small=1e-1)
+    # for x in badly_scaled_var_list:
+    #     print(f"{x[0].name}\t{x[0].value}\tsf: {iscale.get_scaling_factor(x[0])}")
 
-    res = solve_flowsheet(m)
+    # --- Structural/eval-error checks (verified; comment out for normal runs) ---
+    # dt = DiagnosticsToolbox(m)
+    # dt.report_structural_issues()
+    # dt.display_potential_evaluation_errors()
 
-    from pyomo.opt import TerminationCondition
-
-    if res.solver.termination_condition != TerminationCondition.optimal:
-        print("\n--- Post-solve diagnostics ---")
-        dt.report_numerical_issues()
-        dt.display_constraints_with_large_residuals()
-        dt.display_variables_at_or_outside_bounds()
-
-    # --- Stream table ---
-    stream_table = create_stream_table_dataframe(
+    # --- Post-init stream table (before solve) ---
+    print("\n--- Stream table post-init (starting point) ---")
+    _st = create_stream_table_dataframe(
         {
             "Feed": m.fs.feed.outlet,
-            # "M1": m.fs.M1.outlet,
             "R1": m.fs.R1.outlet,
-            # "M2": m.fs.M2.outlet,
             "R2": m.fs.R2.outlet,
             "R3": m.fs.R3.outlet,
             "R4": m.fs.R4.outlet,
             "R5": m.fs.R5.outlet,
-            # "S1 to M1": m.fs.S1.M1_inlet,
-            # "S1 to R2": m.fs.S1.R2_inlet,
             "Effluent": m.fs.Treated.inlet,
         },
         time_point=0,
     )
-    print(stream_table_dataframe_to_string(stream_table))
+    print(stream_table_dataframe_to_string(_st))
 
-    # --- Effluent verification ---
-    verify_effluent(m)
+    # Restore IDAES logging for the solve so IPOPT output shows
+    idaeslog.getLogger("idaes").setLevel(idaeslog.WARNING)
+    # Keep Pyomo NL export warnings suppressed
+    import logging
 
-    # --- Reactor comparison table vs Julia ---
-    print_reactor_comparison(m)
+    logging.getLogger("pyomo.core").setLevel(logging.ERROR)
+
+    dt = DiagnosticsToolbox(m)
+    res = solve_flowsheet(m)
+
+    solved = res.solver.termination_condition == TerminationCondition.optimal
+
+    if not solved:
+        print("\n--- Post-solve diagnostics ---")
+        dt.report_numerical_issues()
+        dt.display_constraints_with_large_residuals()
+        dt.display_variables_at_or_outside_bounds()
+        # dt.display_near_parallel_variables()
+        try:
+            dt.compute_infeasibility_explanation()
+        except Exception as e:
+            print(f"Infeasibility explanation failed: {e}")
+    else:
+        # --- Stream table ---
+        stream_table = create_stream_table_dataframe(
+            {
+                "Feed": m.fs.feed.outlet,
+                "R1": m.fs.R1.outlet,
+                "R2": m.fs.R2.outlet,
+                "R3": m.fs.R3.outlet,
+                "R4": m.fs.R4.outlet,
+                "R5": m.fs.R5.outlet,
+                "Effluent": m.fs.Treated.inlet,
+            },
+            time_point=0,
+        )
+        print(stream_table_dataframe_to_string(stream_table))
+        verify_effluent(m)
+        print_reactor_comparison(m)
