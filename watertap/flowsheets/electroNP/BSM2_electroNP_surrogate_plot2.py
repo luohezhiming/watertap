@@ -244,7 +244,7 @@ def run_optimization_vary_electricity_cost(
     #     m.fs.electroNP.cathodic_potential.fix(-0.96)
     #     m.fs.electroNP.area_volume_ratio.fix(0.1)
 
-    results = solve(m)
+    # results = solve(m)
 
     if has_optimization:
         setup_optimization(
@@ -389,7 +389,7 @@ def plot_electricity_cost_LCOW(num):
             m2, results = run_optimization_vary_electricity_cost(
                 electricity_cost=electricity_cost_list[i],
                 has_electroNP=False,
-                has_optimization=True,
+                has_optimization=False,
                 objective=objective_fun.LCOW,
             )
             # m2, results = run_with_electricity_cost(

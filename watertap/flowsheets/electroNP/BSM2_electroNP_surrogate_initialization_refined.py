@@ -241,44 +241,14 @@ def main(
     # dt.display_variables_with_extreme_jacobians()
     # dt.display_constraints_with_extreme_jacobians()
 
-    if m.fs.has_electroNP is True:
-        # m.fs.electroNP.eq_P_removal_surrogate.deactivate()
-        # m.fs.electroNP.P_removal.fix(0.95)
-        m.fs.electroNP.cathodic_potential.fix(-1.1 * pyo.units.V)
-        m.fs.electroNP.area_volume_ratio.fix(0.1)
-        m.fs.electroNP.settling_time.fix(30 * pyo.units.min)
-        m.fs.electroNP.magnesium_chloride_dosage.fix(0.388)
-        # homotopy_steps = (
-        #     # 1e-6,
-        #     0.05,
-        #     0.1,
-        #     # 0.15,
-        #     0.2,
-        #     # 0.25,
-        #     0.3,
-        #     # 0.35,
-        #     # 0.36,
-        #     # 0.37,
-        #     # 0.38,
-        #     # 0.39,
-        #     0.40,
-        #     # 0.41,
-        #     # 0.42,
-        #     # 0.43,
-        #     # 0.44,
-        #     # 0.45,
-        #     # 0.46,
-        #     # 0.47,
-        #     # 0.48,
-        #     # 0.49,
-        #     0.50,
-        #     # 0.51,
-        #     # 0.52,
-        #     0.6,
-        #     0.9,
-        #     0.95,
-        # )
-        m.fs.electroNP.frac_mass_H2O_treated[0].fix(0.9)
+    # if m.fs.has_electroNP is True:
+    #     # m.fs.electroNP.eq_P_removal_surrogate.deactivate()
+    #     # m.fs.electroNP.P_removal.fix(0.95)
+    #     m.fs.electroNP.cathodic_potential.fix(-1.1 * pyo.units.V)
+    #     m.fs.electroNP.area_volume_ratio.fix(0.1)
+    #     m.fs.electroNP.settling_time.fix(30 * pyo.units.min)
+    #     m.fs.electroNP.magnesium_chloride_dosage.fix(0.388)
+    #     m.fs.electroNP.frac_mass_H2O_treated[0].fix(0.9)
     #     for p_removal_step in homotopy_steps:
     #         m.fs.electroNP.P_removal.fix(p_removal_step)
     #         print(
@@ -363,6 +333,14 @@ def main(
     #         dt_fail.display_variables_at_or_outside_bounds()
     #         raise
 
+    if has_optimization:
+        setup_optimization(
+            m,
+            objective=objective,
+            has_effluent_constraints=has_effluent_constraints,
+            reactor_volume_equalities=False,
+        )
+
     results = solve(m)
     pyo.assert_optimal_termination(results)
 
@@ -378,18 +356,12 @@ def main(
     # dt.display_variables_with_extreme_jacobians()
     # dt.display_constraints_with_extreme_jacobians()
 
-    if has_optimization:
-        setup_optimization(
-            m,
-            objective=objective,
-            has_effluent_constraints=has_effluent_constraints,
-            reactor_volume_equalities=False,
-        )
+    # display_TP_table(m)
 
     display_design(m)
 
     display_performance_metrics(m)
-    display_TP_table(m)
+
     display_costing(m)
 
     return m, results
@@ -686,7 +658,7 @@ def set_operating_conditions(m):
     m.fs.FeedWater.conc_mass_comp[0, "S_NH4"].fix(26.6 * pyo.units.g / pyo.units.m**3)
     m.fs.FeedWater.conc_mass_comp[0, "S_NO3"].fix(1e-6 * pyo.units.g / pyo.units.m**3)
     # m.fs.FeedWater.conc_mass_comp[0, "S_PO4"].fix(1e-6 * pyo.units.g / pyo.units.m**3)
-    m.fs.FeedWater.conc_mass_comp[0, "S_PO4"].fix(20 * pyo.units.g / pyo.units.m**3)
+    m.fs.FeedWater.conc_mass_comp[0, "S_PO4"].fix(15 * pyo.units.g / pyo.units.m**3)
     m.fs.FeedWater.conc_mass_comp[0, "S_I"].fix(57.45 * pyo.units.g / pyo.units.m**3)
     m.fs.FeedWater.conc_mass_comp[0, "S_N2"].fix(25.19 * pyo.units.g / pyo.units.m**3)
     m.fs.FeedWater.conc_mass_comp[0, "X_I"].fix(84 * pyo.units.g / pyo.units.m**3)
@@ -1668,15 +1640,15 @@ def setup_optimization(
 
     m.fs.R5.outlet.conc_mass_comp[:, "S_O2"].unfix()
     m.fs.R5.outlet.conc_mass_comp[:, "S_O2"].setlb(0)
-    m.fs.R5.outlet.conc_mass_comp[:, "S_O2"].setub(1e-2)
+    m.fs.R5.outlet.conc_mass_comp[:, "S_O2"].setub(8e-3)
 
     m.fs.R6.outlet.conc_mass_comp[:, "S_O2"].unfix()
     m.fs.R6.outlet.conc_mass_comp[:, "S_O2"].setlb(0)
-    m.fs.R6.outlet.conc_mass_comp[:, "S_O2"].setub(1e-2)
+    m.fs.R6.outlet.conc_mass_comp[:, "S_O2"].setub(8e-3)
 
     m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].unfix()
     m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].setlb(0)
-    m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].setub(1e-2)
+    m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].setub(8e-3)
 
     # m.fs.R5.injection[:, :, :].unfix()
     # m.fs.R6.injection[:, :, :].unfix()
@@ -1748,7 +1720,7 @@ def add_effluent_violations(m):
     def eq_BOD5_max(self, t):
         return m.fs.Treated.properties[t].BOD5["effluent"] <= m.fs.BOD5_max
 
-    # Max value taken from Flores-Alsina Excel 0.002 - modified to 0.006
+    # Max value taken from Flores-Alsina Excel 0.002 - modified to 0.005
     m.fs.total_P_max = pyo.Var(initialize=0.005, units=pyo.units.kg / pyo.units.m**3)
     m.fs.total_P_max.fix()
 
@@ -2061,6 +2033,7 @@ def display_performance_metrics(m):
         "Total phosphorus (TP) concentration: %.2f mg/L"
         % (pyo.value(_TP_conc(m, m.fs.FeedWater.properties[0])) * 1e3)
     )
+    print("\n--- Effluent Metrics ---")
     Q_out = pyo.units.convert(
         m.fs.Treated.flow_vol[0], to_units=pyo.units.gallon / pyo.units.day
     )
@@ -2106,48 +2079,53 @@ def display_performance_metrics(m):
     if m.fs.has_electroNP is True:
         print("Phosphorus recovery: %.3f" % pyo.value(m.fs.phosphorus_recovery))
         print(
-            "Recovered phosphorus mass: %.3f kg/s"
+            "Recovered phosphorus mass: %.3f kg/hr"
             % pyo.value(
-                m.fs.electroNP.inlet.flow_vol[0]
-                * m.fs.electroNP.inlet.conc_mass_comp[0, "S_PO4"]
-                * m.fs.electroNP.P_removal
+                pyo.units.convert(
+                    (
+                        m.fs.electroNP.inlet.flow_vol[0]
+                        * m.fs.electroNP.inlet.conc_mass_comp[0, "S_PO4"]
+                        * m.fs.electroNP.P_removal
+                    ),
+                    to_units=pyo.units.kg / pyo.units.hr,
+                )
             )
         )
 
     print("\n--- Energy Metrics ---")
     print(
-        "Specific energy consumption with respect to influent flowrate: %.3f kWh/m3"
+        "SEC with respect to influent flowrate: %.3f kWh/m3"
         % pyo.value(m.fs.costing.specific_energy_consumption)
     )
     if m.fs.has_electroNP is True:
         print(
-            "Specific energy consumption with respect to phosphorus removal: %.3f kWh/kg"
+            "SEC with respect to phosphorus removal: %.3f kWh/kg"
             % pyo.value(m.fs.costing.specific_energy_consumption_P_removal)
         )
         print(
             "ElectroNP energy consumption: %.3g kWh/m3"
             % pyo.value(m.fs.costing.electroNP_energy_consumption)
         )
-        print(
-            "ElectroNP energy consumption side stream: %.3g kWh/m3"
-            % pyo.value(m.fs.costing.electroNP_energy_consumption_side_stream)
-        )
-        print(
-            "Electrode energy consumption: %.3g kWh/m3"
-            % pyo.value(m.fs.costing.electrode_energy_consumption)
-        )
-        print(
-            "Dryer energy consumption: %.3g kWh/m3"
-            % pyo.value(m.fs.costing.dryer_energy_consumption)
-        )
-        print(
-            "Centrifuge energy consumption: %.3g kWh/m3"
-            % pyo.value(m.fs.costing.centrifuge_energy_consumption)
-        )
-        print(
-            "ElectroNP pumps energy consumption: %.3g kWh/m3"
-            % pyo.value(m.fs.costing.electroNP_pump_energy_consumption)
-        )
+        # print(
+        #     "ElectroNP energy consumption side stream: %.3g kWh/m3"
+        #     % pyo.value(m.fs.costing.electroNP_energy_consumption_side_stream)
+        # )
+        # print(
+        #     "Electrode energy consumption: %.3g kWh/m3"
+        #     % pyo.value(m.fs.costing.electrode_energy_consumption)
+        # )
+        # print(
+        #     "Dryer energy consumption: %.3g kWh/m3"
+        #     % pyo.value(m.fs.costing.dryer_energy_consumption)
+        # )
+        # print(
+        #     "Centrifuge energy consumption: %.3g kWh/m3"
+        #     % pyo.value(m.fs.costing.centrifuge_energy_consumption)
+        # )
+        # print(
+        #     "ElectroNP pumps energy consumption: %.3g kWh/m3"
+        #     % pyo.value(m.fs.costing.electroNP_pump_energy_consumption)
+        # )
     print("Aeration energy: %.3f kWh/m3" % pyo.value(m.fs.costing.aeration_energy))
 
     # print(
@@ -2214,13 +2192,14 @@ def display_design(m):
 
 
 if __name__ == "__main__":
-    # # This method builds and runs a steady state activated sludge flowsheet.
+    # This method builds and runs a steady state activated sludge flowsheet.
     m, results = main(
         has_electroNP=False,
         has_optimization=False,
         objective=objective_fun.LCOW,
         has_effluent_constraints=True,
     )
+
     if m.fs.has_electroNP is False:
         stream_table = create_stream_table_dataframe(
             {
@@ -2249,9 +2228,9 @@ if __name__ == "__main__":
             {
                 "Feed": m.fs.FeedWater.outlet,
                 # "CL inlet": m.fs.CL.inlet,
-                "R1 inlet": m.fs.R1.inlet,
-                "R3 inlet": m.fs.R3.inlet,
-                "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
+                # "R1 inlet": m.fs.R1.inlet,
+                # "R3 inlet": m.fs.R3.inlet,
+                # "ASM-ADM translator inlet": m.fs.translator_asm2d_adm1.inlet,
                 # "R1": m.fs.R1.outlet,
                 # "R2": m.fs.R2.outlet,
                 # "R3": m.fs.R3.outlet,
@@ -2266,7 +2245,7 @@ if __name__ == "__main__":
                 # "dewater outlet": m.fs.dewater.overflow,
                 "electroNP inlet": m.fs.electroNP.inlet,
                 "electroNP treated": m.fs.electroNP.treated,
-                # "electroNP byproduct": m.fs.electroNP.byproduct,
+                "electroNP byproduct": m.fs.electroNP.byproduct,
                 "Treated water": m.fs.Treated.inlet,
                 # "Sludge": m.fs.Sludge.inlet,
                 # "MX1": m.fs.MX1.outlet,
@@ -2280,9 +2259,9 @@ if __name__ == "__main__":
 
     # m_min, obj_set, m_set, cp_opt, r_AV_opt = multi_run(
     #     has_electroNP=True,
-    #     objective=objective_fun.LCOP,
+    #     objective=objective_fun.LCOW,
     #     has_effluent_constraints=True,
-    #     num=20,
+    #     num=10,
     # )
     # stream_table = create_stream_table_dataframe(
     #     {

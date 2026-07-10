@@ -1,3 +1,4 @@
+import os
 import pyomo.environ as pyo
 import numpy as np
 from watertap.core.util.initialization import (
@@ -34,29 +35,122 @@ import matplotlib.pyplot as plt
 from brokenaxes import brokenaxes
 from scipy import interpolate
 
+# Folder where sensitivity-analysis figures get saved (created next to this script).
+FIGURE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "figures")
+os.makedirs(FIGURE_DIR, exist_ok=True)
+
+# Folder where raw sweep results get cached as CSV, so re-plotting (changing
+# axis limits, labels, colors, etc.) doesn't require re-solving the flowsheet.
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sweep_data")
+os.makedirs(DATA_DIR, exist_ok=True)
+
+
+def save_sweep_csv(csv_path, columns):
+    """Write a dict of {column_name: 1D array} to csv_path as a simple CSV
+    with a header row. All arrays must be the same length."""
+    names = list(columns.keys())
+    data = np.column_stack([np.asarray(columns[name], dtype=float) for name in names])
+    header = ",".join(names)
+    np.savetxt(csv_path, data, delimiter=",", header=header, comments="")
+    print(f"Saved sweep data to {csv_path}")
+
+
+def load_sweep_csv(csv_path):
+    """Read a CSV written by save_sweep_csv back into a dict of arrays,
+    keyed by column name."""
+    data = np.genfromtxt(csv_path, delimiter=",", names=True)
+    print(f"Loaded cached sweep data from {csv_path}")
+    return {name: data[name] for name in data.dtype.names}
+
+
+def save_matrix_csv(csv_path, matrix):
+    """Write a single 2D array to csv_path as a plain (headerless) CSV grid,
+    for caching contourf-style sweeps (rows/cols = the two swept axes)."""
+    np.savetxt(csv_path, np.asarray(matrix, dtype=float), delimiter=",")
+    print(f"Saved matrix data to {csv_path}")
+
+
+def load_matrix_csv(csv_path):
+    """Read a CSV written by save_matrix_csv back into a 2D array."""
+    matrix = np.genfromtxt(csv_path, delimiter=",")
+    print(f"Loaded cached matrix data from {csv_path}")
+    return matrix
+
+
+def position_extremum(
+    ax, data, extremum, target_frac, coverage=0.5, floor=None, ceiling=None
+):
+    """Rescale a twin-axis's y-limits so the *annotated* min/max point lands
+    at a chosen fractional height (`target_frac`, 0=bottom of the plot,
+    1=top), while the curve still fills most of the axis like a normal plot.
+
+    The curves themselves are allowed to cross/overlap (that's fine and
+    expected with multiple twinx() axes) -- what actually causes label
+    collisions is when two axes' annotated extrema land at the *same*
+    height. So instead of confining each curve to its own lane, we just
+    stagger where each axis's annotated point sits vertically by giving each
+    one a different `target_frac`. Two "min" curves being annotated should
+    get different low target_fracs (e.g. 0.08 and 0.28); two "max" curves
+    being annotated should get different high target_fracs (e.g. 0.65 and
+    0.9); pick values that are spread apart by at least ~0.15-0.2 so labels
+    don't sit on top of each other.
+
+    `coverage` is roughly the fraction of the final axis height the actual
+    data span (max-min) occupies -- 0.5 means the data fills about half the
+    visible height, leaving the other half as asymmetric padding used to
+    push the annotated point to `target_frac`. Keep `target_frac <=
+    1 - coverage + 0.05`-ish for "min" extrema and `target_frac >=
+    coverage - 0.05`-ish for "max" extrema so the *other* end of the curve
+    doesn't get clipped off the top/bottom of the axis.
+
+    `floor`/`ceiling` clamp the final y-limits to a physically meaningful
+    range (e.g. floor=0 for a concentration or energy consumption that can
+    never be negative). If the computed limit would cross that bound, it's
+    clamped back to it -- the annotated point may end up a bit closer to
+    that edge than `target_frac` asked for, but it won't show impossible
+    values.
+    """
+    data = np.asarray(data, dtype=float)
+    dmin, dmax = np.nanmin(data), np.nanmax(data)
+    span = dmax - dmin
+    if span == 0:
+        span = abs(dmax) if dmax != 0 else 1.0
+
+    full_range = span / coverage
+    if extremum == "min":
+        ymin = dmin - target_frac * full_range
+    else:
+        ymin = dmax - target_frac * full_range
+    ymax = ymin + full_range
+
+    if floor is not None and ymin < floor:
+        ymin = floor
+    if ceiling is not None and ymax > ceiling:
+        ymax = ceiling
+
+    ax.set_ylim(ymin, ymax)
+
 
 def main(CP=-1.1 * pyo.units.V, r_AV=0.1):
     m = build_flowsheet(has_electroNP=True)
     set_operating_conditions(m)
-    # if pyo.value(CP) <= -1.1:
+    m.fs.electroNP.cathodic_potential.unfix()
+    m.fs.electroNP.area_volume_ratio.unfix()
+    m.fs.electroNP.cathodic_potential.fix(CP)
+    m.fs.electroNP.area_volume_ratio.fix(r_AV)
+    # # if pyo.value(CP) <= -1.1:
+    # #     m.fs.electroNP.cathodic_potential.fix(pyo.value(CP))
+    # if pyo.value(CP) >= -0.9:
     #     m.fs.electroNP.cathodic_potential.fix(pyo.value(CP))
-    if pyo.value(CP) >= -0.9:
-        m.fs.electroNP.cathodic_potential.fix(pyo.value(CP))
-    if pyo.value(r_AV) >= 0.11:
-        m.fs.electroNP.area_volume_ratio.fix(pyo.value(r_AV))
-    # if pyo.value(CP) >= -0.8 and pyo.value(r_AV) <= 0.09:
-    #     m.fs.electroNP.cathodic_potential.fix(pyo.value(CP))
+    # if pyo.value(r_AV) >= 0.11:
     #     m.fs.electroNP.area_volume_ratio.fix(pyo.value(r_AV))
+    # # if pyo.value(CP) >= -0.8 and pyo.value(r_AV) <= 0.09:
+    # #     m.fs.electroNP.cathodic_potential.fix(pyo.value(CP))
+    # #     m.fs.electroNP.area_volume_ratio.fix(pyo.value(r_AV))
     set_scaling(m)
     initialize_system(m)
 
-    m.fs.electroNP.cathodic_potential.unfix()
-    m.fs.electroNP.area_volume_ratio.unfix()
-
-    m.fs.electroNP.cathodic_potential.fix(CP)
-    m.fs.electroNP.area_volume_ratio.fix(r_AV)
-
-    results = solve(m)
+    # results = solve(m)
 
     add_costing(m)
     m.fs.costing.electroNP_energy_consumption
@@ -296,18 +390,19 @@ def run_optimization_vary_max(
 ):
     m = build_flowsheet(has_electroNP=has_electroNP)
     set_operating_conditions(m)
+
+    # if has_electroNP is True:
+    #     m.fs.electroNP.cathodic_potential.unfix()
+    #     m.fs.electroNP.area_volume_ratio.unfix()
+    #     m.fs.electroNP.cathodic_potential.fix(-0.96)
+    #     m.fs.electroNP.area_volume_ratio.fix(0.1)
+
     set_scaling(m)
 
     m, results = initialize_system(m)
     add_costing(m)
     m.fs.costing.initialize()
     interval_initializer(m.fs.costing)
-
-    if has_electroNP is True:
-        m.fs.electroNP.cathodic_potential.unfix()
-        m.fs.electroNP.area_volume_ratio.unfix()
-        m.fs.electroNP.cathodic_potential.fix(-0.96)
-        m.fs.electroNP.area_volume_ratio.fix(0.1)
 
     # results = solve(m)
 
@@ -322,16 +417,16 @@ def run_optimization_vary_max(
                 TP_max=TP_max,
                 TSS_max=TSS_max,
             )
-        else:
-            setup_optimization_no_electroNP_vary_max(
-                m,
-                objective=objective_fun.LCOW,
-                COD_max=COD_max,
-                BOD5_max=BOD5_max,
-                TKN_max=TKN_max,
-                TP_max=TP_max,
-                TSS_max=TSS_max,
-            )
+        # else:
+        #     setup_optimization_no_electroNP_vary_max(
+        #         m,
+        #         objective=objective_fun.LCOW,
+        #         COD_max=COD_max,
+        #         BOD5_max=BOD5_max,
+        #         TKN_max=TKN_max,
+        #         TP_max=TP_max,
+        #         TSS_max=TSS_max,
+        #     )
 
     results = solve(m)
 
@@ -369,15 +464,15 @@ def setup_optimization_vary_max(
 
     m.fs.R5.outlet.conc_mass_comp[:, "S_O2"].unfix()
     m.fs.R5.outlet.conc_mass_comp[:, "S_O2"].setlb(0)
-    m.fs.R5.outlet.conc_mass_comp[:, "S_O2"].setub(10e-3)
+    m.fs.R5.outlet.conc_mass_comp[:, "S_O2"].setub(8e-3)
 
     m.fs.R6.outlet.conc_mass_comp[:, "S_O2"].unfix()
     m.fs.R6.outlet.conc_mass_comp[:, "S_O2"].setlb(0)
-    m.fs.R6.outlet.conc_mass_comp[:, "S_O2"].setub(10e-3)
+    m.fs.R6.outlet.conc_mass_comp[:, "S_O2"].setub(8e-3)
 
     m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].unfix()
     m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].setlb(0)
-    m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].setub(10e-3)
+    m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].setub(8e-3)
 
     # # Unfix fraction of outflow from reactor 7 that goes to recycle
     # m.fs.SP1.split_fraction[:, "underflow"].unfix()
@@ -612,46 +707,75 @@ def run_optimization_vary_electricity_cost(
 #     # m.fs.eq_total_P_max[0].deactivate()
 
 
-def plot_CP(num):
+def plot_CP(num, recompute=False):
     # 1D plot
-    CP_list = np.linspace(-1.3, -0.8, num)
+    # Cache the (expensive) flowsheet sweep to CSV so re-plotting -- e.g.
+    # changing axis limits, labels, or annotation placement -- doesn't
+    # require re-solving the flowsheet every time. Pass recompute=True to
+    # force a fresh sweep (e.g. if you changed `num`, the CP range, or r_AV).
+    csv_path = os.path.join(DATA_DIR, f"CP_sweep_num{num}.csv")
 
-    P_out_list = np.zeros(num)
-    P_out_list[:] = np.nan
-    P_removal_list = np.zeros(num)
-    P_removal_list[:] = np.nan
-    Ener_electroNP_out = np.zeros(num)
-    Ener_electroNP_out[:] = np.nan
-    Ener_aeration_out = np.zeros(num)
-    Ener_aeration_out[:] = np.nan
-    SNOX_out_list = np.zeros(num)
-    SNOX_out_list[:] = np.nan
+    if not recompute and os.path.exists(csv_path):
+        cached = load_sweep_csv(csv_path)
+        CP_list = cached["CP"]
+        P_out_list = cached["P_out"]
+        P_removal_list = cached["P_removal"]
+        Ener_electroNP_out = cached["Ener_electroNP"]
+        Ener_aeration_out = cached["Ener_aeration"]
+        SNOX_out_list = cached["SNOX"]
+    else:
+        CP_list = np.linspace(-1.3, -0.8, num)
 
-    for i in range(0, num):
-        try:
-            m, results = main(CP=CP_list[i], r_AV=0.10)
-            P_out_list[i] = (
-                m.fs.Treated.properties[0].conc_mass_comp["S_PO4"].value * 1e3
-            )
+        P_out_list = np.zeros(num)
+        P_out_list[:] = np.nan
+        P_removal_list = np.zeros(num)
+        P_removal_list[:] = np.nan
+        Ener_electroNP_out = np.zeros(num)
+        Ener_electroNP_out[:] = np.nan
+        Ener_aeration_out = np.zeros(num)
+        Ener_aeration_out[:] = np.nan
+        SNOX_out_list = np.zeros(num)
+        SNOX_out_list[:] = np.nan
 
-            P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
-            Ener_electroNP_out[i] = pyo.value(m.fs.costing.electroNP_energy_consumption)
-            Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
-            SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
-        except:
-            pass
+        for i in range(0, num):
+            try:
+                m, results = main(CP=CP_list[i], r_AV=0.10)
+                P_out_list[i] = (
+                    m.fs.Treated.properties[0].conc_mass_comp["S_PO4"].value * 1e3
+                )
 
-    P_out_list = interp_1d(P_out_list)
-    P_removal_list = interp_1d(P_removal_list)
-    Ener_electroNP_out = interp_1d(Ener_electroNP_out)
-    Ener_aeration_out = interp_1d(Ener_aeration_out)
-    SNOX_out_list = interp_1d(SNOX_out_list)
+                P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
+                Ener_electroNP_out[i] = pyo.value(
+                    m.fs.costing.electroNP_energy_consumption
+                )
+                Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
+                SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
+            except:
+                pass
+
+        P_out_list = interp_1d(P_out_list)
+        P_removal_list = interp_1d(P_removal_list)
+        Ener_electroNP_out = interp_1d(Ener_electroNP_out)
+        Ener_aeration_out = interp_1d(Ener_aeration_out)
+        SNOX_out_list = interp_1d(SNOX_out_list)
+
+        save_sweep_csv(
+            csv_path,
+            {
+                "CP": CP_list,
+                "P_out": P_out_list,
+                "P_removal": P_removal_list,
+                "Ener_electroNP": Ener_electroNP_out,
+                "Ener_aeration": Ener_aeration_out,
+                "SNOX": SNOX_out_list,
+            },
+        )
 
     # Together
     fig1t, ax1t1 = plt.subplots(figsize=(9, 5))
     ax1t1.plot(CP_list, P_out_list, color="tab:red", label="_PO4 Concentration")
     ax1t1.set_xlim([-1.3, -0.8])
-    ax1t1.set_ylim([10, 55])
+    # ax1t1.set_ylim([10, 55])
     # # Base case
     # CP_base = -1.1
     # ax1t1.axvline(x=CP_base, color="b", linestyle="--", label="Base case")
@@ -666,6 +790,7 @@ def plot_CP(num):
         textcoords="offset points",
         xytext=(-76, -10),
     )
+    position_extremum(ax1t1, P_out_list, extremum="min", target_frac=0.08, floor=0)
     ax1t1.set_xlabel("Cathodic Potential (V)", fontsize=12)
     ax1t1.set_ylabel("P-PO4 Concentration (mg/L)", fontsize=12)
     # ax1t1.legend(loc="lower left")
@@ -677,9 +802,9 @@ def plot_CP(num):
     plt.locator_params(axis="y", nbins=8)
 
     ax1t1b = ax1t1.twinx()
-    ax1t1b.spines["left"].set_position(("outward", 50))
+    ax1t1b.spines["left"].set_position(("outward", 78))
     ax1t1b.plot(CP_list, SNOX_out_list, color="tab:green", label="_SNOX Concentration")
-    ax1t1b.set_ylim([7.7, 7.9])
+    # ax1t1b.set_ylim([7.7, 7.9])
     # Optimal
     opt_idx = np.argmin(SNOX_out_list)
     CP_opt = CP_list[opt_idx]
@@ -691,6 +816,7 @@ def plot_CP(num):
         textcoords="offset points",
         xytext=(6, 10),
     )
+    position_extremum(ax1t1b, SNOX_out_list, extremum="min", target_frac=0.26, floor=0)
     ax1t1b.set_ylabel("SNOx Concentration (mg/L)", fontsize=12)
     ax1t1b.tick_params(axis="x", labelsize=12)
     ax1t1b.tick_params(axis="y", labelsize=12)
@@ -703,7 +829,7 @@ def plot_CP(num):
 
     ax1t2 = ax1t1.twinx()
     ax1t2.plot(CP_list, P_removal_list, color="tab:blue", label="_Phosphorus Recovery")
-    ax1t2.set_ylim([0.87, 0.94])
+    # ax1t2.set_ylim([0.87, 0.94])
     # Optimal
     opt_idx = np.argmax(P_removal_list)
     CP_opt = CP_list[opt_idx]
@@ -714,6 +840,9 @@ def plot_CP(num):
         (CP_opt, P_removal_opt),
         textcoords="offset points",
         xytext=(6, 6),
+    )
+    position_extremum(
+        ax1t2, P_removal_list, extremum="max", target_frac=0.85, floor=0, ceiling=1
     )
     ax1t2.set_ylabel("Phosphorus Recovery", fontsize=12)
     ax1t2.tick_params(axis="x", labelsize=12)
@@ -727,7 +856,7 @@ def plot_CP(num):
     ax1t3.plot(
         CP_list, Ener_electroNP_out, color="tab:orange", label="_Energy Consumption"
     )
-    ax1t3.set_ylim([0, 0.4])
+    # ax1t3.set_ylim([0, 0.4])
     # Optimal
     opt_idx = np.argmin(Ener_electroNP_out)
     CP_opt = CP_list[opt_idx]
@@ -741,6 +870,9 @@ def plot_CP(num):
         textcoords="offset points",
         xytext=(-86, -6),
     )
+    position_extremum(
+        ax1t3, Ener_electroNP_out, extremum="min", target_frac=0.42, floor=0
+    )
     ax1t3.set_ylabel("Energy Consumption of electron-P (kWh/m3)", fontsize=12)
     ax1t3.tick_params(axis="x", labelsize=12)
     ax1t3.tick_params(axis="y", labelsize=12)
@@ -751,7 +883,11 @@ def plot_CP(num):
     ax1t3.spines["left"].set_color("tab:red")
     fig1t.tight_layout()
 
-    plt.show(block=True)
+    fig_path = os.path.join(FIGURE_DIR, "1D_CP.png")
+    fig1t.savefig(fig_path, dpi=300, bbox_inches="tight")
+    print(f"Saved figure to {fig_path}")
+
+    # plt.show(block=True)
 
 
 def plot_CP_effluent(num):
@@ -960,49 +1096,77 @@ def plot_CP_effluent(num):
 
     # fig1.tight_layout()
 
-    plt.show(block=True)
+    # plt.show(block=True)
 
 
-def plot_rAV(num):
+def plot_rAV(num, recompute=False):
     # 1D plot
-    # r_AV_list = np.linspace(0.08, 0.13, num)
-    r_AV_list = np.linspace(0.07, 0.14, num)
+    # Cache the (expensive) flowsheet sweep to CSV so re-plotting doesn't
+    # require re-solving the flowsheet every time. Pass recompute=True to
+    # force a fresh sweep (e.g. if you changed `num`, the r_AV range, or CP).
+    csv_path = os.path.join(DATA_DIR, f"rAV_sweep_num{num}.csv")
 
-    P_out_list = np.zeros(num)
-    P_out_list[:] = np.nan
-    P_removal_list = np.zeros(num)
-    P_removal_list[:] = np.nan
-    Ener_electroNP_out = np.zeros(num)
-    Ener_electroNP_out[:] = np.nan
-    Ener_aeration_out = np.zeros(num)
-    Ener_aeration_out[:] = np.nan
-    SNOX_out_list = np.zeros(num)
-    SNOX_out_list[:] = np.nan
+    if not recompute and os.path.exists(csv_path):
+        cached = load_sweep_csv(csv_path)
+        r_AV_list = cached["r_AV"]
+        P_out_list = cached["P_out"]
+        P_removal_list = cached["P_removal"]
+        Ener_electroNP_out = cached["Ener_electroNP"]
+        Ener_aeration_out = cached["Ener_aeration"]
+        SNOX_out_list = cached["SNOX"]
+    else:
+        # r_AV_list = np.linspace(0.08, 0.13, num)
+        r_AV_list = np.linspace(0.07, 0.14, num)
 
-    for i in range(0, num):
-        try:
-            m, results = main(CP=-1.1, r_AV=r_AV_list[i])
-            P_out_list[i] = (
-                m.fs.Treated.properties[0].conc_mass_comp["S_PO4"].value * 1e3
-            )
-            P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
-            Ener_electroNP_out[i] = pyo.value(m.fs.costing.electroNP_energy_consumption)
-            Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
-            SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
-        except:
-            pass
+        P_out_list = np.zeros(num)
+        P_out_list[:] = np.nan
+        P_removal_list = np.zeros(num)
+        P_removal_list[:] = np.nan
+        Ener_electroNP_out = np.zeros(num)
+        Ener_electroNP_out[:] = np.nan
+        Ener_aeration_out = np.zeros(num)
+        Ener_aeration_out[:] = np.nan
+        SNOX_out_list = np.zeros(num)
+        SNOX_out_list[:] = np.nan
 
-    P_out_list = interp_1d(P_out_list)
-    P_removal_list = interp_1d(P_removal_list)
-    Ener_electroNP_out = interp_1d(Ener_electroNP_out)
-    Ener_aeration_out = interp_1d(Ener_aeration_out)
-    SNOX_out_list = interp_1d(SNOX_out_list)
+        for i in range(0, num):
+            try:
+                m, results = main(CP=-1.1, r_AV=r_AV_list[i])
+                P_out_list[i] = (
+                    m.fs.Treated.properties[0].conc_mass_comp["S_PO4"].value * 1e3
+                )
+                P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
+                Ener_electroNP_out[i] = pyo.value(
+                    m.fs.costing.electroNP_energy_consumption
+                )
+                Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
+                SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
+            except:
+                pass
+
+        P_out_list = interp_1d(P_out_list)
+        P_removal_list = interp_1d(P_removal_list)
+        Ener_electroNP_out = interp_1d(Ener_electroNP_out)
+        Ener_aeration_out = interp_1d(Ener_aeration_out)
+        SNOX_out_list = interp_1d(SNOX_out_list)
+
+        save_sweep_csv(
+            csv_path,
+            {
+                "r_AV": r_AV_list,
+                "P_out": P_out_list,
+                "P_removal": P_removal_list,
+                "Ener_electroNP": Ener_electroNP_out,
+                "Ener_aeration": Ener_aeration_out,
+                "SNOX": SNOX_out_list,
+            },
+        )
 
     # Together
     fig2t, ax2t1 = plt.subplots(figsize=(9, 5))
     ax2t1.plot(r_AV_list, P_out_list, "tab:red", label="_PO4 Concentration")
     ax2t1.set_xlim([0.07, 0.14])
-    ax2t1.set_ylim([0, 240])
+    # ax2t1.set_ylim([0, 240])
     # # Base case
     # r_AV_base = 0.1
     # ax2t1.axvline(x=r_AV_base, color="b", linestyle="--", label="Base case")
@@ -1017,6 +1181,7 @@ def plot_rAV(num):
         textcoords="offset points",
         xytext=(6, 15),
     )
+    position_extremum(ax2t1, P_out_list, extremum="min", target_frac=0.08, floor=0)
     ax2t1.set_xlabel("Area Volume Ratio (cm$^{-1}$)", fontsize=12)
     ax2t1.set_ylabel("P-PO4 Concentration (mg/L)", fontsize=12)
     # ax2t1.legend(loc="lower right")
@@ -1028,11 +1193,11 @@ def plot_rAV(num):
     plt.locator_params(axis="y", nbins=8)
 
     ax2t1b = ax2t1.twinx()
-    ax2t1b.spines["left"].set_position(("outward", 60))
+    ax2t1b.spines["left"].set_position(("outward", 55))
     ax2t1b.plot(
         r_AV_list, SNOX_out_list, color="tab:green", label="_SNOX Concentration"
     )
-    ax2t1b.set_ylim([7.5, 8.3])
+    # ax2t1b.set_ylim([7.5, 8.3])
     # Optimal
     opt_idx = np.argmin(SNOX_out_list)
     r_AV_opt = r_AV_list[opt_idx]
@@ -1044,6 +1209,7 @@ def plot_rAV(num):
         textcoords="offset points",
         xytext=(6, -10),
     )
+    position_extremum(ax2t1b, SNOX_out_list, extremum="min", target_frac=0.30, floor=0)
     ax2t1b.set_ylabel("SNOx Concentration (mg/L)", fontsize=12)
     ax2t1b.tick_params(axis="x", labelsize=12)
     ax2t1b.tick_params(axis="y", labelsize=12)
@@ -1056,7 +1222,7 @@ def plot_rAV(num):
 
     ax2t2 = ax2t1.twinx()
     ax2t2.plot(r_AV_list, P_removal_list, "tab:blue", label="_Phosphorus Recovery")
-    ax2t2.set_ylim([0.65, 0.95])
+    # ax2t2.set_ylim([0.65, 0.95])
     # Optimal
     opt_idx = np.argmax(P_removal_list)
     r_AV_opt = r_AV_list[opt_idx]
@@ -1067,6 +1233,9 @@ def plot_rAV(num):
         (r_AV_opt, P_removal_opt),
         textcoords="offset points",
         xytext=(3, 6),
+    )
+    position_extremum(
+        ax2t2, P_removal_list, extremum="max", target_frac=0.90, floor=0, ceiling=1
     )
     ax2t2.set_ylabel("Phosphorus Recovery", fontsize=12)
     ax2t2.tick_params(axis="x", labelsize=12)
@@ -1080,8 +1249,9 @@ def plot_rAV(num):
     ax2t3.plot(
         r_AV_list, Ener_electroNP_out, color="tab:orange", label="_Energy Consumption"
     )
-    ax2t3.set_ylim([0, 0.1])
-    # Optimal
+    # ax2t3.set_ylim([0, 0.1])
+    # Optimal -- mark the *highest* energy consumption (the peak of the
+    # curve), per request: only the highest extreme point should be shown.
     max_idx = np.argmax(Ener_electroNP_out)
     r_AV_max = r_AV_list[max_idx]
     Ener_electroNP_out_max = Ener_electroNP_out[max_idx]
@@ -1094,16 +1264,10 @@ def plot_rAV(num):
         textcoords="offset points",
         xytext=(-56, 6),
     )
-    # min_idx = np.argmin(Ener_electroNP_out)
-    # r_AV_min = r_AV_list[min_idx]
-    # Ener_electroNP_out_min = Ener_electroNP_out[min_idx]
-    # ax2t3.plot(r_AV_min, Ener_electroNP_out_min, marker="o", color="red", label="Optimal")
-    # ax2t3.annotate(
-    #     f"({round(r_AV_min, 3)}, {round(Ener_electroNP_out_min, 4)})",
-    #     (r_AV_min, Ener_electroNP_out_min),
-    #     textcoords="offset points",
-    #     xytext=(6, -10),
-    # )
+    position_extremum(
+        ax2t3, Ener_electroNP_out, extremum="max", target_frac=0.65, floor=0
+    )
+    ax2t3.set_ylim(bottom=0)
     ax2t3.set_ylabel("Energy Consumption of electron-P (kWh/m3)", fontsize=12)
     ax2t3.tick_params(axis="x", labelsize=12)
     ax2t3.tick_params(axis="y", labelsize=12)
@@ -1113,7 +1277,12 @@ def plot_rAV(num):
 
     ax2t3.spines["left"].set_color("tab:red")
     fig2t.tight_layout()
-    plt.show(block=True)
+
+    fig_path = os.path.join(FIGURE_DIR, "1D_rAV.png")
+    fig2t.savefig(fig_path, dpi=300, bbox_inches="tight")
+    print(f"Saved figure to {fig_path}")
+
+    # plt.show(block=True)
 
 
 def plot_rAV_effluent(num):
@@ -1322,157 +1491,181 @@ def plot_rAV_effluent(num):
 
     # fig1.tight_layout()
 
-    plt.show(block=True)
+    # plt.show(block=True)
 
 
-def contourf_plot(num):
-    # # 1D plot
-    # CP_list = np.linspace(-1.3, -0.8, num)
-    # r_AV_list = np.linspace(0.07, 0.14, num)
+def contourf_plot(num, recompute=False):
+    # 2D plot: sweep Cathodic Potential x Area Volume Ratio.
+    # Cache the (expensive) flowsheet sweep to CSV so re-plotting -- e.g.
+    # changing colormaps, labels, or the base-case marker -- doesn't require
+    # re-solving the flowsheet every time. Pass recompute=True to force a
+    # fresh sweep (e.g. if you changed `num` or either axis range).
+    axes_csv_path = os.path.join(DATA_DIR, f"contourf_axes_num{num}.csv")
+    matrix_names = [
+        "P_out",
+        "LCOW",
+        "SEC",
+        "SEC_electroNP",
+        "aeration",
+        "SEC_electroNP_aeration",
+    ]
+    matrix_csv_paths = {
+        name: os.path.join(DATA_DIR, f"contourf_{name}_num{num}.csv")
+        for name in matrix_names
+    }
 
-    # 2D plot
-    CP_list = np.linspace(-1.2, -0.8, num)
-    r_AV_list = np.linspace(0.09, 0.12, num)
-    # r_AV_list = np.linspace(0.09, 0.13, num)
+    have_cache = os.path.exists(axes_csv_path) and all(
+        os.path.exists(p) for p in matrix_csv_paths.values()
+    )
 
-    P_out_matrix = np.zeros((num, num))
-    P_out_matrix[:] = np.nan
-    LCOW_matrix = np.zeros((num, num))
-    LCOW_matrix[:] = np.nan
-    SEC_matrix = np.zeros((num, num))
-    SEC_matrix[:] = np.nan
-    SEC_electroNP_matrix = np.zeros((num, num))
-    SEC_electroNP_matrix[:] = np.nan
-    aeration_matrix = np.zeros((num, num))
-    aeration_matrix[:] = np.nan
-    SEC_electroNP_aeration_matrix = np.zeros((num, num))
-    SEC_electroNP_aeration_matrix[:] = np.nan
+    if not recompute and have_cache:
+        axes = load_sweep_csv(axes_csv_path)
+        CP_list = axes["CP"]
+        r_AV_list = axes["r_AV"]
+        P_out_matrix = load_matrix_csv(matrix_csv_paths["P_out"])
+        LCOW_matrix = load_matrix_csv(matrix_csv_paths["LCOW"])
+        SEC_matrix = load_matrix_csv(matrix_csv_paths["SEC"])
+        SEC_electroNP_matrix = load_matrix_csv(matrix_csv_paths["SEC_electroNP"])
+        aeration_matrix = load_matrix_csv(matrix_csv_paths["aeration"])
+        SEC_electroNP_aeration_matrix = load_matrix_csv(
+            matrix_csv_paths["SEC_electroNP_aeration"]
+        )
+    else:
+        # CP_list = np.linspace(-1.2, -0.8, num)
+        # r_AV_list = np.linspace(0.09, 0.12, num)
 
-    for i in range(0, num):
-        for j in range(0, num):
-            print(f"CP: {CP_list[i]}")
-            print(f"rAV: {r_AV_list[j]}")
-            try:
-                # simulation
-                m, results = main(CP=CP_list[i], r_AV=r_AV_list[j])
-                # case 2:
-                # m, results = run_optimization(
-                #     CP=CP_list[i],
-                #     r_AV=r_AV_list[j],
-                #     has_electroNP=True,
-                #     has_optimization=True,
-                #     objective=objective_fun.LCOW,
-                #     has_effluent_constraints=True,
-                # )
-                P_out_matrix[j, i] = (
-                    m.fs.Treated.properties[0].conc_mass_comp["S_PO4"].value * 1e3
-                )
-                LCOW_matrix[j, i] = pyo.value(m.fs.costing.LCOW)
-                SEC_matrix[j, i] = pyo.value(m.fs.costing.specific_energy_consumption)
-                SEC_electroNP_matrix[j, i] = pyo.value(
-                    m.fs.costing.electroNP_energy_consumption
-                ) / pyo.value(m.fs.costing.specific_energy_consumption)
-                aeration_matrix[j, i] = pyo.value(m.fs.costing.aeration_energy)
-                SEC_electroNP_aeration_matrix[j, i] = pyo.value(
-                    m.fs.costing.electroNP_energy_consumption
-                ) / pyo.value(m.fs.costing.aeration_energy)
-            except:
-                pass
+        CP_list = np.linspace(-1.3, -0.8, num)
+        r_AV_list = np.linspace(0.065, 0.145, num)
 
-    P_out_matrix = interp_2d(P_out_matrix)
-    LCOW_matrix = interp_2d(LCOW_matrix)
-    SEC_matrix = interp_2d(SEC_matrix)
-    SEC_electroNP_matrix = interp_2d(SEC_electroNP_matrix)
-    aeration_matrix = interp_2d(aeration_matrix)
-    SEC_electroNP_aeration_matrix = interp_2d(SEC_electroNP_aeration_matrix)
+        P_out_matrix = np.zeros((num, num))
+        P_out_matrix[:] = np.nan
+        LCOW_matrix = np.zeros((num, num))
+        LCOW_matrix[:] = np.nan
+        SEC_matrix = np.zeros((num, num))
+        SEC_matrix[:] = np.nan
+        SEC_electroNP_matrix = np.zeros((num, num))
+        SEC_electroNP_matrix[:] = np.nan
+        aeration_matrix = np.zeros((num, num))
+        aeration_matrix[:] = np.nan
+        SEC_electroNP_aeration_matrix = np.zeros((num, num))
+        SEC_electroNP_aeration_matrix[:] = np.nan
+
+        for i in range(0, num):
+            for j in range(0, num):
+                print(f"CP: {CP_list[i]}")
+                print(f"rAV: {r_AV_list[j]}")
+                try:
+                    # simulation
+                    m, results = main(CP=CP_list[i], r_AV=r_AV_list[j])
+                    P_out_matrix[j, i] = (
+                        m.fs.Treated.properties[0].conc_mass_comp["S_PO4"].value * 1e3
+                    )
+                    LCOW_matrix[j, i] = pyo.value(m.fs.costing.LCOW)
+                    SEC_matrix[j, i] = pyo.value(
+                        m.fs.costing.specific_energy_consumption
+                    )
+                    SEC_electroNP_matrix[j, i] = pyo.value(
+                        m.fs.costing.electroNP_energy_consumption
+                    ) / pyo.value(m.fs.costing.specific_energy_consumption)
+                    aeration_matrix[j, i] = pyo.value(m.fs.costing.aeration_energy)
+                    SEC_electroNP_aeration_matrix[j, i] = pyo.value(
+                        m.fs.costing.electroNP_energy_consumption
+                    ) / pyo.value(m.fs.costing.aeration_energy)
+                except:
+                    pass
+
+        P_out_matrix = interp_2d(P_out_matrix)
+        LCOW_matrix = interp_2d(LCOW_matrix)
+        SEC_matrix = interp_2d(SEC_matrix)
+        SEC_electroNP_matrix = interp_2d(SEC_electroNP_matrix)
+        aeration_matrix = interp_2d(aeration_matrix)
+        SEC_electroNP_aeration_matrix = interp_2d(SEC_electroNP_aeration_matrix)
+
+        save_sweep_csv(axes_csv_path, {"CP": CP_list, "r_AV": r_AV_list})
+        save_matrix_csv(matrix_csv_paths["P_out"], P_out_matrix)
+        save_matrix_csv(matrix_csv_paths["LCOW"], LCOW_matrix)
+        save_matrix_csv(matrix_csv_paths["SEC"], SEC_matrix)
+        save_matrix_csv(matrix_csv_paths["SEC_electroNP"], SEC_electroNP_matrix)
+        save_matrix_csv(matrix_csv_paths["aeration"], aeration_matrix)
+        save_matrix_csv(
+            matrix_csv_paths["SEC_electroNP_aeration"], SEC_electroNP_aeration_matrix
+        )
+
+    CP_base = -1.1
+    r_AV_base = 0.1
+
+    def _base_case_marker(ax):
+        ax.plot(CP_base, r_AV_base, marker="o", color="black", markersize=5)
+        ax.annotate(
+            f"({CP_base}, {r_AV_base})",
+            (CP_base, r_AV_base),
+            textcoords="offset points",
+            xytext=(6, 6),
+        )
+        ax.set_xlabel("Cathodic Potential (V)", fontsize=12)
+        ax.set_ylabel("Area Volume Ratio (cm$^{-1}$)", fontsize=12)
 
     fig3, ax3 = plt.subplots(figsize=(7, 5))
     CF = ax3.contourf(CP_list, r_AV_list, P_out_matrix, cmap="GnBu")
-    CP_base = -1.1
-    r_AV_base = 0.1
-    ax3.plot(CP_base, r_AV_base, marker="o", color="black", markersize=5)
-    ax3.annotate(
-        f"({CP_base}, {r_AV_base})",
-        (CP_base, r_AV_base),
-        textcoords="offset points",
-        xytext=(6, 6),
-    )
-    ax3.set_xlabel("Cathodic Potential (V)", fontsize=12)
-    ax3.set_ylabel("Area Volume Ratio (cm$^{-1}$)", fontsize=12)
+    _base_case_marker(ax3)
     cbar = fig3.colorbar(CF)
     cbar.ax.set_ylabel("Concentration of PO4 in the treated water (mg/L)", fontsize=12)
+    fig3.tight_layout()
+    fig3_path = os.path.join(FIGURE_DIR, "contourf_P_out.png")
+    fig3.savefig(fig3_path, dpi=300, bbox_inches="tight")
+    print(f"Saved figure to {fig3_path}")
 
     fig4, ax4 = plt.subplots(figsize=(7, 5))
     CF = ax4.contourf(CP_list, r_AV_list, LCOW_matrix, cmap="GnBu")
-    ax4.plot(CP_base, r_AV_base, marker="o", color="black", markersize=5)
-    ax4.annotate(
-        f"({CP_base}, {r_AV_base})",
-        (CP_base, r_AV_base),
-        textcoords="offset points",
-        xytext=(6, 6),
-    )
-    ax4.set_xlabel("Cathodic Potential (V)", fontsize=12)
-    ax4.set_ylabel("Area Volume Ratio (cm$^{-1}$)", fontsize=12)
+    _base_case_marker(ax4)
     cbar = fig4.colorbar(CF)
     cbar.ax.set_ylabel("LCOW ($/m3)", fontsize=12)
+    fig4.tight_layout()
+    fig4_path = os.path.join(FIGURE_DIR, "contourf_LCOW.png")
+    fig4.savefig(fig4_path, dpi=300, bbox_inches="tight")
+    print(f"Saved figure to {fig4_path}")
 
     fig5, ax5 = plt.subplots(figsize=(7, 5))
     CF = ax5.contourf(CP_list, r_AV_list, SEC_matrix, cmap="GnBu")
-    ax5.plot(CP_base, r_AV_base, marker="o", color="black", markersize=5)
-    ax5.annotate(
-        f"({CP_base}, {r_AV_base})",
-        (CP_base, r_AV_base),
-        textcoords="offset points",
-        xytext=(6, 6),
-    )
-    ax5.set_xlabel("Cathodic Potential (V)", fontsize=12)
-    ax5.set_ylabel("Area Volume Ratio (cm$^{-1}$)", fontsize=12)
+    _base_case_marker(ax5)
     cbar = fig5.colorbar(CF)
     cbar.ax.set_ylabel("SEC (kWh/m3)", fontsize=12)
+    fig5.tight_layout()
+    fig5_path = os.path.join(FIGURE_DIR, "contourf_SEC.png")
+    fig5.savefig(fig5_path, dpi=300, bbox_inches="tight")
+    print(f"Saved figure to {fig5_path}")
 
     fig6, ax6 = plt.subplots(figsize=(7, 5))
     CF = ax6.contourf(CP_list, r_AV_list, SEC_electroNP_matrix, cmap="GnBu")
-    ax6.plot(CP_base, r_AV_base, marker="o", color="black", markersize=5)
-    ax6.annotate(
-        f"({CP_base}, {r_AV_base})",
-        (CP_base, r_AV_base),
-        textcoords="offset points",
-        xytext=(6, 6),
-    )
-    ax6.set_xlabel("Cathodic Potential (V)", fontsize=12)
-    ax6.set_ylabel("Area Volume Ratio (cm$^{-1}$)", fontsize=12)
+    _base_case_marker(ax6)
     cbar = fig6.colorbar(CF)
     cbar.ax.set_ylabel("ElectroNP SEC / total SEC", fontsize=12)
+    fig6.tight_layout()
+    fig6_path = os.path.join(FIGURE_DIR, "contourf_SEC_electroNP.png")
+    fig6.savefig(fig6_path, dpi=300, bbox_inches="tight")
+    print(f"Saved figure to {fig6_path}")
 
     fig7, ax7 = plt.subplots(figsize=(7, 5))
     CF = ax7.contourf(CP_list, r_AV_list, aeration_matrix, cmap="GnBu")
-    ax7.plot(CP_base, r_AV_base, marker="o", color="black", markersize=5)
-    ax7.annotate(
-        f"({CP_base}, {r_AV_base})",
-        (CP_base, r_AV_base),
-        textcoords="offset points",
-        xytext=(6, 6),
-    )
-    ax7.set_xlabel("Cathodic Potential (V)", fontsize=12)
-    ax7.set_ylabel("Area Volume Ratio (cm$^{-1}$)", fontsize=12)
+    _base_case_marker(ax7)
     cbar = fig7.colorbar(CF)
     cbar.ax.set_ylabel("Aeration energy (kWh/m3)", fontsize=12)
+    fig7.tight_layout()
+    fig7_path = os.path.join(FIGURE_DIR, "contourf_aeration.png")
+    fig7.savefig(fig7_path, dpi=300, bbox_inches="tight")
+    print(f"Saved figure to {fig7_path}")
 
     fig8, ax8 = plt.subplots(figsize=(7, 5))
     CF = ax8.contourf(CP_list, r_AV_list, SEC_electroNP_aeration_matrix, cmap="GnBu")
-    ax8.plot(CP_base, r_AV_base, marker="o", color="black", markersize=5)
-    ax8.annotate(
-        f"({CP_base}, {r_AV_base})",
-        (CP_base, r_AV_base),
-        textcoords="offset points",
-        xytext=(6, 6),
-    )
-    ax8.set_xlabel("Cathodic Potential (V)", fontsize=12)
-    ax8.set_ylabel("Area Volume Ratio (cm$^{-1}$)", fontsize=12)
-    cbar = fig6.colorbar(CF)
+    _base_case_marker(ax8)
+    cbar = fig8.colorbar(CF)
     cbar.ax.set_ylabel("ElectroNP SEC / aeration SEC", fontsize=12)
+    fig8.tight_layout()
+    fig8_path = os.path.join(FIGURE_DIR, "contourf_SEC_electroNP_aeration.png")
+    fig8.savefig(fig8_path, dpi=300, bbox_inches="tight")
+    print(f"Saved figure to {fig8_path}")
 
-    plt.show(block=True)
+    # plt.show(block=True)
 
 
 def contourf_plot_aeration(num):
@@ -1604,7 +1797,7 @@ def contourf_plot_aeration(num):
     cbar = fig7.colorbar(CF)
     cbar.ax.set_ylabel("Aeration energy (kWh/m3)", fontsize=12)
 
-    plt.show(block=True)
+    # plt.show(block=True)
 
 
 def contourf_plot_electricity_cost(num):
@@ -1671,11 +1864,11 @@ def contourf_plot_electricity_cost(num):
     cbar = fig8.colorbar(CF)
     cbar.ax.set_ylabel("LCOW ($/m3 (2023))", fontsize=12)
 
-    plt.show(block=True)
+    # plt.show(block=True)
 
     return P_out_matrix
 
-    plt.show(block=True)
+    # plt.show(block=True)
 
 
 def plot_aeration_R5(num):
@@ -2047,7 +2240,7 @@ def plot_aeration_R5(num):
     ax4b.tick_params(axis="y", colors="tab:red")
     plt.locator_params(axis="y", nbins=8)
 
-    plt.show(block=True)
+    # plt.show(block=True)
 
 
 def plot_aeration_R6(num):
@@ -2418,7 +2611,7 @@ def plot_aeration_R6(num):
     ax4b.tick_params(axis="y", colors="tab:red")
     plt.locator_params(axis="y", nbins=8)
 
-    plt.show(block=True)
+    # plt.show(block=True)
 
 
 def plot_aeration_R7(num):
@@ -2788,7 +2981,7 @@ def plot_aeration_R7(num):
     ax4b.tick_params(axis="y", colors="tab:red")
     plt.locator_params(axis="y", nbins=8)
 
-    plt.show(block=True)
+    # plt.show(block=True)
 
 
 def plot_COD_max(num):
@@ -3389,7 +3582,7 @@ def plot_COD_max(num):
     axi1.legend(loc="upper right", bbox_to_anchor=(1, 0.85))
     plt.locator_params(axis="y", nbins=8)
 
-    plt.show(block=True)
+    # plt.show(block=True)
 
 
 def plot_COD_max_no_electroNP(num):
@@ -3751,7 +3944,7 @@ def plot_COD_max_no_electroNP(num):
     axi1.tick_params(axis="y", colors="tab:brown")
     plt.locator_params(axis="y", nbins=8)
 
-    plt.show(block=True)
+    # plt.show(block=True)
 
 
 def plot_BOD5_max(num):
@@ -4356,7 +4549,7 @@ def plot_BOD5_max(num):
     axi1.tick_params(axis="y", colors="tab:brown")
     plt.locator_params(axis="y", nbins=8)
 
-    plt.show(block=True)
+    # plt.show(block=True)
 
 
 def plot_BOD5_max_no_electroNP(num):
@@ -4725,7 +4918,7 @@ def plot_BOD5_max_no_electroNP(num):
     axi1.tick_params(axis="y", colors="tab:brown")
     plt.locator_params(axis="y", nbins=8)
 
-    plt.show(block=True)
+    # plt.show(block=True)
 
 
 def plot_TKN_max(num):
@@ -5323,7 +5516,7 @@ def plot_TKN_max(num):
     axi1.legend(loc="upper right", bbox_to_anchor=(1, 0.75))
     plt.locator_params(axis="y", nbins=8)
 
-    plt.show(block=True)
+    # plt.show(block=True)
 
 
 def plot_TP_max(num):
@@ -5678,7 +5871,7 @@ def plot_TP_max(num):
     axi1.tick_params(axis="y", colors="tab:brown")
     plt.locator_params(axis="y", nbins=8)
 
-    plt.show(block=True)
+    # plt.show(block=True)
 
 
 def plot_aeration_tank_volume(num):
@@ -6081,77 +6274,105 @@ def plot_aeration_tank_volume(num):
     axi1.tick_params(axis="y", colors="tab:brown")
     plt.locator_params(axis="y", nbins=8)
 
-    plt.show(block=True)
+    # plt.show(block=True)
 
 
-def stackplot_COD_max(num):
+def stackplot_COD_max(num, recompute=False):
     # 1D plot
-    COD_max_list = np.linspace(0.0955, 0.0978, num)
-    # COD_max_list = np.linspace(0.096, 0.1, num)
-    # COD_max_list = np.linspace(0.095, 0.0975, num)
+    # Cache the (expensive) flowsheet sweep to CSV so re-plotting doesn't
+    # require re-solving the flowsheet every time. Pass recompute=True to
+    # force a fresh sweep (e.g. if you changed `num` or the COD_max range).
+    csv_path = os.path.join(DATA_DIR, f"stackplot_COD_max_num{num}.csv")
 
-    # No electroNP flowsheet
-    m, results = run_optimization_vary_max(
-        COD_max=0.1,
-        BOD5_max=0.01,
-        TKN_max=0.007,
-        TP_max=0.6,
-        has_electroNP=False,
-        has_optimization=True,
-    )
+    if not recompute and os.path.exists(csv_path):
+        cached = load_sweep_csv(csv_path)
+        COD_max_list = cached["COD_max"]
+        LCOW_list = cached["LCOW"]
+        SEC_list = cached["SEC"]
+        Ener_aeration_list = cached["Ener_aeration"]
+        SEC_electroNP_list = cached["SEC_electroNP"]
+        Ne_SEC_list = cached["Ne_SEC"]
+    else:
+        # COD_max_list = np.linspace(0.0955, 0.0978, num)
+        COD_max_list = np.linspace(0.095, 0.1, num)
+        # COD_max_list = np.linspace(0.095, 0.0975, num)
 
-    Ne_Ener_aeration = pyo.value(m.fs.costing.aeration_energy)
-    Ne_LCOW = pyo.value(m.fs.costing.LCOW)
-    Ne_SEC = pyo.value(m.fs.costing.specific_energy_consumption)
+        # No electroNP flowsheet
+        m, results = run_optimization_vary_max(
+            COD_max=0.1,
+            BOD5_max=0.01,
+            TKN_max=0.007,
+            TP_max=0.6,
+            has_electroNP=False,
+            has_optimization=False,
+        )
 
-    # aeration energy
-    Ne_Ener_aeration_list = Ne_Ener_aeration * np.ones(num)
+        Ne_Ener_aeration = pyo.value(m.fs.costing.aeration_energy)
+        Ne_LCOW = pyo.value(m.fs.costing.LCOW)
+        Ne_SEC = pyo.value(m.fs.costing.specific_energy_consumption)
 
-    # LCOW
-    Ne_LCOW_list = Ne_LCOW * np.ones(num)
+        # aeration energy
+        Ne_Ener_aeration_list = Ne_Ener_aeration * np.ones(num)
 
-    # SEC
-    Ne_SEC_list = Ne_SEC * np.ones(num)
+        # LCOW
+        Ne_LCOW_list = Ne_LCOW * np.ones(num)
 
-    # electroNP flowsheet
-    # LCOW
-    LCOW_list = np.zeros(num)
-    LCOW_list[:] = np.nan
+        # SEC
+        Ne_SEC_list = Ne_SEC * np.ones(num)
 
-    # SEC
-    SEC_list = np.zeros(num)
-    SEC_list[:] = np.nan
+        # electroNP flowsheet
+        # LCOW
+        LCOW_list = np.zeros(num)
+        LCOW_list[:] = np.nan
 
-    # aeration energy
-    Ener_aeration_list = np.zeros(num)
-    Ener_aeration_list[:] = np.nan
+        # SEC
+        SEC_list = np.zeros(num)
+        SEC_list[:] = np.nan
 
-    # electroNP SEC
-    SEC_electroNP_list = np.zeros(num)
-    SEC_electroNP_list[:] = np.nan
+        # aeration energy
+        Ener_aeration_list = np.zeros(num)
+        Ener_aeration_list[:] = np.nan
 
-    for i in range(0, num):
-        try:
-            m, results = run_optimization_vary_max(
-                COD_max=COD_max_list[i],
-                BOD5_max=0.01,
-                TKN_max=0.007,
-                TP_max=0.005,
-                has_electroNP=True,
-                has_optimization=True,
-            )
+        # electroNP SEC
+        SEC_electroNP_list = np.zeros(num)
+        SEC_electroNP_list[:] = np.nan
 
-            LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
-            SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
-            Ener_aeration_list[i] = pyo.value(m.fs.costing.aeration_energy)
-            SEC_electroNP_list[i] = pyo.value(m.fs.costing.electroNP_energy_consumption)
-        except:
-            pass
+        for i in range(0, num):
+            try:
+                m, results = run_optimization_vary_max(
+                    COD_max=COD_max_list[i],
+                    BOD5_max=0.01,
+                    TKN_max=0.007,
+                    TP_max=0.005,
+                    has_electroNP=True,
+                    has_optimization=True,
+                )
 
-    LCOW_list = interp_1d(LCOW_list)
-    SEC_list = interp_1d(SEC_list)
-    Ener_aeration_list = interp_1d(Ener_aeration_list)
-    SEC_electroNP_list = interp_1d(SEC_electroNP_list)
+                LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
+                SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+                Ener_aeration_list[i] = pyo.value(m.fs.costing.aeration_energy)
+                SEC_electroNP_list[i] = pyo.value(
+                    m.fs.costing.electroNP_energy_consumption
+                )
+            except:
+                pass
+
+        LCOW_list = interp_1d(LCOW_list)
+        SEC_list = interp_1d(SEC_list)
+        Ener_aeration_list = interp_1d(Ener_aeration_list)
+        SEC_electroNP_list = interp_1d(SEC_electroNP_list)
+
+        save_sweep_csv(
+            csv_path,
+            {
+                "COD_max": COD_max_list,
+                "LCOW": LCOW_list,
+                "SEC": SEC_list,
+                "Ener_aeration": Ener_aeration_list,
+                "SEC_electroNP": SEC_electroNP_list,
+                "Ne_SEC": Ne_SEC_list,
+            },
+        )
 
     COD_max_list = 1000 * COD_max_list
 
@@ -6170,81 +6391,110 @@ def stackplot_COD_max(num):
         linestyle="-.",
         label="SEC (no electroNP)",
     )
-    ax1.set_xlim(95.62, 97.8)
+    ax1.set_xlim(95, 100)
     ax1.set_xlabel("COD Max Concentration (mg/L)", fontsize=14)
     ax1.set_ylabel("SEC (kWh/m3)", fontsize=14)
     ax1.legend()
 
-    plt.show(block=True)
+    fig_path = os.path.join(FIGURE_DIR, "stackplot_COD_max.png")
+    fig1.savefig(fig_path, dpi=300, bbox_inches="tight")
+    print(f"Saved figure to {fig_path}")
+
+    # plt.show(block=True)
 
 
-def stackplot_BOD5_max(num):
+def stackplot_BOD5_max(num, recompute=False):
     # 1D plot
-    BOD5_max_list = np.linspace(0.0058, 0.007, num)
-    # BOD5_max_list = np.linspace(0.006, 0.0065, num)
+    csv_path = os.path.join(DATA_DIR, f"stackplot_BOD5_max_num{num}.csv")
 
-    # No electroNP flowsheet
-    m, results = run_optimization_vary_max(
-        COD_max=0.1,
-        BOD5_max=0.01,
-        TKN_max=0.007,
-        TP_max=0.6,
-        has_electroNP=False,
-        has_optimization=True,
-    )
+    if not recompute and os.path.exists(csv_path):
+        cached = load_sweep_csv(csv_path)
+        BOD5_max_list = cached["BOD5_max"]
+        LCOW_list = cached["LCOW"]
+        SEC_list = cached["SEC"]
+        Ener_aeration_list = cached["Ener_aeration"]
+        SEC_electroNP_list = cached["SEC_electroNP"]
+        Ne_SEC_list = cached["Ne_SEC"]
+    else:
+        # BOD5_max_list = np.linspace(0.0058, 0.007, num)
+        BOD5_max_list = np.linspace(0.0055, 0.007, num)
 
-    Ne_Ener_aeration = pyo.value(m.fs.costing.aeration_energy)
-    Ne_LCOW = pyo.value(m.fs.costing.LCOW)
-    Ne_SEC = pyo.value(m.fs.costing.specific_energy_consumption)
+        # No electroNP flowsheet
+        m, results = run_optimization_vary_max(
+            COD_max=0.1,
+            BOD5_max=0.01,
+            TKN_max=0.007,
+            TP_max=0.6,
+            has_electroNP=False,
+            has_optimization=True,
+        )
 
-    # aeration energy
-    Ne_Ener_aeration_list = Ne_Ener_aeration * np.ones(num)
+        Ne_Ener_aeration = pyo.value(m.fs.costing.aeration_energy)
+        Ne_LCOW = pyo.value(m.fs.costing.LCOW)
+        Ne_SEC = pyo.value(m.fs.costing.specific_energy_consumption)
 
-    # LCOW
-    Ne_LCOW_list = Ne_LCOW * np.ones(num)
+        # aeration energy
+        Ne_Ener_aeration_list = Ne_Ener_aeration * np.ones(num)
 
-    # SEC
-    Ne_SEC_list = Ne_SEC * np.ones(num)
+        # LCOW
+        Ne_LCOW_list = Ne_LCOW * np.ones(num)
 
-    # electroNP flowsheet
-    # LCOW
-    LCOW_list = np.zeros(num)
-    LCOW_list[:] = np.nan
+        # SEC
+        Ne_SEC_list = Ne_SEC * np.ones(num)
 
-    # SEC
-    SEC_list = np.zeros(num)
-    SEC_list[:] = np.nan
+        # electroNP flowsheet
+        # LCOW
+        LCOW_list = np.zeros(num)
+        LCOW_list[:] = np.nan
 
-    # aeration energy
-    Ener_aeration_list = np.zeros(num)
-    Ener_aeration_list[:] = np.nan
+        # SEC
+        SEC_list = np.zeros(num)
+        SEC_list[:] = np.nan
 
-    # electroNP SEC
-    SEC_electroNP_list = np.zeros(num)
-    SEC_electroNP_list[:] = np.nan
+        # aeration energy
+        Ener_aeration_list = np.zeros(num)
+        Ener_aeration_list[:] = np.nan
 
-    for i in range(0, num):
-        try:
-            m, results = run_optimization_vary_max(
-                COD_max=0.1,
-                BOD5_max=BOD5_max_list[i],
-                TKN_max=0.007,
-                TP_max=0.005,
-                has_electroNP=True,
-                has_optimization=True,
-            )
+        # electroNP SEC
+        SEC_electroNP_list = np.zeros(num)
+        SEC_electroNP_list[:] = np.nan
 
-            LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
-            SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
-            Ener_aeration_list[i] = pyo.value(m.fs.costing.aeration_energy)
-            SEC_electroNP_list[i] = pyo.value(m.fs.costing.electroNP_energy_consumption)
-        except:
-            pass
+        for i in range(0, num):
+            try:
+                m, results = run_optimization_vary_max(
+                    COD_max=0.1,
+                    BOD5_max=BOD5_max_list[i],
+                    TKN_max=0.007,
+                    TP_max=0.005,
+                    has_electroNP=True,
+                    has_optimization=True,
+                )
 
-    LCOW_list = interp_1d(LCOW_list)
-    SEC_list = interp_1d(SEC_list)
-    Ener_aeration_list = interp_1d(Ener_aeration_list)
-    SEC_electroNP_list = interp_1d(SEC_electroNP_list)
+                LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
+                SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+                Ener_aeration_list[i] = pyo.value(m.fs.costing.aeration_energy)
+                SEC_electroNP_list[i] = pyo.value(
+                    m.fs.costing.electroNP_energy_consumption
+                )
+            except:
+                pass
+
+        LCOW_list = interp_1d(LCOW_list)
+        SEC_list = interp_1d(SEC_list)
+        Ener_aeration_list = interp_1d(Ener_aeration_list)
+        SEC_electroNP_list = interp_1d(SEC_electroNP_list)
+
+        save_sweep_csv(
+            csv_path,
+            {
+                "BOD5_max": BOD5_max_list,
+                "LCOW": LCOW_list,
+                "SEC": SEC_list,
+                "Ener_aeration": Ener_aeration_list,
+                "SEC_electroNP": SEC_electroNP_list,
+                "Ne_SEC": Ne_SEC_list,
+            },
+        )
 
     BOD5_max_list = 1000 * BOD5_max_list
 
@@ -6263,80 +6513,110 @@ def stackplot_BOD5_max(num):
         linestyle="-.",
         label="SEC (no electroNP)",
     )
-    ax1.set_xlim(5.8, 7.0)
+    ax1.set_xlim(5.65, 7.0)
     ax1.set_xlabel("BOD5 Max Concentration (mg/L)", fontsize=14)
     ax1.set_ylabel("SEC (kWh/m3)", fontsize=14)
     ax1.legend()
 
-    plt.show(block=True)
+    fig_path = os.path.join(FIGURE_DIR, "stackplot_BOD5_max.png")
+    fig1.savefig(fig_path, dpi=300, bbox_inches="tight")
+    print(f"Saved figure to {fig_path}")
+
+    # plt.show(block=True)
 
 
-def stackplot_TKN_max(num):
+def stackplot_TKN_max(num, recompute=False):
     # 1D plot
-    TKN_max_list = np.linspace(0.0066, 0.0076, num)
+    csv_path = os.path.join(DATA_DIR, f"stackplot_TKN_max_num{num}.csv")
 
-    # No electroNP flowsheet
-    m, results = run_optimization_vary_max(
-        COD_max=0.1,
-        BOD5_max=0.01,
-        TKN_max=0.007,
-        TP_max=0.6,
-        has_electroNP=False,
-        has_optimization=True,
-    )
+    if not recompute and os.path.exists(csv_path):
+        cached = load_sweep_csv(csv_path)
+        TKN_max_list = cached["TKN_max"]
+        LCOW_list = cached["LCOW"]
+        SEC_list = cached["SEC"]
+        Ener_aeration_list = cached["Ener_aeration"]
+        SEC_electroNP_list = cached["SEC_electroNP"]
+        Ne_SEC_list = cached["Ne_SEC"]
+    else:
+        # TKN_max_list = np.linspace(0.0066, 0.0076, num)
+        TKN_max_list = np.linspace(0.006, 0.008, num)
 
-    Ne_Ener_aeration = pyo.value(m.fs.costing.aeration_energy)
-    Ne_LCOW = pyo.value(m.fs.costing.LCOW)
-    Ne_SEC = pyo.value(m.fs.costing.specific_energy_consumption)
+        # No electroNP flowsheet
+        m, results = run_optimization_vary_max(
+            COD_max=0.1,
+            BOD5_max=0.01,
+            TKN_max=0.007,
+            TP_max=0.6,
+            has_electroNP=False,
+            has_optimization=True,
+        )
 
-    # aeration energy
-    Ne_Ener_aeration_list = Ne_Ener_aeration * np.ones(num)
+        Ne_Ener_aeration = pyo.value(m.fs.costing.aeration_energy)
+        Ne_LCOW = pyo.value(m.fs.costing.LCOW)
+        Ne_SEC = pyo.value(m.fs.costing.specific_energy_consumption)
 
-    # LCOW
-    Ne_LCOW_list = Ne_LCOW * np.ones(num)
+        # aeration energy
+        Ne_Ener_aeration_list = Ne_Ener_aeration * np.ones(num)
 
-    # SEC
-    Ne_SEC_list = Ne_SEC * np.ones(num)
+        # LCOW
+        Ne_LCOW_list = Ne_LCOW * np.ones(num)
 
-    # electroNP flowsheet
-    # LCOW
-    LCOW_list = np.zeros(num)
-    LCOW_list[:] = np.nan
+        # SEC
+        Ne_SEC_list = Ne_SEC * np.ones(num)
 
-    # SEC
-    SEC_list = np.zeros(num)
-    SEC_list[:] = np.nan
+        # electroNP flowsheet
+        # LCOW
+        LCOW_list = np.zeros(num)
+        LCOW_list[:] = np.nan
 
-    # aeration energy
-    Ener_aeration_list = np.zeros(num)
-    Ener_aeration_list[:] = np.nan
+        # SEC
+        SEC_list = np.zeros(num)
+        SEC_list[:] = np.nan
 
-    # electroNP SEC
-    SEC_electroNP_list = np.zeros(num)
-    SEC_electroNP_list[:] = np.nan
+        # aeration energy
+        Ener_aeration_list = np.zeros(num)
+        Ener_aeration_list[:] = np.nan
 
-    for i in range(0, num):
-        try:
-            m, results = run_optimization_vary_max(
-                COD_max=0.1,
-                BOD5_max=0.01,
-                TKN_max=TKN_max_list[i],
-                TP_max=0.005,
-                has_electroNP=True,
-                has_optimization=True,
-            )
+        # electroNP SEC
+        SEC_electroNP_list = np.zeros(num)
+        SEC_electroNP_list[:] = np.nan
 
-            LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
-            SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
-            Ener_aeration_list[i] = pyo.value(m.fs.costing.aeration_energy)
-            SEC_electroNP_list[i] = pyo.value(m.fs.costing.electroNP_energy_consumption)
-        except:
-            pass
+        for i in range(0, num):
+            try:
+                m, results = run_optimization_vary_max(
+                    COD_max=0.1,
+                    BOD5_max=0.01,
+                    TKN_max=TKN_max_list[i],
+                    TP_max=0.005,
+                    has_electroNP=True,
+                    has_optimization=True,
+                )
 
-    LCOW_list = interp_1d(LCOW_list)
-    SEC_list = interp_1d(SEC_list)
-    Ener_aeration_list = interp_1d(Ener_aeration_list)
-    SEC_electroNP_list = interp_1d(SEC_electroNP_list)
+                LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
+                SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+                Ener_aeration_list[i] = pyo.value(m.fs.costing.aeration_energy)
+                SEC_electroNP_list[i] = pyo.value(
+                    m.fs.costing.electroNP_energy_consumption
+                )
+            except:
+                pass
+
+        LCOW_list = interp_1d(LCOW_list)
+        SEC_list = interp_1d(SEC_list)
+        Ener_aeration_list = interp_1d(Ener_aeration_list)
+        SEC_electroNP_list = interp_1d(SEC_electroNP_list)
+
+        save_sweep_csv(
+            csv_path,
+            {
+                "TKN_max": TKN_max_list,
+                "LCOW": LCOW_list,
+                "SEC": SEC_list,
+                "Ener_aeration": Ener_aeration_list,
+                "SEC_electroNP": SEC_electroNP_list,
+                "Ne_SEC": Ne_SEC_list,
+            },
+        )
 
     TKN_max_list = 1000 * TKN_max_list
 
@@ -6355,82 +6635,112 @@ def stackplot_TKN_max(num):
         linestyle="-.",
         label="SEC (no electroNP)",
     )
-    ax1.set_xlim(6.6, 7.5)
+    ax1.set_xlim(6.6, 8)
     ax1.set_xlabel("TKN Max Concentration (mg/L)", fontsize=14)
     ax1.set_ylabel("SEC (kWh/m3)", fontsize=14)
     ax1.legend()
 
-    plt.show(block=True)
+    fig_path = os.path.join(FIGURE_DIR, "stackplot_TKN_max.png")
+    fig1.savefig(fig_path, dpi=300, bbox_inches="tight")
+    print(f"Saved figure to {fig_path}")
+
+    # plt.show(block=True)
 
 
-def stackplot_TSS_max(num):
+def stackplot_TSS_max(num, recompute=False):
     # 1D plot
-    TSS_max_list = np.linspace(0.041, 0.046, num)
+    csv_path = os.path.join(DATA_DIR, f"stackplot_TSS_max_num{num}.csv")
 
-    # No electroNP flowsheet
-    m, results = run_optimization_vary_max(
-        COD_max=0.1,
-        BOD5_max=0.01,
-        TKN_max=0.007,
-        TP_max=0.6,
-        has_electroNP=False,
-        has_optimization=True,
-        TSS_max=0.05,
-    )
+    if not recompute and os.path.exists(csv_path):
+        cached = load_sweep_csv(csv_path)
+        TSS_max_list = cached["TSS_max"]
+        LCOW_list = cached["LCOW"]
+        SEC_list = cached["SEC"]
+        Ener_aeration_list = cached["Ener_aeration"]
+        SEC_electroNP_list = cached["SEC_electroNP"]
+        Ne_SEC_list = cached["Ne_SEC"]
+    else:
+        # TSS_max_list = np.linspace(0.041, 0.046, num)
+        TSS_max_list = np.linspace(0.036, 0.05, num)
 
-    Ne_Ener_aeration = pyo.value(m.fs.costing.aeration_energy)
-    Ne_LCOW = pyo.value(m.fs.costing.LCOW)
-    Ne_SEC = pyo.value(m.fs.costing.specific_energy_consumption)
+        # No electroNP flowsheet
+        m, results = run_optimization_vary_max(
+            COD_max=0.1,
+            BOD5_max=0.01,
+            TKN_max=0.007,
+            TP_max=0.6,
+            has_electroNP=False,
+            has_optimization=True,
+            TSS_max=0.05,
+        )
 
-    # aeration energy
-    Ne_Ener_aeration_list = Ne_Ener_aeration * np.ones(num)
+        Ne_Ener_aeration = pyo.value(m.fs.costing.aeration_energy)
+        Ne_LCOW = pyo.value(m.fs.costing.LCOW)
+        Ne_SEC = pyo.value(m.fs.costing.specific_energy_consumption)
 
-    # LCOW
-    Ne_LCOW_list = Ne_LCOW * np.ones(num)
+        # aeration energy
+        Ne_Ener_aeration_list = Ne_Ener_aeration * np.ones(num)
 
-    # SEC
-    Ne_SEC_list = Ne_SEC * np.ones(num)
+        # LCOW
+        Ne_LCOW_list = Ne_LCOW * np.ones(num)
 
-    # electroNP flowsheet
-    # LCOW
-    LCOW_list = np.zeros(num)
-    LCOW_list[:] = np.nan
+        # SEC
+        Ne_SEC_list = Ne_SEC * np.ones(num)
 
-    # SEC
-    SEC_list = np.zeros(num)
-    SEC_list[:] = np.nan
+        # electroNP flowsheet
+        # LCOW
+        LCOW_list = np.zeros(num)
+        LCOW_list[:] = np.nan
 
-    # aeration energy
-    Ener_aeration_list = np.zeros(num)
-    Ener_aeration_list[:] = np.nan
+        # SEC
+        SEC_list = np.zeros(num)
+        SEC_list[:] = np.nan
 
-    # electroNP SEC
-    SEC_electroNP_list = np.zeros(num)
-    SEC_electroNP_list[:] = np.nan
+        # aeration energy
+        Ener_aeration_list = np.zeros(num)
+        Ener_aeration_list[:] = np.nan
 
-    for i in range(0, num):
-        try:
-            m, results = run_optimization_vary_max(
-                COD_max=0.1,
-                BOD5_max=0.01,
-                TKN_max=0.007,
-                TP_max=0.6,
-                has_electroNP=True,
-                has_optimization=True,
-                TSS_max=TSS_max_list[i],
-            )
+        # electroNP SEC
+        SEC_electroNP_list = np.zeros(num)
+        SEC_electroNP_list[:] = np.nan
 
-            LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
-            SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
-            Ener_aeration_list[i] = pyo.value(m.fs.costing.aeration_energy)
-            SEC_electroNP_list[i] = pyo.value(m.fs.costing.electroNP_energy_consumption)
-        except:
-            pass
+        for i in range(0, num):
+            try:
+                m, results = run_optimization_vary_max(
+                    COD_max=0.1,
+                    BOD5_max=0.01,
+                    TKN_max=0.007,
+                    TP_max=0.6,
+                    has_electroNP=True,
+                    has_optimization=True,
+                    TSS_max=TSS_max_list[i],
+                )
 
-    LCOW_list = interp_1d(LCOW_list)
-    SEC_list = interp_1d(SEC_list)
-    Ener_aeration_list = interp_1d(Ener_aeration_list)
-    SEC_electroNP_list = interp_1d(SEC_electroNP_list)
+                LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
+                SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+                Ener_aeration_list[i] = pyo.value(m.fs.costing.aeration_energy)
+                SEC_electroNP_list[i] = pyo.value(
+                    m.fs.costing.electroNP_energy_consumption
+                )
+            except:
+                pass
+
+        LCOW_list = interp_1d(LCOW_list)
+        SEC_list = interp_1d(SEC_list)
+        Ener_aeration_list = interp_1d(Ener_aeration_list)
+        SEC_electroNP_list = interp_1d(SEC_electroNP_list)
+
+        save_sweep_csv(
+            csv_path,
+            {
+                "TSS_max": TSS_max_list,
+                "LCOW": LCOW_list,
+                "SEC": SEC_list,
+                "Ener_aeration": Ener_aeration_list,
+                "SEC_electroNP": SEC_electroNP_list,
+                "Ne_SEC": Ne_SEC_list,
+            },
+        )
 
     TSS_max_list = 1000 * TSS_max_list
 
@@ -6449,12 +6759,16 @@ def stackplot_TSS_max(num):
         linestyle="-.",
         label="SEC (no electroNP)",
     )
-    ax1.set_xlim(41, 46)
+    ax1.set_xlim(36, 48)
     ax1.set_xlabel("TSS Max Concentration (mg/L)", fontsize=14)
     ax1.set_ylabel("SEC (kWh/m3)", fontsize=14)
     ax1.legend(loc="lower left")
 
-    plt.show(block=True)
+    fig_path = os.path.join(FIGURE_DIR, "stackplot_TSS_max.png")
+    fig1.savefig(fig_path, dpi=300, bbox_inches="tight")
+    print(f"Saved figure to {fig_path}")
+
+    # plt.show(block=True)
 
 
 def plot_electricity_cost(num):
@@ -6555,7 +6869,7 @@ def plot_electricity_cost(num):
     plt.locator_params(axis="y", nbins=8)
     ax1a.legend(loc="lower center")
 
-    plt.show(block=True)
+    # plt.show(block=True)
 
 
 def interp_1d(array):
@@ -6588,44 +6902,11 @@ def interp_2d(array):
 
 
 if __name__ == "__main__":
-    # m, results = main(CP=-1.2 * pyo.units.V, r_AV=0.12)
-    # m, results = main(CP=-1.2 * pyo.units.V, r_AV=0.09)
-    # m, results = main(CP=-0.8 * pyo.units.V, r_AV=0.12)
-    # m, results = main(CP=-0.8 * pyo.units.V, r_AV=0.09)
-
-    # m, results = main(CP=-1.1 * pyo.units.V, r_AV=0.14)
-
-    # m, results = run_optimization(
-    #     CP=-1.1,
-    #     r_AV=0.1,
-    #     has_electroNP=True,
-    #     has_optimization=True,
-    #     objective=objective_fun.LCOW,
-    #     has_effluent_constraints=False,
-    # )
-
-    # m, results = run_with_KLa(KLa_R5=13, KLa_R6=7, KLa_R7=6)
-
-    # run_optimization_vary_max(
-    #     COD_max=0.096,
-    #     has_electroNP=True,
-    #     has_optimization=True,
-    # )
-
-    # m, results = run_optimization_vary_max(
-    #     COD_max=0.1,
-    #     BOD5_max=0.01,
-    #     TKN_max=0.007,
-    #     TP_max=0.68,
-    #     has_electroNP=False,
-    #     has_optimization=True,
-    # )
-
     # plot_CP(num=25)
-    # # plot_CP_effluent(num=25)
-    plot_rAV(num=25)
+    # plot_CP_effluent(num=25)
+    # plot_rAV(num=25)
     # plot_rAV_effluent(num=25)
-    # contourf_plot(num=15)
+    # contourf_plot(num=25, recompute=False)
     # contourf_plot_electricity_cost(num=3)
     # contourf_plot_aeration(num=10)
 
@@ -6642,14 +6923,10 @@ if __name__ == "__main__":
     # plot_TSS_max_no_electroNP(num=15)
     # plot_BOD5_max_no_electroNP(num=15)
 
-    # stackplot_COD_max(num=10)
-    # stackplot_BOD5_max(num=15)
-    # stackplot_TKN_max(num=14)
-    # stackplot_TSS_max(num=14)
+    # stackplot_COD_max(num=15)
+    # stackplot_BOD5_max(num=15, recompute=False)
+    # stackplot_TKN_max(num=15)
+    stackplot_TSS_max(num=20, recompute=True)
     # plot_electricity_cost(num=5)
-    # run_optimization_vary_electricity_cost(
-    #     electricity_cost=0.07,
-    #     has_electroNP=False,
-    #     has_optimization=True,
-    #     objective=objective_fun.LCOW,
-    # )
+
+    plt.show(block=True)

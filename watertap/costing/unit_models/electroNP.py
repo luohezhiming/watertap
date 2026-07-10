@@ -139,9 +139,9 @@ def build_electroNP_cost_param_block(blk):
 
     blk.phosphorus_recovery_value = pyo.Param(
         mutable=True,
-        initialize=-0.6521,
+        initialize=-7.0,
         doc="Phosphorus recovery value",
-        units=pyo.units.USD_2015 / pyo.units.m**3,
+        units=pyo.units.USD_2023 / pyo.units.kg,
     )
     costing.register_flow_type("phosphorus salt product", blk.phosphorus_recovery_value)
 
@@ -180,8 +180,12 @@ def cost_electroNP(blk, cost_electricity_flow=True, cost_phosphorus_flow=True):
     if cost_phosphorus_flow:
         blk.costing_package.cost_flow(
             pyo.units.convert(
-                blk.unit_model.inlet.flow_vol[t0],
-                to_units=pyo.units.m**3 / pyo.units.hr,
+                (
+                    blk.unit_model.inlet.flow_vol[t0]
+                    * blk.unit_model.inlet.conc_mass_comp[t0, "S_PO4"]
+                    * blk.unit_model.P_removal
+                ),
+                to_units=pyo.units.kg / blk.costing_package.base_period,
             ),
             "phosphorus salt product",
         )
