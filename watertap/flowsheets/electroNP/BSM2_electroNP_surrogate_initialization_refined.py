@@ -241,14 +241,38 @@ def main(
     # dt.display_variables_with_extreme_jacobians()
     # dt.display_constraints_with_extreme_jacobians()
 
+    # TODO: uncomment this to test with P_removal of electroNP
     # if m.fs.has_electroNP is True:
-    #     # m.fs.electroNP.eq_P_removal_surrogate.deactivate()
-    #     # m.fs.electroNP.P_removal.fix(0.95)
-    #     m.fs.electroNP.cathodic_potential.fix(-1.1 * pyo.units.V)
-    #     m.fs.electroNP.area_volume_ratio.fix(0.1)
-    #     m.fs.electroNP.settling_time.fix(30 * pyo.units.min)
-    #     m.fs.electroNP.magnesium_chloride_dosage.fix(0.388)
-    #     m.fs.electroNP.frac_mass_H2O_treated[0].fix(0.9)
+    #     m.fs.electroNP.eq_P_removal_surrogate.deactivate()
+    #     m.fs.electroNP.P_removal.fix(1e-6)
+    #     homotopy_steps = (
+    #         1e-6,
+    #         0.05,
+    #         0.1,
+    #         0.15,
+    #         0.2,
+    #         0.25,
+    #         0.3,
+    #         0.35,
+    #         0.36,
+    #         # 0.37,
+    #         # 0.38,
+    #         # 0.39,
+    #         # 0.40,
+    #         # 0.41,
+    #         # 0.42,
+    #         # 0.43,
+    #         # 0.44,
+    #         # 0.45,
+    #         # 0.46,
+    #         # 0.47,
+    #         # 0.48,
+    #         # 0.49,
+    #         # 0.50,
+    #         # 0.51,
+    #         # 0.52,
+    #     )
+    #
     #     for p_removal_step in homotopy_steps:
     #         m.fs.electroNP.P_removal.fix(p_removal_step)
     #         print(
@@ -2194,7 +2218,7 @@ def display_design(m):
 if __name__ == "__main__":
     # This method builds and runs a steady state activated sludge flowsheet.
     m, results = main(
-        has_electroNP=False,
+        has_electroNP=True,
         has_optimization=False,
         objective=objective_fun.LCOW,
         has_effluent_constraints=True,
