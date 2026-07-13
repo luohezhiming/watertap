@@ -575,17 +575,59 @@ def init_and_propagate(blk, arc=None, source=None, destination=None):
         propagate_state(source=source, destination=destination)
 
 
+def seed_r1_inlet_from_julia(m):
+    """
+    Seed only the R1 inlet using Julia steady-state reactor-1 values.
+    These are initial guesses only (NOT fixed).
+    """
+
+    r1 = {
+        "S_O": 9.406105070917374e-6,
+        "S_I": 7.387307531846523e-3,
+        "S_S": 65.82513263070243e-3,
+        "S_NH4": 7.371020557244863e-3,
+        "S_N2": 0.583545009982888e-3,
+        "S_NOX": 0.0269618355033141e-3,
+        "X_I": 3666.0580500505207e-3,
+        "X_S": 103.32238087054532e-3,
+        "X_H": 237.8681671424861e-3,
+        "X_STO": 441.346781151811e-3,
+        "X_A": 41.389116804502656e-3,
+        "X_TSS": 2041.7346699963225e-3,
+    }
+
+    flow = 11378.04829833368 / 86400.0
+
+    s = m.fs.R1.control_volume.properties_in[0]
+
+    if not s.flow_vol.is_fixed():
+        s.flow_vol.set_value(flow)
+
+    for comp, val in r1.items():
+        if not s.conc_mass_comp[comp].is_fixed():
+            s.conc_mass_comp[comp].set_value(val)
+
+    if hasattr(s, "alkalinity"):
+        s.alkalinity.set_value(0.9505267071756959e-3)
+
+    s.temperature.set_value(293.15)
+    s.pressure.set_value(101325.0)
+
+    print(f"Seeded R1 inlet from Julia SS (X_H={r1['X_H']*1000:.1f} mg/L)")
+
+
 def initialize_flowsheet(m):
     # Initialize flowsheet
     # interval_initializer(m)
     _outlvl = idaeslog.WARNING
     m.fs.feed.initialize(outlvl=_outlvl)
     propagate_state(m.fs.feed_to_m1)
-    propagate_state(source=m.fs.feed.outlet, destination=m.fs.M1.recycle)
+    seed_r1_inlet_from_julia(m)
+    # propagate_state(source=m.fs.feed.outlet, destination=m.fs.M1.recycle)
 
     m.fs.M1.initialize(outlvl=_outlvl)
     propagate_state(m.fs.m1_to_m3)
-    propagate_state(source=m.fs.M1.outlet, destination=m.fs.M3.recycle)
+    # propagate_state(source=m.fs.M1.outlet, destination=m.fs.M3.recycle)
 
     m.fs.M3.initialize(outlvl=_outlvl)
     propagate_state(m.fs.m3_to_r1)
@@ -823,9 +865,7 @@ def set_validation_inlet_conditions(m):
     m.fs.feed.conc_mass_comp[0, "X_S"].fix(
         frac_XS * comp[1] * pyo.units.g / pyo.units.m**3
     )
-    m.fs.feed.conc_mass_comp[0, "X_STO"].fix(
-        frac_STO * comp[1] * pyo.units.g / pyo.units.m**3
-    )
+    m.fs.feed.conc_mass_comp[0, "X_STO"].fix(1e-6 * pyo.units.g / pyo.units.m**3)
     m.fs.feed.conc_mass_comp[0, "S_NH4"].fix(comp[2] * pyo.units.g / pyo.units.m**3)
     m.fs.feed.conc_mass_comp[0, "S_N2"].fix(comp[3] * pyo.units.g / pyo.units.m**3)
     m.fs.feed.conc_mass_comp[0, "S_NOX"].fix(comp[4] * pyo.units.g / pyo.units.m**3)
@@ -986,174 +1026,174 @@ def initialize_from_julia_ss(m):
             concs,
             alk,
         )
-        _set_state(
-            reactor.control_volume.properties_out[0],
-            m3_in_flow if rname in ("R1", "R3", "R4", "R5") else r2_flow,
-            concs,
-            alk,
-        )
+        # _set_state(
+        #     reactor.control_volume.properties_out[0],
+        #     m3_in_flow if rname in ("R1", "R3", "R4", "R5") else r2_flow,
+        #     concs,
+        #     alk,
+        # )
 
-    # R2 flow is r2_flow; R3/R4/R5 flow is m2_out_flow (after M2 mixes)
-    _set_state(
-        m.fs.R2.control_volume.properties_in[0],
-        r2_flow,
-        julia["R2"],
-        julia["R2"]["alkalinity"],
-    )
-    _set_state(
-        m.fs.R2.control_volume.properties_out[0],
-        r2_flow,
-        julia["R2"],
-        julia["R2"]["alkalinity"],
-    )
-    _set_state(
-        m.fs.R3.control_volume.properties_in[0],
-        m2_out_flow,
-        julia["R3"],
-        julia["R3"]["alkalinity"],
-    )
-    _set_state(
-        m.fs.R3.control_volume.properties_out[0],
-        m2_out_flow,
-        julia["R3"],
-        julia["R3"]["alkalinity"],
-    )
-    _set_state(
-        m.fs.R4.control_volume.properties_in[0],
-        m2_out_flow,
-        julia["R4"],
-        julia["R4"]["alkalinity"],
-    )
-    _set_state(
-        m.fs.R4.control_volume.properties_out[0],
-        m2_out_flow,
-        julia["R4"],
-        julia["R4"]["alkalinity"],
-    )
-    _set_state(
-        m.fs.R5.control_volume.properties_in[0],
-        m2_out_flow,
-        julia["R5"],
-        julia["R5"]["alkalinity"],
-    )
-    _set_state(
-        m.fs.R5.control_volume.properties_out[0],
-        m2_out_flow,
-        julia["R5"],
-        julia["R5"]["alkalinity"],
-    )
-    _set_state(
-        m.fs.R1.control_volume.properties_in[0],
-        m3_in_flow,
-        julia["R1"],
-        julia["R1"]["alkalinity"],
-    )
-    _set_state(
-        m.fs.R1.control_volume.properties_out[0],
-        m3_in_flow,
-        julia["R1"],
-        julia["R1"]["alkalinity"],
-    )
-
-    # --- Mixer states ---
-    # M1: feed + S1_M1_inlet -> R1
-    # M1.feed_state = fresh wastewater; keep from initialize_flowsheet (do NOT override)
-    # M1.recycle_state = S1.M1_inlet = R5 concentrations
-    _set_state(
-        m.fs.M1.recycle_state[0], m1_rec_flow, julia["R5"], julia["R5"]["alkalinity"]
-    )
-    # M1.mixed_state = M1 outlet = M3 feed inlet; use R5 as approx (mix of feed + R5 recycle)
-    _set_state(
-        m.fs.M1.mixed_state[0], m1_out_flow, julia["R5"], julia["R5"]["alkalinity"]
-    )
-
-    # M3: M1_out + S2_recycle -> R1
-    # M3.feed_state = M1 outlet (approx R5); M3.recycle_state = S2 recycle (R5)
-    _set_state(
-        m.fs.M3.feed_state[0],
-        m1_out_flow,
-        julia["R5"],
-        julia["R5"]["alkalinity"],
-    )
-    _set_state(
-        m.fs.M3.recycle_state[0], m3_rec_flow, julia["R5"], julia["R5"]["alkalinity"]
-    )
-    _set_state(
-        m.fs.M3.mixed_state[0], m3_in_flow, julia["R1"], julia["R1"]["alkalinity"]
-    )
-
-    # M2: R1_out + R2_out -> R3
-    _set_state(
-        m.fs.M2.R1_outlet_state[0], m3_in_flow, julia["R1"], julia["R1"]["alkalinity"]
-    )
-    _set_state(
-        m.fs.M2.R2_outlet_state[0], r2_flow, julia["R2"], julia["R2"]["alkalinity"]
-    )
-    _set_state(
-        m.fs.M2.mixed_state[0], m2_out_flow, julia["R3"], julia["R3"]["alkalinity"]
-    )
-
-    # --- Splitter S1 (all outlets carry R5 concentrations) ---
-    _set_state(m.fs.S1.mixed_state[0], s1_total, julia["R5"], julia["R5"]["alkalinity"])
-    _set_state(
-        m.fs.S1.effluent_state[0], eff_flow, julia["R5"], julia["R5"]["alkalinity"]
-    )
-    _set_state(
-        m.fs.S1.M1_inlet_state[0], m1_rec_flow, julia["R5"], julia["R5"]["alkalinity"]
-    )
-    _set_state(
-        m.fs.S1.R2_inlet_state[0], r2_flow, julia["R5"], julia["R5"]["alkalinity"]
-    )
-
-    # --- Outgassing (R5 outlet → S1) ---
-    _set_state(
-        m.fs.outgassing.mixed_state[0], s1_total, julia["R5"], julia["R5"]["alkalinity"]
-    )
-    _set_state(
-        m.fs.outgassing.effluent_state[0],
-        s1_total,
-        julia["R5"],
-        julia["R5"]["alkalinity"],
-    )
-
-    # --- Clarifier and S2 ---
-    _set_state(m.fs.CL.mixed_state[0], eff_flow, julia["R5"], julia["R5"]["alkalinity"])
-    _set_state(
-        m.fs.CL.effluent_state[0], cl_eff_flow, julia["R5"], julia["R5"]["alkalinity"]
-    )
-    _set_state(
-        m.fs.CL.underflow_state[0],
-        cl_under_flow,
-        julia["R5"],
-        julia["R5"]["alkalinity"],
-    )
-    _set_state(
-        m.fs.S2.mixed_state[0], cl_under_flow, julia["R5"], julia["R5"]["alkalinity"]
-    )
-    _set_state(
-        m.fs.S2.recycle_state[0], m3_rec_flow, julia["R5"], julia["R5"]["alkalinity"]
-    )
-    _set_state(
-        m.fs.S2.waste_state[0],
-        cl_under_flow - m3_rec_flow,
-        julia["R5"],
-        julia["R5"]["alkalinity"],
-    )
-
-    # --- Treated effluent ---
-    _set_state(
-        m.fs.Treated.properties[0], cl_eff_flow, julia["R5"], julia["R5"]["alkalinity"]
-    )
-
-    # Explicitly seed S2 waste split fraction — degeneracy from uniform split causes
-    # IPOPT to drive waste_frac → 0; seed it correctly so sum_split_frac = 0
-    s2_waste_frac = 1.0 - CL_R1 / (CL_R1 + CL_W1 * (1.0 - CL_R1))
-    if not m.fs.S2.split_fraction[0, "waste"].is_fixed():
-        m.fs.S2.split_fraction[0, "waste"].set_value(s2_waste_frac)
-
-    print(
-        f"Initialized all state blocks from Julia SS (X_H R5 = {julia['R5']['X_H']*1e3:.1f} mg/L)"
-    )
+    # # R2 flow is r2_flow; R3/R4/R5 flow is m2_out_flow (after M2 mixes)
+    # _set_state(
+    #     m.fs.R2.control_volume.properties_in[0],
+    #     r2_flow,
+    #     julia["R2"],
+    #     julia["R2"]["alkalinity"],
+    # )
+    # _set_state(
+    #     m.fs.R2.control_volume.properties_out[0],
+    #     r2_flow,
+    #     julia["R2"],
+    #     julia["R2"]["alkalinity"],
+    # )
+    # _set_state(
+    #     m.fs.R3.control_volume.properties_in[0],
+    #     m2_out_flow,
+    #     julia["R3"],
+    #     julia["R3"]["alkalinity"],
+    # )
+    # _set_state(
+    #     m.fs.R3.control_volume.properties_out[0],
+    #     m2_out_flow,
+    #     julia["R3"],
+    #     julia["R3"]["alkalinity"],
+    # )
+    # _set_state(
+    #     m.fs.R4.control_volume.properties_in[0],
+    #     m2_out_flow,
+    #     julia["R4"],
+    #     julia["R4"]["alkalinity"],
+    # )
+    # _set_state(
+    #     m.fs.R4.control_volume.properties_out[0],
+    #     m2_out_flow,
+    #     julia["R4"],
+    #     julia["R4"]["alkalinity"],
+    # )
+    # _set_state(
+    #     m.fs.R5.control_volume.properties_in[0],
+    #     m2_out_flow,
+    #     julia["R5"],
+    #     julia["R5"]["alkalinity"],
+    # )
+    # _set_state(
+    #     m.fs.R5.control_volume.properties_out[0],
+    #     m2_out_flow,
+    #     julia["R5"],
+    #     julia["R5"]["alkalinity"],
+    # )
+    # _set_state(
+    #     m.fs.R1.control_volume.properties_in[0],
+    #     m3_in_flow,
+    #     julia["R1"],
+    #     julia["R1"]["alkalinity"],
+    # )
+    # _set_state(
+    #     m.fs.R1.control_volume.properties_out[0],
+    #     m3_in_flow,
+    #     julia["R1"],
+    #     julia["R1"]["alkalinity"],
+    # )
+    #
+    # # --- Mixer states ---
+    # # M1: feed + S1_M1_inlet -> R1
+    # # M1.feed_state = fresh wastewater; keep from initialize_flowsheet (do NOT override)
+    # # M1.recycle_state = S1.M1_inlet = R5 concentrations
+    # _set_state(
+    #     m.fs.M1.recycle_state[0], m1_rec_flow, julia["R5"], julia["R5"]["alkalinity"]
+    # )
+    # # M1.mixed_state = M1 outlet = M3 feed inlet; use R5 as approx (mix of feed + R5 recycle)
+    # _set_state(
+    #     m.fs.M1.mixed_state[0], m1_out_flow, julia["R5"], julia["R5"]["alkalinity"]
+    # )
+    #
+    # # M3: M1_out + S2_recycle -> R1
+    # # M3.feed_state = M1 outlet (approx R5); M3.recycle_state = S2 recycle (R5)
+    # _set_state(
+    #     m.fs.M3.feed_state[0],
+    #     m1_out_flow,
+    #     julia["R5"],
+    #     julia["R5"]["alkalinity"],
+    # )
+    # _set_state(
+    #     m.fs.M3.recycle_state[0], m3_rec_flow, julia["R5"], julia["R5"]["alkalinity"]
+    # )
+    # _set_state(
+    #     m.fs.M3.mixed_state[0], m3_in_flow, julia["R1"], julia["R1"]["alkalinity"]
+    # )
+    #
+    # # M2: R1_out + R2_out -> R3
+    # _set_state(
+    #     m.fs.M2.R1_outlet_state[0], m3_in_flow, julia["R1"], julia["R1"]["alkalinity"]
+    # )
+    # _set_state(
+    #     m.fs.M2.R2_outlet_state[0], r2_flow, julia["R2"], julia["R2"]["alkalinity"]
+    # )
+    # _set_state(
+    #     m.fs.M2.mixed_state[0], m2_out_flow, julia["R3"], julia["R3"]["alkalinity"]
+    # )
+    #
+    # # --- Splitter S1 (all outlets carry R5 concentrations) ---
+    # _set_state(m.fs.S1.mixed_state[0], s1_total, julia["R5"], julia["R5"]["alkalinity"])
+    # _set_state(
+    #     m.fs.S1.effluent_state[0], eff_flow, julia["R5"], julia["R5"]["alkalinity"]
+    # )
+    # _set_state(
+    #     m.fs.S1.M1_inlet_state[0], m1_rec_flow, julia["R5"], julia["R5"]["alkalinity"]
+    # )
+    # _set_state(
+    #     m.fs.S1.R2_inlet_state[0], r2_flow, julia["R5"], julia["R5"]["alkalinity"]
+    # )
+    #
+    # # --- Outgassing (R5 outlet → S1) ---
+    # _set_state(
+    #     m.fs.outgassing.mixed_state[0], s1_total, julia["R5"], julia["R5"]["alkalinity"]
+    # )
+    # _set_state(
+    #     m.fs.outgassing.effluent_state[0],
+    #     s1_total,
+    #     julia["R5"],
+    #     julia["R5"]["alkalinity"],
+    # )
+    #
+    # # --- Clarifier and S2 ---
+    # _set_state(m.fs.CL.mixed_state[0], eff_flow, julia["R5"], julia["R5"]["alkalinity"])
+    # _set_state(
+    #     m.fs.CL.effluent_state[0], cl_eff_flow, julia["R5"], julia["R5"]["alkalinity"]
+    # )
+    # _set_state(
+    #     m.fs.CL.underflow_state[0],
+    #     cl_under_flow,
+    #     julia["R5"],
+    #     julia["R5"]["alkalinity"],
+    # )
+    # _set_state(
+    #     m.fs.S2.mixed_state[0], cl_under_flow, julia["R5"], julia["R5"]["alkalinity"]
+    # )
+    # _set_state(
+    #     m.fs.S2.recycle_state[0], m3_rec_flow, julia["R5"], julia["R5"]["alkalinity"]
+    # )
+    # _set_state(
+    #     m.fs.S2.waste_state[0],
+    #     cl_under_flow - m3_rec_flow,
+    #     julia["R5"],
+    #     julia["R5"]["alkalinity"],
+    # )
+    #
+    # # --- Treated effluent ---
+    # _set_state(
+    #     m.fs.Treated.properties[0], cl_eff_flow, julia["R5"], julia["R5"]["alkalinity"]
+    # )
+    #
+    # # Explicitly seed S2 waste split fraction — degeneracy from uniform split causes
+    # # IPOPT to drive waste_frac → 0; seed it correctly so sum_split_frac = 0
+    # s2_waste_frac = 1.0 - CL_R1 / (CL_R1 + CL_W1 * (1.0 - CL_R1))
+    # if not m.fs.S2.split_fraction[0, "waste"].is_fixed():
+    #     m.fs.S2.split_fraction[0, "waste"].set_value(s2_waste_frac)
+    #
+    # print(
+    #     f"Initialized all state blocks from Julia SS (X_H R5 = {julia['R5']['X_H']*1e3:.1f} mg/L)"
+    # )
 
 
 def seed_recycles_from_julia(m):
@@ -1476,19 +1516,8 @@ if __name__ == "__main__":
 
     set_validation_inlet_conditions(m)
     scale_flowsheet(m)
-
+    # initialize_from_julia_ss(m)
     initialize_flowsheet(m)
-    initialize_from_julia_ss(m)
-
-    # --- Scaling report (enable to debug) ---
-    # badly_scaled_var_list = iscale.badly_scaled_var_generator(m, large=1e1, small=1e-1)
-    # for x in badly_scaled_var_list:
-    #     print(f"{x[0].name}\t{x[0].value}\tsf: {iscale.get_scaling_factor(x[0])}")
-
-    # --- Structural/eval-error checks (verified; comment out for normal runs) ---
-    # dt = DiagnosticsToolbox(m)
-    # dt.report_structural_issues()
-    # dt.display_potential_evaluation_errors()
 
     # --- Post-init stream table (before solve) ---
     print("\n--- Stream table post-init (starting point) ---")
@@ -1523,11 +1552,25 @@ if __name__ == "__main__":
         dt.report_numerical_issues()
         dt.display_constraints_with_large_residuals()
         dt.display_variables_at_or_outside_bounds()
+        stream_table = create_stream_table_dataframe(
+            {
+                "Feed": m.fs.feed.outlet,
+                "R1": m.fs.R1.outlet,
+                "R2": m.fs.R2.outlet,
+                "R3": m.fs.R3.outlet,
+                "R4": m.fs.R4.outlet,
+                "R5": m.fs.R5.outlet,
+                "Effluent": m.fs.Treated.inlet,
+            },
+            time_point=0,
+        )
+        print(stream_table_dataframe_to_string(stream_table))
+        verify_effluent(m)
         # dt.display_near_parallel_variables()
-        try:
-            dt.compute_infeasibility_explanation()
-        except Exception as e:
-            print(f"Infeasibility explanation failed: {e}")
+        # try:
+        #     dt.compute_infeasibility_explanation()
+        # except Exception as e:
+        #     print(f"Infeasibility explanation failed: {e}")
     else:
         # --- Stream table ---
         stream_table = create_stream_table_dataframe(
