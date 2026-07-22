@@ -576,116 +576,369 @@ def init_and_propagate(blk, arc=None, source=None, destination=None):
 
 
 def initialize_flowsheet(m):
-    # Initialize flowsheet
-    # interval_initializer(m)
-    _outlvl = idaeslog.WARNING
-    m.fs.feed.initialize(outlvl=_outlvl)
-    propagate_state(m.fs.feed_to_m1)
-    propagate_state(source=m.fs.feed.outlet, destination=m.fs.M1.recycle)
+    """Sequential unit initialization seeded from UConn ODE steady-state inlets.
 
+    Each unit's inlet state is set to the ODE SS concentrations BEFORE calling
+    .initialize(), so the local IPOPT solve for each unit starts from a
+    biologically realistic point rather than near-zero biomass.
+
+    ODE SS reactor inlet concentrations (mg/L -> kg/m3 via 1e-3):
+      R1_in: X_H=237.1, X_STO=440.8, S_S=47.0, S_NH=7.13, S_ALK=0.900 mol/m3
+      R2_in: X_H=239.0, X_STO=444.3, S_S=1.33,  S_NH=0.40, S_ALK=0.373 mol/m3
+      R3_in: X_H=233.7, X_STO=432.0, S_S=42.0,  S_NH=4.72, S_ALK=0.669 mol/m3
+      R4_in: X_H=235.4, X_STO=432.9, S_S=37.6,  S_NH=4.49, S_ALK=0.708 mol/m3
+      R5_in: X_H=235.9, X_STO=459.6, S_S=4.01,  S_NH=0.96, S_ALK=0.123 mol/m3
+    Flows from Mixer 2/3 data: R1=11378 m3/day, R2=6486 m3/day.
+    """
+    _outlvl = idaeslog.WARNING
+
+    # -----------------------------------------------------------------------
+    # ODE SS inlet concentrations (kg/m3) and alkalinity (mol/m3)
+    # -----------------------------------------------------------------------
+    def _c(mgL):
+        return mgL * 1e-3
+
+    ode = {
+        "R1_in": {
+            "S_O": _c(0.006858),
+            "S_I": _c(7.387),
+            "S_S": _c(46.96),
+            "S_NH4": _c(7.131),
+            "S_N2": _c(0.1149),
+            "S_NOX": _c(0.4949),
+            "X_I": _c(3666.3),
+            "X_S": _c(124.89),
+            "X_H": _c(237.06),
+            "X_STO": _c(440.80),
+            "X_A": _c(41.40),
+            "X_TSS": _c(2057.0),
+            "alkalinity": 0.900,
+        },
+        "R2_in": {
+            "S_O": _c(0.01899),
+            "S_I": _c(7.387),
+            "S_S": _c(1.333),
+            "S_NH4": _c(0.400),
+            "S_N2": _c(0.3180),
+            "S_NOX": _c(1.140),
+            "X_I": _c(3670.2),
+            "X_S": _c(63.19),
+            "X_H": _c(238.95),
+            "X_STO": _c(444.32),
+            "X_A": _c(41.73),
+            "X_TSS": _c(2017.7),
+            "alkalinity": 0.373,
+        },
+        "R3_in": {
+            "S_O": _c(3.001),
+            "S_I": _c(7.387),
+            "S_S": _c(41.98),
+            "S_NH4": _c(4.717),
+            "S_N2": _c(0.5934),
+            "S_NOX": _c(1.313),
+            "X_I": _c(3669.5),
+            "X_S": _c(75.93),
+            "X_H": _c(233.66),
+            "X_STO": _c(432.04),
+            "X_A": _c(40.77),
+            "X_TSS": _c(2013.7),
+            "alkalinity": 0.669,
+        },
+        "R4_in": {
+            "S_O": _c(0.02823),
+            "S_I": _c(7.387),
+            "S_S": _c(37.55),
+            "S_NH4": _c(4.491),
+            "S_N2": _c(1.713),
+            "S_NOX": _c(0.5394),
+            "X_I": _c(3669.5),
+            "X_S": _c(73.11),
+            "X_H": _c(235.39),
+            "X_STO": _c(432.85),
+            "X_A": _c(40.83),
+            "X_TSS": _c(2013.7),
+            "alkalinity": 0.708,
+        },
+        "R5_in": {
+            "S_O": _c(5.958),
+            "S_I": _c(7.387),
+            "S_S": _c(4.013),
+            "S_NH4": _c(0.9556),
+            "S_N2": _c(1.823),
+            "S_NOX": _c(5.197),
+            "X_I": _c(3670.1),
+            "X_S": _c(64.89),
+            "X_H": _c(235.86),
+            "X_STO": _c(459.55),
+            "X_A": _c(41.65),
+            "X_TSS": _c(2025.2),
+            "alkalinity": 0.123,
+        },
+        # R1 outlet = M2 In1
+        "R1_out": {
+            "S_O": _c(9.406e-6),
+            "S_I": _c(7.387),
+            "S_S": _c(65.83),
+            "S_NH4": _c(7.371),
+            "S_N2": _c(0.5835),
+            "S_NOX": _c(0.02696),
+            "X_I": _c(3666.3),
+            "X_S": _c(103.32),
+            "X_H": _c(237.87),
+            "X_STO": _c(441.35),
+            "X_A": _c(41.39),
+            "X_TSS": _c(2041.9),
+            "alkalinity": 0.9505,
+        },
+        # R2 outlet = M2 In2
+        "R2_out": {
+            "S_O": _c(8.267),
+            "S_I": _c(7.387),
+            "S_S": _c(0.1477),
+            "S_NH4": _c(0.06262),
+            "S_N2": _c(0.6106),
+            "S_NOX": _c(3.569),
+            "X_I": _c(3674.97),
+            "X_S": _c(27.87),
+            "X_H": _c(226.28),
+            "X_STO": _c(415.71),
+            "X_A": _c(39.67),
+            "X_TSS": _c(1964.4),
+            "alkalinity": 0.1755,
+        },
+        # S1 outlets / R5 SS (M1 Inlet 2 from ODE)
+        "R5_ss": {
+            "S_O": _c(0.380),
+            "S_I": _c(7.387),
+            "S_S": _c(1.333),
+            "S_NH4": _c(0.400),
+            "S_N2": _c(6.360),
+            "S_NOX": _c(1.140),
+            "X_I": _c(3670.2),
+            "X_S": _c(63.19),
+            "X_H": _c(238.95),
+            "X_STO": _c(444.32),
+            "X_A": _c(41.73),
+            "X_TSS": _c(2017.7),
+            "alkalinity": 0.373,
+        },
+    }
+
+    # Flows (m3/s) from ODE Mixer 2/3 data
+    r1_flow = 11378.04829833368 / 86400.0
+    r2_flow = 6486.369639737528 / 86400.0
+    s1_total = r1_flow + r2_flow  # R3-R5 = outgassing = S1 mixed
+    s1_eff_frac = 0.40685806084408344
+    s1_m1_frac = 1.0 - s1_eff_frac - 0.36308877581252170
+    eff_flow = s1_eff_frac * s1_total
+    m1_rec_flow = s1_m1_frac * s1_total
+    feed_flow = pyo.value(m.fs.feed.flow_vol[0])
+    CL_R1 = 0.47918644727352017
+    CL_W1 = 0.011536971119954921
+    cl_under_frac = CL_R1 + CL_W1 * (1.0 - CL_R1)
+    s2_rec_frac = CL_R1 / cl_under_frac
+    cl_under_flow = r1_flow - feed_flow - m1_rec_flow
+    m3_rec_flow = cl_under_flow * s2_rec_frac
+    cl_eff_flow = eff_flow - cl_under_flow
+
+    def _seed(state, concs, flow, alk):
+        """Set a state block's values without overwriting fixed variables."""
+        if not state.flow_vol.is_fixed():
+            state.flow_vol.set_value(flow)
+        for k, v in concs.items():
+            if k == "alkalinity":
+                continue
+            if hasattr(state, "conc_mass_comp") and k in state.conc_mass_comp:
+                if not state.conc_mass_comp[k].is_fixed():
+                    state.conc_mass_comp[k].set_value(max(v, 1e-10))
+        if hasattr(state, "alkalinity") and not state.alkalinity.is_fixed():
+            state.alkalinity.set_value(max(alk, 1e-10))
+
+    # -----------------------------------------------------------------------
+    # Pass 1: seed each unit inlet from ODE SS, then initialize
+    # -----------------------------------------------------------------------
+
+    # Feed (fixed — just initialize)
+    m.fs.feed.initialize(outlvl=_outlvl)
+
+    # M1: seed recycle port with R5 SS before initializing
+    _seed(m.fs.M1.feed_state[0], ode["R1_in"], feed_flow, ode["R1_in"]["alkalinity"])
+    _seed(
+        m.fs.M1.recycle_state[0], ode["R5_ss"], m1_rec_flow, ode["R5_ss"]["alkalinity"]
+    )
+    propagate_state(m.fs.feed_to_m1)
     m.fs.M1.initialize(outlvl=_outlvl)
     propagate_state(m.fs.m1_to_m3)
-    propagate_state(source=m.fs.M1.outlet, destination=m.fs.M3.recycle)
 
+    # M3: seed recycle (S2 recycle ≈ R5 SS) before initializing
+    _seed(
+        m.fs.M3.recycle_state[0], ode["R5_ss"], m3_rec_flow, ode["R5_ss"]["alkalinity"]
+    )
     m.fs.M3.initialize(outlvl=_outlvl)
     propagate_state(m.fs.m3_to_r1)
 
+    # R1: seed inlet with ODE R1_in before initializing
+    _seed(
+        m.fs.R1.control_volume.properties_in[0],
+        ode["R1_in"],
+        r1_flow,
+        ode["R1_in"]["alkalinity"],
+    )
     m.fs.R1.initialize(outlvl=_outlvl)
     propagate_state(m.fs.r1_to_m2)
-    propagate_state(source=m.fs.R1.outlet, destination=m.fs.M2.R2_outlet)
 
+    # M2: seed both inlets (R1_out + R2_in ≈ R5_ss) before initializing
+    _seed(
+        m.fs.M2.R1_outlet_state[0], ode["R1_out"], r1_flow, ode["R1_out"]["alkalinity"]
+    )
+    _seed(
+        m.fs.M2.R2_outlet_state[0], ode["R2_out"], r2_flow, ode["R2_out"]["alkalinity"]
+    )
     m.fs.M2.initialize(outlvl=_outlvl)
     propagate_state(m.fs.m2_to_r3)
 
+    # R3: seed inlet with ODE R3_in
+    _seed(
+        m.fs.R3.control_volume.properties_in[0],
+        ode["R3_in"],
+        s1_total,
+        ode["R3_in"]["alkalinity"],
+    )
     m.fs.R3.initialize(outlvl=_outlvl)
     propagate_state(m.fs.r3_to_r4)
 
+    # R4: seed inlet with ODE R4_in
+    _seed(
+        m.fs.R4.control_volume.properties_in[0],
+        ode["R4_in"],
+        s1_total,
+        ode["R4_in"]["alkalinity"],
+    )
     m.fs.R4.initialize(outlvl=_outlvl)
     propagate_state(m.fs.r4_to_r5)
 
+    # R5: seed inlet with ODE R5_in
+    _seed(
+        m.fs.R5.control_volume.properties_in[0],
+        ode["R5_in"],
+        s1_total,
+        ode["R5_in"]["alkalinity"],
+    )
     m.fs.R5.initialize(outlvl=_outlvl)
     propagate_state(m.fs.r5_to_outgas)
 
+    # Outgassing, S1
     m.fs.outgassing.initialize(outlvl=_outlvl)
     propagate_state(m.fs.outgas_to_s1)
-
     m.fs.S1.initialize(outlvl=_outlvl)
     propagate_state(m.fs.s1_to_CL)
     propagate_state(m.fs.s1_to_m1)
     propagate_state(m.fs.s1_to_r2)
 
-    # R2
+    # R2: seed inlet with ODE R2_in before initializing
+    _seed(
+        m.fs.R2.control_volume.properties_in[0],
+        ode["R2_in"],
+        r2_flow,
+        ode["R2_in"]["alkalinity"],
+    )
     m.fs.R2.initialize(outlvl=_outlvl)
     propagate_state(m.fs.r2_to_m2)
 
-    # Clarifier
+    # CL, S2, Treated
     m.fs.CL.initialize(outlvl=_outlvl)
     propagate_state(m.fs.CL_to_s2)
-
+    propagate_state(m.fs.CL_to_effluent)
     m.fs.S2.initialize(outlvl=_outlvl)
     propagate_state(m.fs.s2_to_m3)
+    m.fs.Treated.initialize(outlvl=_outlvl)
 
-    # Reinitialization
-    # reinitialize M1 after s1_to_m1
+    # -----------------------------------------------------------------------
+    # Pass 2: re-seed reactor inlets + recycles from ODE SS, then re-initialize.
+    # (Pass 1's seeding gets overwritten by propagate_state during the forward
+    # pass; re-seeding here ensures the FINAL state handed to the NLP solver —
+    # and read by _verify_all_units — reflects the ODE data, not two rounds
+    # of un-anchored local mixing math.)
+    # -----------------------------------------------------------------------
+    _seed(
+        m.fs.M1.recycle_state[0], ode["R5_ss"], m1_rec_flow, ode["R5_ss"]["alkalinity"]
+    )
     m.fs.M1.initialize(outlvl=_outlvl)
     propagate_state(m.fs.m1_to_m3)
 
-    # reinitialize M3 after s2_to_m3
+    _seed(
+        m.fs.M3.recycle_state[0], ode["R5_ss"], m3_rec_flow, ode["R5_ss"]["alkalinity"]
+    )
     m.fs.M3.initialize(outlvl=_outlvl)
     propagate_state(m.fs.m3_to_r1)
 
+    _seed(
+        m.fs.R1.control_volume.properties_in[0],
+        ode["R1_in"],
+        r1_flow,
+        ode["R1_in"]["alkalinity"],
+    )
     m.fs.R1.initialize(outlvl=_outlvl)
     propagate_state(m.fs.r1_to_m2)
 
-    # reinitialize M2 after r2_to_m2
+    _seed(
+        m.fs.M2.R1_outlet_state[0], ode["R1_out"], r1_flow, ode["R1_out"]["alkalinity"]
+    )
+    _seed(
+        m.fs.M2.R2_outlet_state[0], ode["R2_out"], r2_flow, ode["R2_out"]["alkalinity"]
+    )
     m.fs.M2.initialize(outlvl=_outlvl)
     propagate_state(m.fs.m2_to_r3)
 
+    _seed(
+        m.fs.R3.control_volume.properties_in[0],
+        ode["R3_in"],
+        s1_total,
+        ode["R3_in"]["alkalinity"],
+    )
     m.fs.R3.initialize(outlvl=_outlvl)
     propagate_state(m.fs.r3_to_r4)
 
+    _seed(
+        m.fs.R4.control_volume.properties_in[0],
+        ode["R4_in"],
+        s1_total,
+        ode["R4_in"]["alkalinity"],
+    )
     m.fs.R4.initialize(outlvl=_outlvl)
     propagate_state(m.fs.r4_to_r5)
 
+    _seed(
+        m.fs.R5.control_volume.properties_in[0],
+        ode["R5_in"],
+        s1_total,
+        ode["R5_in"]["alkalinity"],
+    )
     m.fs.R5.initialize(outlvl=_outlvl)
     propagate_state(m.fs.r5_to_outgas)
 
     m.fs.outgassing.initialize(outlvl=_outlvl)
     propagate_state(m.fs.outgas_to_s1)
-
     m.fs.S1.initialize(outlvl=_outlvl)
     propagate_state(m.fs.s1_to_CL)
     propagate_state(m.fs.s1_to_m1)
     propagate_state(m.fs.s1_to_r2)
+
+    _seed(
+        m.fs.R2.control_volume.properties_in[0],
+        ode["R2_in"],
+        r2_flow,
+        ode["R2_in"]["alkalinity"],
+    )
+    m.fs.R2.initialize(outlvl=_outlvl)
+    propagate_state(m.fs.r2_to_m2)
 
     m.fs.CL.initialize(outlvl=_outlvl)
     propagate_state(m.fs.CL_to_s2)
     propagate_state(m.fs.CL_to_effluent)
-
+    m.fs.S2.initialize(outlvl=_outlvl)
+    propagate_state(m.fs.s2_to_m3)
     m.fs.Treated.initialize(outlvl=_outlvl)
-
-    interval_initializer(m)
-
-    # Apply sequential decomposition - 1 iteration should suffice
-    seq = SequentialDecomposition()
-    seq.options.select_tear_method = "heuristic"
-    seq.options.tear_method = "Direct"
-    seq.options.iterLim = 1
-
-    G = seq.create_graph(m)
-
-    # # Uncomment this code to see tear set and initialization order
-    # heuristic_tear_set = seq.tear_set_arcs(G, method="heuristic")
-    # order = seq.calculation_order(G)
-    # for o in heuristic_tear_set:
-    #     print(o.name)
-    # for o in order:
-    #     print(o[0].name)
-
-    def function(unit):
-        unit.initialize(outlvl=idaeslog.WARNING)
-
-    seq.run(m, function)
 
 
 def add_costing(m):
@@ -1156,6 +1409,329 @@ def initialize_from_julia_ss(m):
     )
 
 
+def initialize_from_ode_ss(m):
+    """Seed all reactor state blocks from UConn ODE steady-state solution.
+
+    Uses reactor INLET concentrations from the ODE simulation, which represent
+    the physically correct starting point for IPOPT — closer to the biological
+    SS than initialize_flowsheet alone, without exact degeneracy.
+
+    All concentrations in mg/L → kg/m3 (multiply by 1e-3).
+    Alkalinity in mol/m3 (already in correct units).
+    Flow rates from Mixer 2/3 data (m3/day → m3/s via /86400).
+    """
+
+    # ---------------------------------------------------------------------------
+    # ODE SS inlet concentrations (mg/L) — convert to kg/m3 via 1e-3
+    # ---------------------------------------------------------------------------
+    def _c(mgL):
+        return mgL * 1e-3
+
+    ode = {
+        "R1_in": {
+            "S_O": _c(0.006858),
+            "S_I": _c(7.387),
+            "S_S": _c(46.96),
+            "S_NH4": _c(7.131),
+            "S_N2": _c(0.1149),
+            "S_NOX": _c(0.4949),
+            "X_I": _c(3666.3),
+            "X_S": _c(124.89),
+            "X_H": _c(237.06),
+            "X_STO": _c(440.80),
+            "X_A": _c(41.40),
+            "X_TSS": _c(2057.0),
+            "alkalinity": 0.900,
+        },
+        "R2_in": {
+            "S_O": _c(0.01899),
+            "S_I": _c(7.387),
+            "S_S": _c(1.333),
+            "S_NH4": _c(0.400),
+            "S_N2": _c(0.3180),
+            "S_NOX": _c(1.140),
+            "X_I": _c(3670.2),
+            "X_S": _c(63.19),
+            "X_H": _c(238.95),
+            "X_STO": _c(444.32),
+            "X_A": _c(41.73),
+            "X_TSS": _c(2017.7),
+            "alkalinity": 0.373,
+        },
+        "R3_in": {
+            "S_O": _c(3.001),
+            "S_I": _c(7.387),
+            "S_S": _c(41.98),
+            "S_NH4": _c(4.717),
+            "S_N2": _c(0.5934),
+            "S_NOX": _c(1.313),
+            "X_I": _c(3669.5),
+            "X_S": _c(75.93),
+            "X_H": _c(233.66),
+            "X_STO": _c(432.04),
+            "X_A": _c(40.77),
+            "X_TSS": _c(2013.7),
+            "alkalinity": 0.669,
+        },
+        "R4_in": {
+            "S_O": _c(0.02823),
+            "S_I": _c(7.387),
+            "S_S": _c(37.55),
+            "S_NH4": _c(4.491),
+            "S_N2": _c(1.713),
+            "S_NOX": _c(0.5394),
+            "X_I": _c(3669.5),
+            "X_S": _c(73.11),
+            "X_H": _c(235.39),
+            "X_STO": _c(432.85),
+            "X_A": _c(40.83),
+            "X_TSS": _c(2013.7),
+            "alkalinity": 0.708,
+        },
+        "R5_in": {
+            "S_O": _c(5.958),
+            "S_I": _c(7.387),
+            "S_S": _c(4.013),
+            "S_NH4": _c(0.9556),
+            "S_N2": _c(1.823),
+            "S_NOX": _c(5.197),
+            "X_I": _c(3670.1),
+            "X_S": _c(64.89),
+            "X_H": _c(235.86),
+            "X_STO": _c(459.55),
+            "X_A": _c(41.65),
+            "X_TSS": _c(2025.2),
+            "alkalinity": 0.123,
+        },
+        # M2 In1 = R1 outlet; M2 In2 = R2 outlet (= S1.R2_inlet)
+        "R1_out": {
+            "S_O": _c(9.406e-6),
+            "S_I": _c(7.387),
+            "S_S": _c(65.83),
+            "S_NH4": _c(7.371),
+            "S_N2": _c(0.5835),
+            "S_NOX": _c(0.02696),
+            "X_I": _c(3666.3),
+            "X_S": _c(103.32),
+            "X_H": _c(237.87),
+            "X_STO": _c(441.35),
+            "X_A": _c(41.39),
+            "X_TSS": _c(2041.9),
+            "alkalinity": 0.9505,
+        },
+        "R2_out": {
+            "S_O": _c(8.267),
+            "S_I": _c(7.387),
+            "S_S": _c(0.1477),
+            "S_NH4": _c(0.06262),
+            "S_N2": _c(0.6106),
+            "S_NOX": _c(3.569),
+            "X_I": _c(3674.97),
+            "X_S": _c(27.87),
+            "X_H": _c(226.28),
+            "X_STO": _c(415.71),
+            "X_A": _c(39.67),
+            "X_TSS": _c(1964.4),
+            "alkalinity": 0.1755,
+        },
+        # M1 Inlet 2 = S1.M1_inlet = internal recycle (R5 SS concentrations)
+        "M1_recycle": {
+            "S_O": _c(0.380),
+            "S_I": _c(7.387),
+            "S_S": _c(1.333),
+            "S_NH4": _c(0.400),
+            "S_N2": _c(6.360),
+            "S_NOX": _c(1.140),
+            "X_I": _c(3670.2),
+            "X_S": _c(63.19),
+            "X_H": _c(238.95),
+            "X_STO": _c(444.32),
+            "X_A": _c(41.73),
+            "X_TSS": _c(2017.7),
+            "alkalinity": 0.373,
+        },
+    }
+
+    # ---------------------------------------------------------------------------
+    # Flows from Mixer 2/3 data (m3/day -> m3/s)
+    # ---------------------------------------------------------------------------
+    r1_flow = 11378.04829833368 / 86400.0  # M3 outlet = R1 inlet
+    r2_flow = 6486.369639737528 / 86400.0  # R2 outlet = M2 In2
+    s1_total = r1_flow + r2_flow  # R3-R5 = S1 mixed
+    m2_flow = s1_total  # M2 outlet = R3 inlet
+
+    s1_eff_frac = 0.40685806084408344
+    s1_m1_frac = 1.0 - s1_eff_frac - 0.36308877581252170
+    eff_flow = s1_eff_frac * s1_total  # S1 effluent → CL
+    m1_rec_flow = s1_m1_frac * s1_total  # S1 → M1 recycle
+
+    CL_R1 = 0.47918644727352017
+    CL_W1 = 0.011536971119954921
+    cl_under_frac = CL_R1 + CL_W1 * (1.0 - CL_R1)
+    s2_rec_frac = CL_R1 / cl_under_frac
+    cl_under_flow = r1_flow - (pyo.value(m.fs.feed.flow_vol[0]) + m1_rec_flow)
+    m3_rec_flow = cl_under_flow * s2_rec_frac
+    cl_eff_flow = eff_flow - cl_under_flow
+
+    # ---------------------------------------------------------------------------
+    # Helper: set a state block's values (concentrations + flow + alkalinity)
+    # ---------------------------------------------------------------------------
+    def _set(state, concs, flow, alk):
+        if not state.flow_vol.is_fixed():
+            state.flow_vol.set_value(flow)
+        for k, v in concs.items():
+            if k == "alkalinity":
+                continue
+            if hasattr(state, "conc_mass_comp") and k in state.conc_mass_comp:
+                if not state.conc_mass_comp[k].is_fixed():
+                    state.conc_mass_comp[k].set_value(max(v, 1e-10))
+        if hasattr(state, "alkalinity") and not state.alkalinity.is_fixed():
+            state.alkalinity.set_value(max(alk, 1e-10))
+
+    # ---------------------------------------------------------------------------
+    # Seed reactor properties_in and properties_out
+    # ---------------------------------------------------------------------------
+    _set(
+        m.fs.R1.control_volume.properties_in[0],
+        ode["R1_in"],
+        r1_flow,
+        ode["R1_in"]["alkalinity"],
+    )
+    _set(
+        m.fs.R1.control_volume.properties_out[0],
+        ode["R1_out"],
+        r1_flow,
+        ode["R1_out"]["alkalinity"],
+    )
+    _set(
+        m.fs.R2.control_volume.properties_in[0],
+        ode["R2_in"],
+        r2_flow,
+        ode["R2_in"]["alkalinity"],
+    )
+    _set(
+        m.fs.R2.control_volume.properties_out[0],
+        ode["R2_out"],
+        r2_flow,
+        ode["R2_out"]["alkalinity"],
+    )
+    _set(
+        m.fs.R3.control_volume.properties_in[0],
+        ode["R3_in"],
+        m2_flow,
+        ode["R3_in"]["alkalinity"],
+    )
+    _set(
+        m.fs.R3.control_volume.properties_out[0],
+        ode["R4_in"],
+        m2_flow,
+        ode["R4_in"]["alkalinity"],
+    )
+    _set(
+        m.fs.R4.control_volume.properties_in[0],
+        ode["R4_in"],
+        m2_flow,
+        ode["R4_in"]["alkalinity"],
+    )
+    _set(
+        m.fs.R4.control_volume.properties_out[0],
+        ode["R5_in"],
+        m2_flow,
+        ode["R5_in"]["alkalinity"],
+    )
+    _set(
+        m.fs.R5.control_volume.properties_in[0],
+        ode["R5_in"],
+        m2_flow,
+        ode["R5_in"]["alkalinity"],
+    )
+    _set(
+        m.fs.R5.control_volume.properties_out[0],
+        ode["M1_recycle"],
+        m2_flow,
+        ode["M1_recycle"]["alkalinity"],
+    )
+
+    # ---------------------------------------------------------------------------
+    # Seed mixer states
+    # ---------------------------------------------------------------------------
+    _set(m.fs.M3.mixed_state[0], ode["R1_in"], r1_flow, ode["R1_in"]["alkalinity"])
+    _set(
+        m.fs.M2.R1_outlet_state[0], ode["R1_out"], r1_flow, ode["R1_out"]["alkalinity"]
+    )
+    _set(
+        m.fs.M2.R2_outlet_state[0], ode["R2_out"], r2_flow, ode["R2_out"]["alkalinity"]
+    )
+    _set(m.fs.M2.mixed_state[0], ode["R3_in"], m2_flow, ode["R3_in"]["alkalinity"])
+    _set(
+        m.fs.M1.recycle_state[0],
+        ode["M1_recycle"],
+        m1_rec_flow,
+        ode["M1_recycle"]["alkalinity"],
+    )
+    _set(m.fs.M1.mixed_state[0], ode["R1_in"], r1_flow, ode["R1_in"]["alkalinity"])
+    _set(
+        m.fs.M3.recycle_state[0],
+        ode["M1_recycle"],
+        m3_rec_flow,
+        ode["M1_recycle"]["alkalinity"],
+    )
+    _set(
+        m.fs.M3.feed_state[0],
+        ode["R1_in"],
+        r1_flow - m3_rec_flow,
+        ode["R1_in"]["alkalinity"],
+    )
+
+    # ---------------------------------------------------------------------------
+    # Seed S1, outgassing (R5 outlet concentrations)
+    # ---------------------------------------------------------------------------
+    r5_out = ode["M1_recycle"]
+    for state in [
+        m.fs.S1.mixed_state[0],
+        m.fs.S1.effluent_state[0],
+        m.fs.S1.M1_inlet_state[0],
+        m.fs.S1.R2_inlet_state[0],
+    ]:
+        _set(state, r5_out, s1_total, r5_out["alkalinity"])
+    _set(m.fs.outgassing.mixed_state[0], r5_out, s1_total, r5_out["alkalinity"])
+    _set(m.fs.outgassing.effluent_state[0], r5_out, s1_total, r5_out["alkalinity"])
+
+    # ---------------------------------------------------------------------------
+    # Seed CL and S2 (X_* concentrated in underflow, ~0 in effluent)
+    # ---------------------------------------------------------------------------
+    X_species = ["X_I", "X_S", "X_H", "X_STO", "X_A", "X_TSS"]
+    conc_factor = eff_flow / max(cl_under_flow, 1e-6)
+    eff_concs = {k: (1e-10 if k in X_species else v) for k, v in r5_out.items()}
+    under_concs = {
+        k: (v * conc_factor if k in X_species else v) for k, v in r5_out.items()
+    }
+
+    _set(m.fs.CL.mixed_state[0], r5_out, eff_flow, r5_out["alkalinity"])
+    _set(m.fs.CL.effluent_state[0], eff_concs, cl_eff_flow, r5_out["alkalinity"])
+    _set(m.fs.CL.underflow_state[0], under_concs, cl_under_flow, r5_out["alkalinity"])
+    _set(m.fs.S2.mixed_state[0], under_concs, cl_under_flow, r5_out["alkalinity"])
+    _set(m.fs.S2.recycle_state[0], under_concs, m3_rec_flow, r5_out["alkalinity"])
+    _set(
+        m.fs.S2.waste_state[0],
+        under_concs,
+        cl_under_flow - m3_rec_flow,
+        r5_out["alkalinity"],
+    )
+    _set(m.fs.Treated.properties[0], eff_concs, cl_eff_flow, r5_out["alkalinity"])
+
+    # Seed S2 waste split fraction to avoid degeneracy
+    s2_waste_frac = 1.0 - s2_rec_frac
+    if not m.fs.S2.split_fraction[0, "waste"].is_fixed():
+        m.fs.S2.split_fraction[0, "waste"].set_value(s2_waste_frac)
+
+    print(
+        f"Seeded from ODE SS: R1_in X_H={ode['R1_in']['X_H']*1e3:.1f} mg/L  "
+        f"R1_out X_H={ode['R1_out']['X_H']*1e3:.1f} mg/L  "
+        f"R5_in X_H={ode['R5_in']['X_H']*1e3:.1f} mg/L"
+    )
+
+
 def seed_recycles_from_julia(m):
     """Seed M1 and M3 recycle states from Julia R5 steady-state concentrations.
 
@@ -1453,6 +2029,436 @@ def print_reactor_comparison(m):
         print(df_rx.to_string())
 
 
+def _verify_init(m):
+    """Print post-init reactor inlet state vs UConn ODE SS reference."""
+
+    ode_ref = {
+        "R1": {
+            "X_H": 237.06,
+            "X_STO": 440.80,
+            "X_S": 124.89,
+            "X_A": 41.40,
+            "X_I": 3666.3,
+            "S_S": 46.96,
+            "S_O": 0.00686,
+            "S_NH4": 7.131,
+            "S_NOX": 0.4949,
+            "S_N2": 0.1149,
+            "S_I": 7.387,
+            "X_TSS": 2057.0,
+            "alkalinity": 0.900,
+        },
+        "R2": {
+            "X_H": 238.95,
+            "X_STO": 444.32,
+            "X_S": 63.19,
+            "X_A": 41.73,
+            "X_I": 3670.2,
+            "S_S": 1.333,
+            "S_O": 0.01899,
+            "S_NH4": 0.400,
+            "S_NOX": 1.140,
+            "S_N2": 0.318,
+            "S_I": 7.387,
+            "X_TSS": 2017.7,
+            "alkalinity": 0.373,
+        },
+        "R3": {
+            "X_H": 233.66,
+            "X_STO": 432.04,
+            "X_S": 75.93,
+            "X_A": 40.77,
+            "X_I": 3669.5,
+            "S_S": 41.98,
+            "S_O": 3.001,
+            "S_NH4": 4.717,
+            "S_NOX": 1.313,
+            "S_N2": 0.593,
+            "S_I": 7.387,
+            "X_TSS": 2013.7,
+            "alkalinity": 0.669,
+        },
+        "R4": {
+            "X_H": 235.39,
+            "X_STO": 432.85,
+            "X_S": 73.11,
+            "X_A": 40.83,
+            "X_I": 3669.5,
+            "S_S": 37.55,
+            "S_O": 0.02823,
+            "S_NH4": 4.491,
+            "S_NOX": 0.5394,
+            "S_N2": 1.713,
+            "S_I": 7.387,
+            "X_TSS": 2013.7,
+            "alkalinity": 0.708,
+        },
+        "R5": {
+            "X_H": 235.86,
+            "X_STO": 459.55,
+            "X_S": 64.89,
+            "X_A": 41.65,
+            "X_I": 3670.1,
+            "S_S": 4.013,
+            "S_O": 5.958,
+            "S_NH4": 0.9556,
+            "S_NOX": 5.197,
+            "S_N2": 1.823,
+            "S_I": 7.387,
+            "X_TSS": 2025.2,
+            "alkalinity": 0.123,
+        },
+    }
+    reactors = {
+        "R1": m.fs.R1.control_volume.properties_in[0],
+        "R2": m.fs.R2.control_volume.properties_in[0],
+        "R3": m.fs.R3.control_volume.properties_in[0],
+        "R4": m.fs.R4.control_volume.properties_in[0],
+        "R5": m.fs.R5.control_volume.properties_in[0],
+    }
+    species = [
+        "X_H",
+        "X_STO",
+        "X_S",
+        "X_A",
+        "X_I",
+        "X_TSS",
+        "S_S",
+        "S_O",
+        "S_NH4",
+        "S_NOX",
+        "S_N2",
+        "S_I",
+    ]
+
+    W = 14
+    header = f"{'Species':<10} {'':8} " + "".join(
+        [f"{rx:>{W}}" for rx in ["R1", "R2", "R3", "R4", "R5"]]
+    )
+    print("\n" + "=" * 82)
+    print(
+        "POST-INIT VERIFICATION: Reactor Inlets  (conc: mg/L | alk: mol/m3 | flow: m3/day)"
+    )
+    print("=" * 82)
+    print(header)
+
+    for sp in species:
+        wt = [
+            pyo.value(reactors[rx].conc_mass_comp[sp]) * 1e3
+            for rx in ["R1", "R2", "R3", "R4", "R5"]
+        ]
+        od = [ode_ref[rx][sp] for rx in ["R1", "R2", "R3", "R4", "R5"]]
+        print(f"{sp:<10} {'WaterTAP':8} " + "".join([f"{v:>{W}.3f}" for v in wt]))
+        print(f"{'':10} {'ODE SS':8} " + "".join([f"{v:>{W}.3f}" for v in od]))
+        pct = [(w - o) / o * 100 if o != 0 else float("nan") for w, o in zip(wt, od)]
+        print(f"{'':10} {'% diff':8} " + "".join([f"{v:>{W}.1f}" for v in pct]))
+        print()
+
+    # Alkalinity (WaterTAP stores in mol/m3 natively; pyo.value gives mol/m3)
+    wt_alk = [
+        pyo.value(reactors[rx].alkalinity) for rx in ["R1", "R2", "R3", "R4", "R5"]
+    ]
+    od_alk = [ode_ref[rx]["alkalinity"] for rx in ["R1", "R2", "R3", "R4", "R5"]]
+    print(
+        f"{'alkalinity':<10} {'WaterTAP':8} "
+        + "".join([f"{v:>{W}.4f}" for v in wt_alk])
+    )
+    print(f"{'':10} {'ODE SS':8} " + "".join([f"{v:>{W}.4f}" for v in od_alk]))
+    print()
+
+    # Flow and temperature
+    wt_flow = [
+        pyo.value(reactors[rx].flow_vol) * 86400
+        for rx in ["R1", "R2", "R3", "R4", "R5"]
+    ]
+    od_flow = [11378.0, 6486.4, 17864.4, 17864.4, 17864.4]
+    print(
+        f"{'flow_vol':<10} {'WaterTAP':8} " + "".join([f"{v:>{W}.1f}" for v in wt_flow])
+    )
+    print(
+        f"{'(m3/day)':<10} {'ODE ref':8} " + "".join([f"{v:>{W}.1f}" for v in od_flow])
+    )
+    print()
+
+    wt_temp = [
+        pyo.value(reactors[rx].temperature) for rx in ["R1", "R2", "R3", "R4", "R5"]
+    ]
+    print(
+        f"{'temp (K)':<10} {'WaterTAP':8} " + "".join([f"{v:>{W}.2f}" for v in wt_temp])
+    )
+    print("=" * 82)
+
+
+def _verify_all_units(m):
+    """Compare WaterTAP post-init state to UConn ODE SS data.
+
+    Two categories, kept clearly separate:
+
+    (A) SEEDED INLETS — R1.in..R5.in are directly overwritten with ODE values
+        every pass (see _seed calls in initialize_flowsheet). These will always
+        show ~0% diff by construction. They confirm the seeding scaffolding
+        works, but are NOT a test of reaction kinetics.
+
+    (B) REACTOR OUTLETS (control_volume.properties_out) — these are NEVER
+        seeded; they are purely what each reactor's local .initialize() solve
+        computes from the (correct, ODE-seeded) inlet. Any difference here is
+        a genuine discrepancy between WaterTAP's ASM3 reaction kinetics and
+        UConn's Julia ODE model for that reactor — not an initialization bug.
+
+    Mapping used for (B): R1.out -> ODE "Mixer 2 In1"; R2.out -> ODE "Mixer 2
+    In2"; R3.out -> ODE "Reactor 4 Inlet" (R3 feeds R4 directly, no mixer in
+    between); R4.out -> ODE "Reactor 5 Inlet"; R5.out -> ODE "Mixer 1 Inlet 2"
+    (partial: only X_H, X_STO, X_S, X_A, X_I reported for this stream).
+    """
+
+    ref = {
+        "R1_in": {
+            "X_H": 237.06,
+            "X_STO": 440.80,
+            "X_S": 124.89,
+            "X_A": 41.40,
+            "X_I": 3666.3,
+            "X_TSS": 2057.0,
+            "S_S": 46.96,
+            "S_O": 0.00686,
+            "S_NH4": 7.131,
+            "S_NOX": 0.4949,
+            "S_N2": 0.1149,
+            "S_I": 7.387,
+            "alkalinity": 0.900,
+            "flow": 11378.05,
+            "flow_source": "raw (Mixer 3 Out1)",
+        },
+        "R2_in": {
+            "X_H": 238.95,
+            "X_STO": 444.32,
+            "X_S": 63.19,
+            "X_A": 41.73,
+            "X_I": 3670.2,
+            "X_TSS": 2017.7,
+            "S_S": 1.333,
+            "S_O": 0.01899,
+            "S_NH4": 0.400,
+            "S_NOX": 1.140,
+            "S_N2": 0.318,
+            "S_I": 7.387,
+            "alkalinity": 0.373,
+            "flow": 6486.37,
+            "flow_source": "raw (Mixer 2 In2)",
+        },
+        "R3_in": {
+            "X_H": 233.66,
+            "X_STO": 432.04,
+            "X_S": 75.93,
+            "X_A": 40.77,
+            "X_I": 3669.5,
+            "X_TSS": 2013.7,
+            "S_S": 41.98,
+            "S_O": 3.001,
+            "S_NH4": 4.717,
+            "S_NOX": 1.313,
+            "S_N2": 0.593,
+            "S_I": 7.387,
+            "alkalinity": 0.669,
+            "flow": 17864.42,
+            "flow_source": "derived (R1+R2)",
+        },
+        "R4_in": {
+            "X_H": 235.39,
+            "X_STO": 432.85,
+            "X_S": 73.11,
+            "X_A": 40.83,
+            "X_I": 3669.5,
+            "X_TSS": 2013.7,
+            "S_S": 37.55,
+            "S_O": 0.02823,
+            "S_NH4": 4.491,
+            "S_NOX": 0.5394,
+            "S_N2": 1.713,
+            "S_I": 7.387,
+            "alkalinity": 0.708,
+            "flow": 17864.42,
+            "flow_source": "derived (R1+R2)",
+        },
+        "R5_in": {
+            "X_H": 235.86,
+            "X_STO": 459.55,
+            "X_S": 64.89,
+            "X_A": 41.65,
+            "X_I": 3670.1,
+            "X_TSS": 2025.2,
+            "S_S": 4.013,
+            "S_O": 5.958,
+            "S_NH4": 0.9556,
+            "S_NOX": 5.197,
+            "S_N2": 1.823,
+            "S_I": 7.387,
+            "alkalinity": 0.123,
+            "flow": 17864.42,
+            "flow_source": "derived (R1+R2)",
+        },
+        "M2_In1": {
+            "X_H": 237.87,
+            "X_STO": 441.35,
+            "X_S": 103.32,
+            "X_A": 41.39,
+            "X_I": 3666.3,
+            "X_TSS": 2041.9,
+            "S_S": 65.83,
+            "S_O": 9.406e-6,
+            "S_NH4": 7.371,
+            "S_NOX": 0.02696,
+            "S_N2": 0.5835,
+            "S_I": 7.387,
+            "alkalinity": 0.9505,
+            "flow": 11378.05,
+            "flow_source": "derived (R1 conserves flow)",
+        },
+        "M2_In2": {
+            "X_H": 226.28,
+            "X_STO": 415.71,
+            "X_S": 27.87,
+            "X_A": 39.67,
+            "X_I": 3674.97,
+            "X_TSS": 1964.4,
+            "S_S": 0.1477,
+            "S_O": 8.267,
+            "S_NH4": 0.06262,
+            "S_NOX": 3.569,
+            "S_N2": 0.6106,
+            "S_I": 7.387,
+            "alkalinity": 0.1755,
+            "flow": 6486.37,
+            "flow_source": "raw (Mixer 2 In2)",
+        },
+        "M1_In2": {
+            "X_H": 238.95,
+            "X_STO": 444.32,
+            "X_S": 63.19,
+            "X_A": 41.73,
+            "X_I": 3670.19,
+            "flow": None,
+            "flow_source": None,
+        },
+    }
+
+    all_species = [
+        "X_H",
+        "X_STO",
+        "X_S",
+        "X_A",
+        "X_I",
+        "X_TSS",
+        "S_S",
+        "S_O",
+        "S_NH4",
+        "S_NOX",
+        "S_N2",
+        "S_I",
+    ]
+
+    def _print_block(label, state, ref_key):
+        r = ref[ref_key]
+        print(f"\n--- {label} ---")
+        try:
+            temp = pyo.value(state.temperature)
+            print(
+                f"  [temperature = {temp:.2f} K  ({temp-293.15:+.2f} K from 293.15 K reference)]"
+            )
+        except Exception:
+            pass
+        print(f"{'Component':<12}{'WaterTAP':>14}{'UConn':>14}{'Diff %':>10}")
+        if r["flow"] is not None:
+            wt_flow = pyo.value(state.flow_vol) * 86400
+            pdiff = (wt_flow - r["flow"]) / r["flow"] * 100
+            print(
+                f"{'flow_vol':<12}{wt_flow:>14.2f}{r['flow']:>14.2f}{pdiff:>+10.2f}   [{r['flow_source']}]"
+            )
+        else:
+            print(
+                f"{'flow_vol':<12}{'--':>14}{'--':>14}{'--':>10}   [no UConn reference]"
+            )
+        for sp in all_species:
+            if sp not in r:
+                continue
+            wt = pyo.value(state.conc_mass_comp[sp]) * 1e3
+            od = r[sp]
+            pdiff = (wt - od) / od * 100 if od != 0 else float("nan")
+            print(f"{sp:<12}{wt:>14.4f}{od:>14.4f}{pdiff:>+10.1f}")
+        if "alkalinity" in r:
+            wt_alk = pyo.value(state.alkalinity)
+            od_alk = r["alkalinity"]
+            pdiff = (wt_alk - od_alk) / od_alk * 100
+            note = (
+                "  [alkalinity frozen by local .initialize() -- not meaningful pre-solve]"
+                if ".out" in label
+                else ""
+            )
+            print(
+                f"{'alkalinity':<12}{wt_alk:>14.4f}{od_alk:>14.4f}{pdiff:>+10.1f}{note}"
+            )
+
+    print("\n" + "=" * 100)
+    print("(A) SEEDED / FORCED STREAMS — overwritten with ODE values every pass;")
+    print("    confirms seeding scaffolding only, NOT a test of kinetics")
+    print("=" * 100)
+    for label, state, ref_key in [
+        ("R1.in", m.fs.R1.control_volume.properties_in[0], "R1_in"),
+        ("R2.in", m.fs.R2.control_volume.properties_in[0], "R2_in"),
+        ("R3.in", m.fs.R3.control_volume.properties_in[0], "R3_in"),
+        ("R4.in", m.fs.R4.control_volume.properties_in[0], "R4_in"),
+        ("R5.in", m.fs.R5.control_volume.properties_in[0], "R5_in"),
+        ("M2.R1_outlet", m.fs.M2.R1_outlet_state[0], "M2_In1"),
+        ("M2.R2_outlet", m.fs.M2.R2_outlet_state[0], "M2_In2"),
+    ]:
+        _print_block(label, state, ref_key)
+
+    print("\n" + "=" * 100)
+    print(
+        "(B) REACTOR OUTLETS — never seeded; genuine test of WaterTAP kinetics vs Julia ODE"
+    )
+    print(
+        "    Only single-hop comparisons shown (reactor -> next unit, no intermediate"
+    )
+    print(
+        "    units in between) so any diff is attributable to that reactor's own kinetics."
+    )
+    print(
+        "    R5.out is excluded: it passes through TWO intermediate units (outgassing,"
+    )
+    print(
+        "    then S1) before reaching the nearest UConn reference point (Mixer 1 Inlet 2),"
+    )
+    print(
+        "    so a diff there could reflect outgassing/splitter behavior, not just R5."
+    )
+    print("=" * 100)
+    for label, state, ref_key in [
+        ("R1.out (-> Mixer 2 In1)", m.fs.R1.control_volume.properties_out[0], "M2_In1"),
+        ("R2.out (-> Mixer 2 In2)", m.fs.R2.control_volume.properties_out[0], "M2_In2"),
+        (
+            "R3.out (-> Reactor 4 Inlet)",
+            m.fs.R3.control_volume.properties_out[0],
+            "R4_in",
+        ),
+        (
+            "R4.out (-> Reactor 5 Inlet)",
+            m.fs.R4.control_volume.properties_out[0],
+            "R5_in",
+        ),
+    ]:
+        _print_block(label, state, ref_key)
+
+    print("\n" + "=" * 100)
+    print(
+        "All other streams (mixers' internal mixed states, splitters, clarifier, S2, Treated)"
+    )
+    print(
+        "have NO corresponding UConn reference number in the ODE solution file — not shown."
+    )
+    print("=" * 100)
+
+
 if __name__ == "__main__":
 
     # Suppress warnings before anything is built
@@ -1478,7 +2484,10 @@ if __name__ == "__main__":
     scale_flowsheet(m)
 
     initialize_flowsheet(m)
-    initialize_from_julia_ss(m)
+    # initialize_from_ode_ss(m)
+
+    # # --- Post-init verification vs UConn ODE SS ---
+    # _verify_all_units(m)
 
     # --- Scaling report (enable to debug) ---
     # badly_scaled_var_list = iscale.badly_scaled_var_generator(m, large=1e1, small=1e-1)
@@ -1490,40 +2499,35 @@ if __name__ == "__main__":
     # dt.report_structural_issues()
     # dt.display_potential_evaluation_errors()
 
-    # --- Post-init stream table (before solve) ---
-    print("\n--- Stream table post-init (starting point) ---")
-    _st = create_stream_table_dataframe(
-        {
-            "Feed": m.fs.feed.outlet,
-            "R1": m.fs.R1.outlet,
-            "R2": m.fs.R2.outlet,
-            "R3": m.fs.R3.outlet,
-            "R4": m.fs.R4.outlet,
-            "R5": m.fs.R5.outlet,
-            "Effluent": m.fs.Treated.inlet,
-        },
-        time_point=0,
-    )
-    print(stream_table_dataframe_to_string(_st))
+    # # --- Post-init stream table (before solve) ---
+    # print("\n--- Stream table post-init (starting point) ---")
+    # _st = create_stream_table_dataframe(
+    #     {
+    #         "Feed": m.fs.feed.outlet,
+    #         "R1": m.fs.R1.outlet,
+    #         "R2": m.fs.R2.outlet,
+    #         "R3": m.fs.R3.outlet,
+    #         "R4": m.fs.R4.outlet,
+    #         "R5": m.fs.R5.outlet,
+    #         "Effluent": m.fs.Treated.inlet,
+    #     },
+    #     time_point=0,
+    # )
+    # print(stream_table_dataframe_to_string(_st))
 
-    # Restore IDAES logging for the solve so IPOPT output shows
-    idaeslog.getLogger("idaes").setLevel(idaeslog.WARNING)
-    # Keep Pyomo NL export warnings suppressed
-    import logging
-
-    logging.getLogger("pyomo.core").setLevel(logging.ERROR)
-
+    # --- Solve (commented out during initialization verification) ---
+    # idaeslog.getLogger("idaes").setLevel(idaeslog.WARNING)
+    # import logging
+    # logging.getLogger("pyomo.core").setLevel(logging.ERROR)
     dt = DiagnosticsToolbox(m)
     res = solve_flowsheet(m)
 
     solved = res.solver.termination_condition == TerminationCondition.optimal
-
     if not solved:
         print("\n--- Post-solve diagnostics ---")
         dt.report_numerical_issues()
         dt.display_constraints_with_large_residuals()
         dt.display_variables_at_or_outside_bounds()
-        # dt.display_near_parallel_variables()
         try:
             dt.compute_infeasibility_explanation()
         except Exception as e:
