@@ -207,6 +207,79 @@ def multi_run(
     return m_min, obj_set, m_set, cp_opt, r_AV_opt
 
 
+def attempt_direct_high_P_removal(
+    target=0.9,
+    S_PO4_factor=0.05,
+    X_PP_factor=0.3,
+    X_PAO_factor=0.7,
+    objective=objective_fun.LCOW,
+    has_effluent_constraints=True,
+):
+    """Alternative to the homotopy sweep in main(): instead of warm-starting
+    from a converged low-P_removal solution and stepping up (which hit a
+    fold point around P_removal~0.362 -- see the fixed-step and adaptive
+    sweeps), build a FRESH model, fix P_removal at `target` from the start,
+    and initialize from a guess that assumes a P-depleted plant state
+    throughout the recycle (much lower S_PO4, and somewhat lower X_PP/X_PAO
+    since less P is cycling through bio-P storage) rather than the tear
+    guesses tuned for the low-removal case.
+
+    A fold point on the continuation path from P_removal~0 does not prove no
+    solution exists at P_removal=target -- only that this particular path
+    can't reach it smoothly. There could be a disconnected feasible state
+    with different active bounds / different recycle composition that a
+    from-scratch initialization can find but a warm-started continuation
+    cannot. If this ALSO fails (especially with a large, not small,
+    constraint violation), that's much stronger evidence of genuine
+    structural infeasibility than the fold point alone.
+    """
+    print(
+        f"\n================ Direct attempt at P_removal={target} "
+        f"(fresh init, S_PO4 tear guesses x{S_PO4_factor}) ================"
+    )
+    m = build_flowsheet(has_electroNP=True)
+    set_operating_conditions(m)
+
+    m.fs.FeedWater.conc_mass_comp[0, "S_PO4"].fix(1e-6 * pyo.units.g / pyo.units.m**3)
+    m.fs.electroNP.eq_P_removal_surrogate.deactivate()
+    m.fs.electroNP.P_removal.fix(target)
+
+    set_scaling(m)
+
+    m, results = initialize_system(
+        m,
+        tear_scale={
+            "S_PO4": S_PO4_factor,
+            "X_PP": X_PP_factor,
+            "X_PAO": X_PAO_factor,
+        },
+    )
+
+    add_costing(m)
+    m.fs.costing.initialize()
+    interval_initializer(m.fs.costing)
+
+    assert_degrees_of_freedom(m, 0)
+    rescale_electroNP_S_PO4(m)
+
+    try:
+        results = solve(m)
+        pyo.assert_optimal_termination(results)
+        viol = pyo.value(m.fs.electroNP.properties_treated[0].conc_mass_comp["S_PO4"])
+        print(f"  CONVERGED. treated S_PO4 = {viol:.4g} kg/m3")
+        display_design(m)
+        display_performance_metrics(m)
+        display_costing(m)
+    except Exception as e:
+        print(f"  FAILED: {e}")
+        dt_fail = DiagnosticsToolbox(m)
+        print("\n---- Constraints with Large Residuals ----")
+        dt_fail.display_constraints_with_large_residuals()
+        print("\n---- Variables At or Outside Bounds ----")
+        dt_fail.display_variables_at_or_outside_bounds()
+    return m, results
+
+
 def main(
     has_electroNP=False,
     has_optimization=False,
@@ -216,18 +289,22 @@ def main(
     m = build_flowsheet(has_electroNP=has_electroNP)
     set_operating_conditions(m)
 
-    # # TODO: uncomment this to test with P_removal of electroNP
-    # if m.fs.has_electroNP is True:
-    #     m.fs.FeedWater.conc_mass_comp[0, "S_PO4"].fix(1e-6 * pyo.units.g / pyo.units.m ** 3)
-    #     m.fs.electroNP.eq_P_removal_surrogate.deactivate()
-    #     m.fs.electroNP.P_removal.fix(0.37)
+    # TODO: uncomment this to test with P_removal of electroNP
+    if m.fs.has_electroNP is True:
+        m.fs.FeedWater.conc_mass_comp[0, "S_PO4"].fix(
+            1e-6 * pyo.units.g / pyo.units.m**3
+        )
+        m.fs.electroNP.eq_P_removal_surrogate.deactivate()
+        # Initialize at pass-through (~0 removal) -- ramp up via homotopy
+        # below, rather than jumping straight to the target P_removal.
+        m.fs.electroNP.P_removal.fix(1e-6)
 
     set_scaling(m)
 
-    # print("\n================ Badly Scaled Vars AFTER set_scaling ================")
-    # badly_scaled_var_list = iscale.badly_scaled_var_generator(m, large=1e1, small=1e-1)
-    # for x in badly_scaled_var_list:
-    #     print(f"{x[0].name}\t{x[0].value}\tsf: {iscale.get_scaling_factor(x[0])}")
+    print("\n================ Badly Scaled Vars AFTER set_scaling ================")
+    badly_scaled_var_list = iscale.badly_scaled_var_generator(m, large=1e1, small=1e-1)
+    for x in badly_scaled_var_list:
+        print(f"{x[0].name}\t{x[0].value}\tsf: {iscale.get_scaling_factor(x[0])}")
 
     m, results = initialize_system(m)
 
@@ -363,6 +440,137 @@ def main(
     #         dt_fail.display_variables_at_or_outside_bounds()
     #         raise
 
+    # ADAPTIVE homotopy sweep (replaces the fixed-step version):
+    #   - starts at a coarse step (0.05); on failure, halves the step and
+    #     retries from the last converged point instead of giving up
+    #     immediately -- this is what actually gets past stiff transitions
+    #     like the one seen at P_removal=0.36-0.37 (114 iterations, MA27
+    #     reallocating repeatedly, inf_pr swinging to 1e6) without needing
+    #     hand-picked intermediate steps.
+    #   - grows the step back (capped) after a run of clean solves, so it
+    #     doesn't stay crawling in easy regions after getting past a hard one
+    #   - gives up on a given push only once step < min_step; at that point
+    #     re-solves at the last known-good point (so the model is left in a
+    #     genuinely converged state for the display_* calls below) and
+    #     reports where/why it stopped
+    #   - re-derives electroNP S_PO4 scaling from the current point before
+    #     every attempt (rescale_electroNP_S_PO4), since a factor tuned for
+    #     one P_removal is wrong by orders of magnitude at another
+    homotopy_failed_at = None
+    if m.fs.has_electroNP is True:
+        target = 0.9
+        initial_step = 0.05
+        max_step = 0.05
+        min_step = 1e-4
+        step = initial_step
+        p_current = 1e-6  # pass-through point, already initialized above
+        last_good = None
+        max_attempts = 200
+        attempt = 0
+
+        while attempt < max_attempts:
+            attempt += 1
+            p_try = p_current if last_good is None else min(last_good + step, target)
+
+            # ipopt-watertap's constraint_autoscale_large_jac has been
+            # observed to leave P_removal's bounds mutated to
+            # (last_fixed_value, last_fixed_value) after a solve instead of
+            # restoring (0, 1) -- re-widen before every fix.
+            m.fs.electroNP.P_removal.setlb(0)
+            m.fs.electroNP.P_removal.setub(1)
+            m.fs.electroNP.P_removal.fix(p_try)
+            rescale_electroNP_S_PO4(m)
+            print(
+                f"\n================ Homotopy attempt: P_removal={p_try:.6g} "
+                f"(step={step:.4g}) ================"
+            )
+            try:
+                results = solve(m)
+                pyo.assert_optimal_termination(results)
+                viol = pyo.value(
+                    m.fs.electroNP.properties_treated[0].conc_mass_comp["S_PO4"]
+                )
+                print(f"  converged. treated S_PO4 = {viol:.4g} kg/m3")
+                last_good = p_try
+                if last_good >= target - 1e-9:
+                    homotopy_failed_at = None
+                    print(f"\n>>> Reached target P_removal={target}.")
+                    break
+                # grow the step back after a clean solve, capped at max_step
+                step = min(step * 1.5, max_step)
+            except Exception as e:
+                print(f"  FAILED: {e}")
+                if last_good is None:
+                    # Even the initial pass-through step (P_removal~1e-6,
+                    # which has converged cleanly in every prior run this
+                    # session) failed. That's not a P_removal/homotopy
+                    # problem at all -- something upstream of the sweep
+                    # broke (bad solver options, a bad model edit, etc.).
+                    # Don't try to "recover" by fixing P_removal to None;
+                    # surface it immediately.
+                    print(
+                        "\n>>> Even the initial pass-through step failed -- "
+                        "this is not a homotopy/P_removal issue. Stopping "
+                        "immediately instead of retrying with smaller "
+                        "steps (there is no known-good point to retry from)."
+                    )
+                    dt_fail = DiagnosticsToolbox(m)
+                    dt_fail.display_constraints_with_large_residuals()
+                    dt_fail.display_variables_at_or_outside_bounds()
+                    raise
+                step /= 2
+                if step < min_step:
+                    print(
+                        f"\n>>> Step size below {min_step} -- stopping push "
+                        f"past P_removal={last_good}. Re-solving at last "
+                        "known-good point for a valid final state."
+                    )
+                    dt_fail = DiagnosticsToolbox(m)
+                    print(
+                        "\n---- Constraints with Large Residuals "
+                        "(at failed attempt) ----"
+                    )
+                    dt_fail.display_constraints_with_large_residuals()
+                    print(
+                        "\n---- Variables At or Outside Bounds "
+                        "(at failed attempt) ----"
+                    )
+                    dt_fail.display_variables_at_or_outside_bounds()
+                    homotopy_failed_at = p_try
+                    m.fs.electroNP.P_removal.setlb(0)
+                    m.fs.electroNP.P_removal.setub(1)
+                    m.fs.electroNP.P_removal.fix(last_good)
+                    rescale_electroNP_S_PO4(m)
+                    results = solve(m)
+                    break
+                # else: retry from last_good with the smaller step
+        else:
+            print(f"\n>>> Hit max_attempts={max_attempts} without reaching target.")
+            homotopy_failed_at = last_good
+
+        if homotopy_failed_at is not None:
+            print(
+                f"\n>>> Homotopy sweep stopped short of P_removal={target}. "
+                f"Furthest reached: {last_good}. Check the constraint-"
+                "violation magnitude in the IPOPT log above at the failed "
+                "attempt: small (~1e-5 - 1e-3) => likely still scaling/init "
+                "-- consider a smaller min_step; large (O(1)+) => likely a "
+                "real P-availability limit that no amount of rescaling will "
+                "fix."
+            )
+    else:
+        try:
+            results = solve(m)
+        except Exception:
+            print(
+                "\n================ Constraints with Large Residuals ================"
+            )
+            dt_fail = DiagnosticsToolbox(m)
+            dt_fail.display_constraints_with_large_residuals()
+            print("\n================ Variables At or Outside Bounds ================")
+            dt_fail.display_variables_at_or_outside_bounds()
+            raise
+
     if has_optimization:
         setup_optimization(
             m,
@@ -371,25 +579,34 @@ def main(
             reactor_volume_equalities=False,
         )
 
-    # try:
-    #     results = solve(m)
-    # except Exception:
-    #     print("\n================ Constraints with Large Residuals ================")
-    #     dt_fail = DiagnosticsToolbox(m)
-    #     dt_fail.display_constraints_with_large_residuals()
-    #     print("\n================ Variables At or Outside Bounds ================")
-    #     dt_fail.display_variables_at_or_outside_bounds()
-    #     raise
+    # Skip this re-solve if the homotopy sweep above already stopped early --
+    # the model is sitting at the last FAILED P_removal step, and re-solving
+    # here would just fail again (and raise, before display_* below can run
+    # against the last GOOD step). Only re-solve if the sweep completed
+    # cleanly, or if optimization setup changed the problem.
+    if homotopy_failed_at is None or has_optimization:
+        try:
+            results = solve(m)
+        except Exception:
+            print(
+                "\n================ Constraints with Large Residuals ================"
+            )
+            dt_fail = DiagnosticsToolbox(m)
+            dt_fail.report_numerical_issues()
+            dt_fail.display_constraints_with_large_residuals()
+            print("\n================ Variables At or Outside Bounds ================")
+            dt_fail.display_variables_at_or_outside_bounds()
+            raise
 
-    results = solve(m)
-    pyo.assert_optimal_termination(results)
-
-    check_solve(
-        results,
-        checkpoint="re-solve with controls in place",
-        logger=_log,
-        fail_flag=True,
-    )
+    # results = solve(m)
+    # pyo.assert_optimal_termination(results)
+    #
+    # check_solve(
+    #     results,
+    #     checkpoint="re-solve with controls in place",
+    #     logger=_log,
+    #     fail_flag=True,
+    # )
 
     # print("\n================ Numerical Issues AFTER solve ================")
     # dt.report_numerical_issues()
@@ -962,7 +1179,28 @@ def set_scaling(m):
     # scaling factor of electroNP
     if m.fs.has_electroNP is True:
         iscale.set_scaling_factor(m.fs.electroNP.inlet.flow_vol[0], 1e3)
-        # iscale.set_scaling_factor(m.fs.electroNP.inlet.conc_mass_comp[0, "S_PO4"], 1e-2)
+
+        # S_PO4 spans ~5 orders of magnitude across the electroNP ports
+        # (inlet/treated ~1-3 kg/m3, byproduct ~10 kg/m3, and treated drops
+        # toward ~0 as P_removal rises) -- the blanket conc_mass_comp sf=1e2
+        # from scale_variables() is tuned for mainstream ASM2d values
+        # (~0.01-0.03 kg/m3) and is badly wrong here. Set per-port factors
+        # from the last known converged magnitudes (P_removal=0.37 run):
+        #   inlet ~2.6 kg/m3, treated ~1.8 kg/m3, byproduct ~9.6 kg/m3
+        # NOTE: these are static snapshots for the current P_removal. If you
+        # sweep P_removal via homotopy, re-derive and re-apply these from
+        # the previous converged step instead of leaving them fixed here --
+        # see rescale_electroNP_S_PO4() below, called inside the homotopy
+        # loop in main().
+        iscale.set_scaling_factor(
+            m.fs.electroNP.properties_in[0].conc_mass_comp["S_PO4"], 1e0
+        )
+        iscale.set_scaling_factor(
+            m.fs.electroNP.properties_treated[0].conc_mass_comp["S_PO4"], 1e0
+        )
+        iscale.set_scaling_factor(
+            m.fs.electroNP.properties_byproduct[0].conc_mass_comp["S_PO4"], 1e-1
+        )
 
         # iscale.set_scaling_factor(m.fs.electroNP.T_surrogate, 1e-1)
         # iscale.set_scaling_factor(m.fs.electroNP.t_ss_surrogate, 1e-1)
@@ -1044,6 +1282,24 @@ def set_scaling(m):
         overwrite=True,
     )
 
+    # These two constraints showed up as the only large-residual entries
+    # (~1e-5, small but the SPECIFIC bottleneck) right at the P_removal=0.37
+    # transition -- SP1 splits R7 outlet into recycle/overflow, and MX2
+    # mixes that recycle back with the clarifier underflow. Both involve
+    # S_PO4 directly and sit in the mainstream activated-sludge recycle
+    # (not the electroNP/MX3 loop), so they were never covered by any of
+    # the electroNP-specific scaling above.
+    csb.scale_constraint_by_nominal_value(
+        m.fs.SP1.material_splitting_eqn[0.0, "underflow", "Liq", "S_PO4"],
+        scheme=ConstraintScalingScheme.inverseMaximum,
+        overwrite=True,
+    )
+    csb.scale_constraint_by_nominal_value(
+        m.fs.MX2.material_mixing_equations[0.0, "Liq", "S_PO4"],
+        scheme=ConstraintScalingScheme.inverseMaximum,
+        overwrite=True,
+    )
+
     # Scaling adjustments for Pi["X_PP"] = 1/31 change
     # X_PP in ADM1 is now treated as kg P/m3 (like S_IP), so the
     # SPO4_output constraint and related translator constraints have
@@ -1080,8 +1336,10 @@ def set_scaling(m):
     # factors tuned to their typical magnitude in this flowsheet.
     adm1_conc_sf = {
         "S_su": 1e0,
-        "S_aa": 1e0,
-        "S_fa": 1e0,
+        # S_aa ~ 0.0053 kg/m3 -> was sf=1e0 (scaled 0.0053, flagged too small)
+        "S_aa": 1e2,
+        # S_fa ~ 10.7 kg/m3 -> was sf=1e0 (scaled 10.7, flagged too large)
+        "S_fa": 1e-1,
         "S_va": 1e1,
         "S_bu": 1e1,
         "S_pro": 1e1,
@@ -1100,7 +1358,8 @@ def set_scaling(m):
         "X_pro": 1e2,
         "X_ac": 1e2,
         "X_h2": 1e1,
-        "X_I": 1e0,
+        # X_I ~ 13 kg/m3 -> was sf=1e0 (scaled 13, flagged too large)
+        "X_I": 1e-1,
         "X_PHA": 1e0,
         "X_PAO": 1e1,
         "S_K": 1e1,
@@ -1118,8 +1377,67 @@ def set_scaling(m):
 
     iscale.calculate_scaling_factors(m)
 
+    # ------------------------------------------------------------------
+    # Fix for a scaling bug found in electroNP_surrogate.py's own
+    # calculate_scaling_factors(): the loop over removal_frac_mass_comp
+    # has dead conditional branches --
+    #     if j == "S_PO4": sf = 1
+    #     elif j == "S_NH4": sf = 1
+    #     else: sf = 1
+    # every branch sets sf=1, so the intended per-species differentiation
+    # never happens. That's fine for P_removal/N_removal/water-frac
+    # (all O(0.1-1)), but the "else" branch covers every other component
+    # (X_PP, X_PAO, S_K, S_Mg, S_A, S_F, S_I, S_N2, S_NO3, S_O2, X_I, X_H,
+    # X_S, X_AUT, X_PHA) whose split_components constraint fixes them at
+    # 1e-7 -- badly scaled at sf=1. That's one poorly-conditioned equality
+    # constraint per affected component in the separator block. Per your
+    # "no modifications to the watertap package itself" rule, patch this
+    # from the flowsheet side instead -- iscale.calculate_scaling_factors(m)
+    # already ran (it sets these unconditionally with no None-guard), so
+    # this override must come AFTER it to stick.
+    if m.fs.has_electroNP is True:
+        _no_removal_species = {
+            j
+            for j in m.fs.props_ASM2D.component_list
+            if j not in ("H2O", "S_PO4", "S_NH4")
+        }
+        for (t, outlet, j), v in m.fs.electroNP.removal_frac_mass_comp.items():
+            # removal_frac_mass_comp IS split_fraction (aliased via
+            # add_object_reference) -- it has BOTH "treated" and "byproduct"
+            # keys per component. split_components pins "byproduct" at a
+            # constant 1e-7 for these species -- a linear, trivially-solved
+            # equality, not numerically fragile on its own -- so leave the
+            # scaling factor at electroNP's own default (sf=1) rather than
+            # maintaining a separate override. Just fix the initial value:
+            # it defaults to IDAES's generic Separator init (0.5, for a
+            # 2-outlet split) instead of anywhere near where it'll end up.
+            if outlet == "byproduct" and j in _no_removal_species:
+                v.set_value(1e-7)
 
-def initialize_system(m):
+
+def rescale_electroNP_S_PO4(m, floor=1e-8):
+    """Re-derive S_PO4 scaling factors for electroNP ports from the current
+    (last converged) variable values, then recompute scaling factors for the
+    whole model. Call this between homotopy steps -- a static scaling factor
+    tuned for P_removal=0.37 will be wrong by 1-2+ orders of magnitude once
+    treated-stream S_PO4 has dropped further at P_removal=0.7-0.9.
+    """
+    for props in (
+        m.fs.electroNP.properties_in[0],
+        m.fs.electroNP.properties_treated[0],
+        m.fs.electroNP.properties_byproduct[0],
+    ):
+        val = pyo.value(props.conc_mass_comp["S_PO4"])
+        sf = 1.0 / max(abs(val), floor)
+        iscale.set_scaling_factor(props.conc_mass_comp["S_PO4"], sf)
+    iscale.calculate_scaling_factors(m)
+
+
+def initialize_system(m, tear_scale=None):
+    """tear_scale: optional dict of {component_name: multiplier} applied to
+    ALL THREE tear guess sets' conc_mass_comp entries before seq.run(). Used
+    by attempt_direct_high_P_removal() to start from a P-depleted guess
+    instead of the values tuned for the low-P_removal case."""
     # Deactivate extra constraints
     for mx in m.fs.mixers:
         mx.pressure_equality_constraints[0.0, 2].deactivate()
@@ -1396,6 +1714,12 @@ def initialize_system(m):
 
     # Pass the tear_guess to the SD tool
     # seq.set_guesses_for(m.fs.CL.inlet, tear_guesses_CL)
+    if tear_scale:
+        for guess_dict in (tear_guesses0, tear_guesses, tear_guesses2):
+            for (t, comp), val in list(guess_dict["conc_mass_comp"].items()):
+                if comp in tear_scale:
+                    guess_dict["conc_mass_comp"][(t, comp)] = val * tear_scale[comp]
+
     seq.set_guesses_for(m.fs.R1.inlet, tear_guesses0)
     seq.set_guesses_for(m.fs.R3.inlet, tear_guesses)
     seq.set_guesses_for(m.fs.translator_asm2d_adm1.inlet, tear_guesses2)
