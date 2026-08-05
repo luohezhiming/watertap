@@ -215,24 +215,6 @@ def attempt_direct_high_P_removal(
     objective=objective_fun.LCOW,
     has_effluent_constraints=True,
 ):
-    """Alternative to the homotopy sweep in main(): instead of warm-starting
-    from a converged low-P_removal solution and stepping up (which hit a
-    fold point around P_removal~0.362 -- see the fixed-step and adaptive
-    sweeps), build a FRESH model, fix P_removal at `target` from the start,
-    and initialize from a guess that assumes a P-depleted plant state
-    throughout the recycle (much lower S_PO4, and somewhat lower X_PP/X_PAO
-    since less P is cycling through bio-P storage) rather than the tear
-    guesses tuned for the low-removal case.
-
-    A fold point on the continuation path from P_removal~0 does not prove no
-    solution exists at P_removal=target -- only that this particular path
-    can't reach it smoothly. There could be a disconnected feasible state
-    with different active bounds / different recycle composition that a
-    from-scratch initialization can find but a warm-started continuation
-    cannot. If this ALSO fails (especially with a large, not small,
-    constraint violation), that's much stronger evidence of genuine
-    structural infeasibility than the fold point alone.
-    """
     print(
         f"\n================ Direct attempt at P_removal={target} "
         f"(fresh init, S_PO4 tear guesses x{S_PO4_factor}) ================"
@@ -324,7 +306,7 @@ def main(
     # dt.display_variables_with_extreme_jacobians()
     # dt.display_constraints_with_extreme_jacobians()
 
-    # # TODO: uncomment this to test with P_removal of electroNP
+    # # uncomment this to test with P_removal of electroNP
     # if m.fs.has_electroNP is True:
     #     m.fs.electroNP.eq_P_removal_surrogate.deactivate()
     #     m.fs.electroNP.P_removal.fix(1e-6)
@@ -440,22 +422,7 @@ def main(
     #         dt_fail.display_variables_at_or_outside_bounds()
     #         raise
 
-    # ADAPTIVE homotopy sweep (replaces the fixed-step version):
-    #   - starts at a coarse step (0.05); on failure, halves the step and
-    #     retries from the last converged point instead of giving up
-    #     immediately -- this is what actually gets past stiff transitions
-    #     like the one seen at P_removal=0.36-0.37 (114 iterations, MA27
-    #     reallocating repeatedly, inf_pr swinging to 1e6) without needing
-    #     hand-picked intermediate steps.
-    #   - grows the step back (capped) after a run of clean solves, so it
-    #     doesn't stay crawling in easy regions after getting past a hard one
-    #   - gives up on a given push only once step < min_step; at that point
-    #     re-solves at the last known-good point (so the model is left in a
-    #     genuinely converged state for the display_* calls below) and
-    #     reports where/why it stopped
-    #   - re-derives electroNP S_PO4 scaling from the current point before
-    #     every attempt (rescale_electroNP_S_PO4), since a factor tuned for
-    #     one P_removal is wrong by orders of magnitude at another
+    # ADAPTIVE homotopy sweep:
     homotopy_failed_at = None
     if m.fs.has_electroNP is True:
         target = 0.9
@@ -472,10 +439,6 @@ def main(
             attempt += 1
             p_try = p_current if last_good is None else min(last_good + step, target)
 
-            # ipopt-watertap's constraint_autoscale_large_jac has been
-            # observed to leave P_removal's bounds mutated to
-            # (last_fixed_value, last_fixed_value) after a solve instead of
-            # restoring (0, 1) -- re-widen before every fix.
             m.fs.electroNP.P_removal.setlb(0)
             m.fs.electroNP.P_removal.setub(1)
             m.fs.electroNP.P_removal.fix(p_try)
@@ -501,13 +464,6 @@ def main(
             except Exception as e:
                 print(f"  FAILED: {e}")
                 if last_good is None:
-                    # Even the initial pass-through step (P_removal~1e-6,
-                    # which has converged cleanly in every prior run this
-                    # session) failed. That's not a P_removal/homotopy
-                    # problem at all -- something upstream of the sweep
-                    # broke (bad solver options, a bad model edit, etc.).
-                    # Don't try to "recover" by fixing P_removal to None;
-                    # surface it immediately.
                     print(
                         "\n>>> Even the initial pass-through step failed -- "
                         "this is not a homotopy/P_removal issue. Stopping "
@@ -553,10 +509,6 @@ def main(
                 f"\n>>> Homotopy sweep stopped short of P_removal={target}. "
                 f"Furthest reached: {last_good}. Check the constraint-"
                 "violation magnitude in the IPOPT log above at the failed "
-                "attempt: small (~1e-5 - 1e-3) => likely still scaling/init "
-                "-- consider a smaller min_step; large (O(1)+) => likely a "
-                "real P-availability limit that no amount of rescaling will "
-                "fix."
             )
     else:
         try:
@@ -580,10 +532,6 @@ def main(
         )
 
     # Skip this re-solve if the homotopy sweep above already stopped early --
-    # the model is sitting at the last FAILED P_removal step, and re-solving
-    # here would just fail again (and raise, before display_* below can run
-    # against the last GOOD step). Only re-solve if the sweep completed
-    # cleanly, or if optimization setup changed the problem.
     if homotopy_failed_at is None or has_optimization:
         try:
             results = solve(m)
