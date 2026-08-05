@@ -12,27 +12,8 @@
 """
 Simplified 2-reactor validation flowsheet for the UConn WRRF ASM3 model.
 
-Purpose:
-    Isolate R1 (anoxic CSTR) and R2 (aerobic AerationTank) from the full
-    5-reactor recycle network to test their reaction kinetics in the
-    simplest possible topology: no mixers, no splitters, no recycle.
-
 Layout:
     Feed -> R1 (anoxic CSTR) -> R2 (aerobic AerationTank) -> Product
-
-    The feed is fixed directly to the UConn ODE steady-state "Reactor 1
-    Inlet" composition (i.e. what R1 actually sees at SS in the full
-    model), so R1's local kinetics can be checked against the ODE
-    "Mixer 2 In1" (R1 outlet) reference, and R2's kinetics against
-    "Mixer 2 In2" (R2 outlet) reference -- keeping in mind that in the
-    full flowsheet R2's true inlet is the S1/R5 recycle stream, not R1's
-    outlet, so R2's comparison here is a kinetics sanity check under a
-    different (but well-defined) inlet condition, not a literal
-    reproduction of the full-network SS.
-
-Reactor volumes, KLa, and calibrated kinetic parameters (mu_H, mu_A,
-K_NOX, Y_STO_O2, Y_H_NOX) are carried over unchanged from the full
-UConn_WRRF_refined.py flowsheet for R1 and R2.
 """
 
 __author__ = "Chenyu Wang, Adam Atia"
@@ -86,7 +67,7 @@ ODE_R1_IN = {
     "alkalinity": 0.900,
     "flow_m3_day": 11378.05,
 }
-# "Mixer 2 In1" -- UConn's true R1 outlet, for comparing R1's local kinetics
+# "Mixer 2 In1" -- UConn's R1 outlet, for comparing R1's local kinetics
 ODE_R1_OUT_REF = {
     "X_H": 237.87,
     "X_STO": 441.35,
@@ -102,10 +83,7 @@ ODE_R1_OUT_REF = {
     "S_I": 7.387,
     "alkalinity": 0.9505,
 }
-# "Mixer 2 In2" -- UConn's true R2 outlet (note: in the full model R2's
-# inlet is the S1/R5 recycle stream at 6486 m3/day, NOT R1's outlet -- so
-# this reference is informative but not a literal apples-to-apples target
-# when R2 is fed R1's outlet directly, as in this simplified flowsheet)
+# "Mixer 2 In2" -- UConn's R2 outlet (note: reference values from 5 CSTR flowsheet)
 ODE_R2_OUT_REF = {
     "X_H": 226.28,
     "X_STO": 415.71,
@@ -214,9 +192,6 @@ def set_operating_conditions(m):
 
 
 def scale_flowsheet(m):
-    """Same scaling scheme as the full flowsheet (including the corrected
-    alkalinity scaling factor: actual magnitude is ~0.1-2.3 mol/m3, not
-    the previously mistaken ~1e-3 mol/m3)."""
     for var in m.fs.component_data_objects(pyo.Var, descend_into=True):
         name = var.name
 
@@ -286,7 +261,7 @@ def scale_flowsheet(m):
 
 
 def initialize_flowsheet(m):
-    """Straight-line sequential initialization; no recycle to close."""
+    """Straight-line sequential initialization."""
     _outlvl = idaeslog.WARNING
     m.fs.feed.initialize(outlvl=_outlvl)
     propagate_state(m.fs.feed_to_r1)
@@ -331,7 +306,9 @@ def verify_against_ode(m):
             od = ref[sp]
             pdiff = (wt - od) / od * 100 if od != 0 else float("nan")
             print(f"{sp:<12}{wt:>14.4f}{od:>14.4f}{pdiff:>+10.1f}")
-        wt_alk = pyo.value(state.alkalinity)
+        wt_alk = pyo.value(
+            pyo.units.convert(state.alkalinity, to_units=pyo.units.mol / pyo.units.m**3)
+        )
         od_alk = ref["alkalinity"]
         pdiff = (wt_alk - od_alk) / od_alk * 100
         print(f"{'alkalinity':<12}{wt_alk:>14.4f}{od_alk:>14.4f}{pdiff:>+10.1f}")
@@ -340,17 +317,15 @@ def verify_against_ode(m):
     print("SIMPLIFIED 2-REACTOR VALIDATION vs UConn ODE SS")
     print("=" * 80)
     _print_block(
-        "R1.outlet (-> UConn Mixer 2 In1)",
+        "R1.outlet",
         m.fs.R1.control_volume.properties_out[0],
         ODE_R1_OUT_REF,
     )
     _print_block(
-        "R2.outlet (-> UConn Mixer 2 In2)",
+        "R2.outlet",
         m.fs.R2.control_volume.properties_out[0],
         ODE_R2_OUT_REF,
-        note="[NOTE: R2 here is fed R1's outlet directly, not the true "
-        "S1/R5 recycle stream R2 sees in the full model -- treat as a "
-        "kinetics sanity check, not a literal SS reproduction] ",
+        note="[NOTE: R2 results are from 5 CSTR flowsheet, cannot be taken as a reference] ",
     )
 
 
