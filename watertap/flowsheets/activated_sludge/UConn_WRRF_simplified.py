@@ -14,6 +14,17 @@ Simplified 2-reactor validation flowsheet for the UConn WRRF ASM3 model.
 
 Layout:
     Feed -> R1 (anoxic CSTR) -> R2 (aerobic AerationTank) -> Product
+    No mixer, splitter, or clarifier -- matches UConn's purpose-built
+    2-tank validation case exactly (topology, feed, volumes, and KLa all
+    come directly from UConn, not borrowed from the 5-reactor flowsheet).
+
+UConn reference case parameters:
+    inlet_flowrate = 1000 m3/day
+    R1 volume = 500 m3 (anoxic)
+    R2 volume = 500 m3 (aerobic, KLa = 240 /day = 10 /hour)
+    Feed COD_total = 416.5 mg/L, split via frac_SI/frac_SS/frac_XI/frac_XS
+    Feed also carries X_H = X_A = 100 mg/L directly (no recycle to build up
+    biomass in this simplified 2-tank case, so it must be seeded in the feed)
 """
 
 __author__ = "Chenyu Wang, Adam Atia"
@@ -48,56 +59,69 @@ _log = idaeslog.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# UConn ODE steady-state reference data (mg/L unless noted; alkalinity mol/m3)
+# UConn 2-tank reference data (mg/L unless noted; alkalinity mol/m3)
+# Source: UConn team's simplified 2-tank simulation (no mixer/splitter/
+# clarifier), using the SAME per-reactor calibrated ASM3 parameters as the
+# full 5-reactor flowsheet, plus unmodified Gujer (1999) 20C defaults for
+# everything else. This replaces the earlier ODE_* reference data, which
+# was borrowed from the 5-reactor recycle model and required caveats for
+# R2 (fed by a different, recycle-derived stream there).
 # ---------------------------------------------------------------------------
-# "Reactor 1 Inlet" -- used directly as the feed composition for this model
-ODE_R1_IN = {
-    "X_H": 237.06,
-    "X_STO": 440.80,
-    "X_S": 124.89,
-    "X_A": 41.40,
-    "X_I": 3666.3,
-    "X_TSS": 2057.0,
-    "S_S": 46.96,
-    "S_O": 0.00686,
-    "S_NH4": 7.131,
-    "S_NOX": 0.4949,
-    "S_N2": 0.1149,
-    "S_I": 7.387,
-    "alkalinity": 0.900,
-    "flow_m3_day": 11378.05,
+
+# "Reactor 1 Inlet" -- used directly as the feed composition for this model.
+# COD_total=416.5 mg/L split via frac_SI=0.034056, frac_SS=0.335454,
+# frac_XI=0.181640, frac_XS=0.448850 (sum to 1); X_H, X_A seeded directly
+# since there is no recycle in this topology to build up biomass.
+UCONN_FEED = {
+    "X_H": 100.0,
+    "X_STO": 0.0,
+    "X_S": 186.9461372932193,
+    "X_A": 100.0,
+    "X_I": 75.65309077406194,
+    "X_TSS": 166.0,
+    "S_S": 139.716602774344,
+    "S_O": 0.0,
+    "S_NH4": 21.0,
+    "S_NOX": 0.25,
+    "S_N2": 0.0,
+    "S_I": 14.184169158374763,
+    "alkalinity": 2.3,
+    "flow_m3_day": 1000.0,
 }
-# "Mixer 2 In1" -- UConn's R1 outlet, for comparing R1's local kinetics
-ODE_R1_OUT_REF = {
-    "X_H": 237.87,
-    "X_STO": 441.35,
-    "X_S": 103.32,
-    "X_A": 41.39,
-    "X_I": 3666.3,
-    "X_TSS": 2041.9,
-    "S_S": 65.83,
-    "S_O": 9.406e-6,
-    "S_NH4": 7.371,
-    "S_NOX": 0.02696,
-    "S_N2": 0.5835,
-    "S_I": 7.387,
-    "alkalinity": 0.9505,
+# "Reactor 2 Inlet" == R1 Outlet -- direct comparison target for R1's kinetics
+UCONN_R1_OUT_REF = {
+    "X_H": 99.93837264455786,
+    "X_STO": 2.1395527666631406,
+    "X_S": 108.80768290198431,
+    "X_A": 99.95393159813625,
+    "X_I": 75.6807289467522,
+    "X_TSS": 108.60369331451757,
+    "S_S": 215.1168412585607,
+    "S_O": 0.0,  # UConn reports -4.63e-91, i.e. numerically zero
+    "S_NH4": 21.870516960679694,
+    "S_NOX": 0.012447746263664145,
+    "S_N2": 0.2375522537363357,
+    "S_I": 14.18416915837453,
+    "alkalinity": 2.379147801029703,
 }
-# "Mixer 2 In2" -- UConn's R2 outlet (note: reference values from 5 CSTR flowsheet)
-ODE_R2_OUT_REF = {
-    "X_H": 226.28,
-    "X_STO": 415.71,
-    "X_S": 27.87,
-    "X_A": 39.67,
-    "X_I": 3674.97,
-    "X_TSS": 1964.4,
-    "S_S": 0.1477,
-    "S_O": 8.267,
-    "S_NH4": 0.06262,
-    "S_NOX": 3.569,
-    "S_N2": 0.6106,
-    "S_I": 7.387,
-    "alkalinity": 0.1755,
+# "Reactor 2 Outlet" -- direct comparison target for R2's kinetics. Since
+# this is the SAME 2-tank topology (R2 fed directly by R1's outlet, no
+# recycle dilution), this is now a legitimate, literal SS reproduction
+# target -- no caveat needed, unlike the old 5-reactor-derived reference.
+UCONN_R2_OUT_REF = {
+    "X_H": 92.09790164046834,
+    "X_STO": 130.58378451504018,
+    "X_S": 56.361350986423105,
+    "X_A": 97.85099650953711,
+    "X_I": 78.9035884913647,
+    "X_TSS": 139.80356260194856,
+    "S_S": 48.78070634547883,
+    "S_O": 7.456323044049539,
+    "S_NH4": 9.070268808414847,
+    "S_NOX": 20.15473323372648,
+    "S_N2": 0.6150334781409497,
+    "S_I": 14.18416915837211,
+    "alkalinity": 0.02610968390615832,
 }
 
 
@@ -135,11 +159,11 @@ def build_flowsheet():
 
 
 def set_operating_conditions(m):
-    """Fix feed composition (= UConn ODE R1 inlet), reactor volumes, KLa,
-    and calibrated kinetic parameters -- all carried over from the full
-    UConn_WRRF_refined.py flowsheet for R1 and R2."""
+    """Fix feed composition (= UConn 2-tank "Reactor 1 Inlet"), reactor
+    volumes, KLa, and calibrated kinetic parameters -- all now taken
+    directly from UConn's purpose-built 2-tank validation case."""
 
-    r = ODE_R1_IN
+    r = UCONN_FEED
     flow_m3_s = r["flow_m3_day"] / 86400.0
 
     m.fs.feed.flow_vol.fix(flow_m3_s * pyo.units.m**3 / pyo.units.s)
@@ -165,17 +189,23 @@ def set_operating_conditions(m):
             r[species] * 1e-3 * pyo.units.kg / pyo.units.m**3
         )
 
-    # Reactor volumes (same as full flowsheet)
-    m.fs.R1.volume.fix(1135.6 * pyo.units.m**3)
-    m.fs.R2.volume.fix(3077.8186727373936 * pyo.units.m**3)
+    # Reactor volumes (from UConn's 2-tank case, not borrowed from the
+    # 5-reactor flowsheet)
+    m.fs.R1.volume.fix(500.0 * pyo.units.m**3)
+    m.fs.R2.volume.fix(500.0 * pyo.units.m**3)
 
-    # R2 aeration: no injection except S_O, KLa=10/hr (same as full flowsheet)
+    # R2 aeration: no injection except S_O. KLa = 240 /day = 10 /hour
+    # (UConn states 240, consistent with a day-basis rate convention
+    # matching mu_H/mu_A/etc; equivalent to the 10/hour used previously)
     for j in m.fs.props.component_list:
         if j != "S_O":
             m.fs.R2.injection[:, :, j].fix(0)
-    m.fs.R2.KLa.fix(10 / pyo.units.hour)
+    m.fs.R2.KLa.fix(240 / pyo.units.day)
 
-    # Per-reactor calibrated scalar kinetic parameters (same as full flowsheet)
+    # Per-reactor calibrated scalar kinetic parameters (unchanged -- UConn's
+    # 2-tank email confirms these exact values: KNOX, mu_H, mu_A, Y_STOO2,
+    # Y_HNOX per reactor, matching what was already used here and in the
+    # full flowsheet)
     m.fs.rxn_props_R1.K_NOX.fix(0.662744537546551e-3)
     m.fs.rxn_props_R1.Y_STO_O2.fix(0.598031273330616)
     m.fs.rxn_props_R1.Y_H_NOX.fix(0.6217434149054809)
@@ -314,18 +344,17 @@ def verify_against_ode(m):
         print(f"{'alkalinity':<12}{wt_alk:>14.4f}{od_alk:>14.4f}{pdiff:>+10.1f}")
 
     print("\n" + "=" * 80)
-    print("SIMPLIFIED 2-REACTOR VALIDATION vs UConn ODE SS")
+    print("SIMPLIFIED 2-REACTOR VALIDATION vs UConn 2-TANK REFERENCE")
     print("=" * 80)
     _print_block(
         "R1.outlet",
         m.fs.R1.control_volume.properties_out[0],
-        ODE_R1_OUT_REF,
+        UCONN_R1_OUT_REF,
     )
     _print_block(
         "R2.outlet",
         m.fs.R2.control_volume.properties_out[0],
-        ODE_R2_OUT_REF,
-        note="[NOTE: R2 results are from 5 CSTR flowsheet, cannot be taken as a reference] ",
+        UCONN_R2_OUT_REF,
     )
 
 
