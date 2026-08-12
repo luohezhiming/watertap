@@ -522,7 +522,12 @@ def scale_flowsheet(m):
                 iscale.set_scaling_factor(var, 10)
 
         elif "alkalinity" in name:
-            iscale.set_scaling_factor(var, 1e3)  # ~2.3e-3 mol/m3 shown in output
+            iscale.set_scaling_factor(
+                var, 1.0
+            )  # actual magnitude ~0.1-2.3 mol/m3 (native
+            # units are kmol/m3; a sf of 1e3 mistakenly assumed values ~1000x smaller
+            # than actual, letting IPOPT treat alkalinity as converged while it stayed
+            # near the feed value)
 
         elif "rate_reaction_extent" in name:
             # R1 (no kinetics) ~ 1e-11, R2 (aerobic) ~ 4e-3
@@ -792,7 +797,8 @@ def initialize_flowsheet(m):
                 if not state.conc_mass_comp[k].is_fixed():
                     state.conc_mass_comp[k].set_value(max(v, 1e-10))
         if hasattr(state, "alkalinity") and not state.alkalinity.is_fixed():
-            state.alkalinity.set_value(max(alk, 1e-10))
+            # alk is in mol/m3 (ODE convention); native var units are kmol/m3
+            state.alkalinity.set_value(max(alk, 1e-10) * 1e-3)
 
     # -----------------------------------------------------------------------
     # Pass 1: seed each unit inlet from ODE SS, then initialize
@@ -1264,7 +1270,8 @@ def initialize_from_julia_ss(m):
                     var.set_value(v)
         if alk is not None and hasattr(state, "alkalinity"):
             if not state.alkalinity.is_fixed():
-                state.alkalinity.set_value(alk)
+                # alk is in mol/m3; native var units are kmol/m3
+                state.alkalinity.set_value(alk * 1e-3)
         state.temperature.set_value(293.15)
         state.pressure.set_value(101325.0)
 
@@ -1625,7 +1632,8 @@ def initialize_from_ode_ss(m):
                 if not state.conc_mass_comp[k].is_fixed():
                     state.conc_mass_comp[k].set_value(max(v, 1e-10))
         if hasattr(state, "alkalinity") and not state.alkalinity.is_fixed():
-            state.alkalinity.set_value(max(alk, 1e-10))
+            # alk is in mol/m3 (ODE convention); native var units are kmol/m3
+            state.alkalinity.set_value(max(alk, 1e-10) * 1e-3)
 
     # ---------------------------------------------------------------------------
     # Seed reactor properties_in and properties_out
@@ -1835,7 +1843,8 @@ def seed_recycles_from_julia(m):
             if not state.conc_mass_comp[k].is_fixed():
                 state.conc_mass_comp[k].set_value(v)
         if not state.alkalinity.is_fixed():
-            state.alkalinity.set_value(julia_r5_alk)
+            # julia_r5_alk is in mol/m3; native var units are kmol/m3
+            state.alkalinity.set_value(julia_r5_alk * 1e-3)
         state.temperature.set_value(293.15)
         state.pressure.set_value(101325.0)
 
@@ -2193,9 +2202,17 @@ def _verify_init(m):
         print(f"{'':10} {'% diff':8} " + "".join([f"{v:>{W}.1f}" for v in pct]))
         print()
 
-    # Alkalinity (WaterTAP stores in mol/m3 natively; pyo.value gives mol/m3)
+    # Alkalinity is declared in kmol/m3 in the property package (NOT mol/m3
+    # despite a misleading doc string) -- convert explicitly, since a raw
+    # pyo.value() silently returns a number 1000x too small vs the mol/m3
+    # ODE reference.
     wt_alk = [
-        pyo.value(reactors[rx].alkalinity) for rx in ["R1", "R2", "R3", "R4", "R5"]
+        pyo.value(
+            pyo.units.convert(
+                reactors[rx].alkalinity, to_units=pyo.units.mol / pyo.units.m**3
+            )
+        )
+        for rx in ["R1", "R2", "R3", "R4", "R5"]
     ]
     od_alk = [ode_ref[rx]["alkalinity"] for rx in ["R1", "R2", "R3", "R4", "R5"]]
     print(
@@ -2425,17 +2442,16 @@ def _verify_all_units(m):
             pdiff = (wt - od) / od * 100 if od != 0 else float("nan")
             print(f"{sp:<12}{wt:>14.4f}{od:>14.4f}{pdiff:>+10.1f}")
         if "alkalinity" in r:
-            wt_alk = pyo.value(state.alkalinity)
+            # alkalinity is declared in kmol/m3 in the property package (not
+            # mol/m3) -- convert explicitly, or this silently reads 1000x low
+            wt_alk = pyo.value(
+                pyo.units.convert(
+                    state.alkalinity, to_units=pyo.units.mol / pyo.units.m**3
+                )
+            )
             od_alk = r["alkalinity"]
             pdiff = (wt_alk - od_alk) / od_alk * 100
-            note = (
-                "  [alkalinity frozen by local .initialize() -- not meaningful pre-solve]"
-                if ".out" in label
-                else ""
-            )
-            print(
-                f"{'alkalinity':<12}{wt_alk:>14.4f}{od_alk:>14.4f}{pdiff:>+10.1f}{note}"
-            )
+            print(f"{'alkalinity':<12}{wt_alk:>14.4f}{od_alk:>14.4f}{pdiff:>+10.1f}")
 
     print("\n" + "=" * 100)
     print("(A) SEEDED / FORCED STREAMS — overwritten with ODE values every pass;")

@@ -452,7 +452,7 @@ class ASM3StateBlockData(StateBlockData):
                 return self.params.dens_mass
             elif j == "S_ALK":
                 # Convert moles of alkalinity to mass of C assuming all is HCO3-
-                return self.alkalinity * (12 * pyo.units.kg / pyo.units.kmol)
+                return self.alkalinity * (61 * pyo.units.kg / pyo.units.kmol)
             else:
                 return self.conc_mass_comp[j]
 
