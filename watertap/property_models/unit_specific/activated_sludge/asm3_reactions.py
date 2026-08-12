@@ -380,17 +380,39 @@ class ASM3ReactionParameterData(ReactionParameterBlock):
         y11 = -self.f_XI * self.i_NXI + self.i_NBM
         y12 = -self.f_XI * self.i_NXI + self.i_NBM
 
-        z1 = y1 / 14.0
-        z2 = y2 / 14.0
-        z3 = y3 / 14.0 - x3 / 14.0
-        z4 = y4 / 14.0
-        z5 = y5 / 14.0 - x5 / 14.0
-        z6 = y6 / 14.0
-        z7 = y7 / 14.0 - x7 / 14.0
-        z9 = -x9 / 14.0
-        z10 = y10 / 14.0 - 1.0 / (self.Y_A * 14.0)
-        z11 = y11 / 14.0
-        z12 = y12 / 14.0 - x12 / 14.0
+        # Alkalinity stoichiometry: reaction stoichiometry is on a mass basis
+        # for every OTHER component (x_i, y_i, t_i are dimensionless
+        # kg-product/kg-reference ratios), but S_ALK's state variable
+        # (alkalinity) is tracked molarly (kmol/m3). Converting a nitrogen
+        # mass change to an alkalinity change requires TWO steps: (1) divide
+        # by mw_n=14 kg/kmol to get kmol-N (== kmol-ALK via 1:1 charge
+        # stoichiometry), THEN (2) multiply by mw_alk=61 kg/kmol (molecular
+        # weight of HCO3-, per Gujer et al. 1999: "S_ALK is assumed to be
+        # bicarbonate, HCO3-, only") to convert kmol-ALK back to a
+        # dimensionless kg-ALK/kg-reference ratio, consistent with every
+        # other coefficient and with material_flow_expression's own
+        # alkalinity*61 mass-basis convention.
+        #
+        # The previous version of this code stopped after step (1) only,
+        # leaving z1..z12 in kmol-ALK/kg-reference units instead of the
+        # dimensionless kg-ALK/kg-reference the framework expects -- this
+        # silently undercounted every alkalinity stoichiometric coefficient
+        # by exactly a factor of mw_alk=61, which is why solved models
+        # showed alkalinity barely responding to reactions. Confirmed via
+        # an independent charge-conservation check against UConn reference
+        # data: predicted vs actual delta-alkalinity differed by a factor
+        # of 61.03, matching mw_alk exactly.
+        z1 = (y1 / 14.0) * 61.0
+        z2 = (y2 / 14.0) * 61.0
+        z3 = (y3 / 14.0 - x3 / 14.0) * 61.0
+        z4 = (y4 / 14.0) * 61.0
+        z5 = (y5 / 14.0 - x5 / 14.0) * 61.0
+        z6 = (y6 / 14.0) * 61.0
+        z7 = (y7 / 14.0 - x7 / 14.0) * 61.0
+        z9 = (-x9 / 14.0) * 61.0
+        z10 = (y10 / 14.0 - 1.0 / (self.Y_A * 14.0)) * 61.0
+        z11 = (y11 / 14.0) * 61.0
+        z12 = (y12 / 14.0 - x12 / 14.0) * 61.0
 
         t1 = -self.i_SSXS
         t2 = self.Y_STO_O2 * self.i_SSSTO
@@ -408,9 +430,15 @@ class ASM3ReactionParameterData(ReactionParameterBlock):
         # Reaction Stoichiometry
         # This is the stoichiometric part the Peterson matrix in dict form
         # Note that reaction stoichiometry is on a mass basis.
-        # For alkalinity, this requires converting the mass of nitrogen species
-        # reacted to mass of alkalinity converted using a charge balance (effectively MW_C/MW_N)
-        mw_alk = 12 * pyo.units.kg / pyo.units.kmol
+        # For alkalinity, this requires converting the mass of nitrogen
+        # species reacted to mass of alkalinity converted using a charge
+        # balance and the molecular weight of HCO3- (MW_alk/MW_N = 61/14),
+        # per Gujer et al. (1999): "S_ALK is assumed to be bicarbonate,
+        # HCO3-, only" for all stoichiometric computations. (Previously
+        # this comment incorrectly said "MW_C/MW_N"/12, using only the
+        # carbon atomic weight rather than the full HCO3- molecular weight
+        # -- see the z1..z12 definitions above for the actual fix.)
+        mw_alk = 61 * pyo.units.kg / pyo.units.kmol
         mw_n = 14 * pyo.units.kg / pyo.units.kmol
         self.rate_reaction_stoichiometry = {
             # R1: Hydrolysis
@@ -695,7 +723,16 @@ class ASM3ReactionBlockData(ReactionBlockDataBase):
         self.reaction_rate = pyo.Var(
             self.params.rate_reaction_idx,
             initialize=0,
-            doc="Rate of reaction",
+            domain=pyo.NonNegativeReals,
+            doc="Rate of reaction (Gujer et al. 1999, Table 2: 'All rho_j >= 0'"
+            " -- every ASM3 rate expression is a product of mu, non-negative"
+            " Monod saturation terms, and non-negative biomass, so it is"
+            " mathematically guaranteed non-negative and should be bounded"
+            " as such rather than left free. Without this bound, IPOPT can"
+            " (and does, at the S_O~0 boundary in anoxic-only reactors) let"
+            " an aerobic-pathway rate go slightly negative, creating a"
+            " small phantom net generation of dissolved oxygen that has no"
+            " physical source.",
             units=pyo.units.kg / pyo.units.m**3 / pyo.units.s,
         )
 
