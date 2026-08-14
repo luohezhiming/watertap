@@ -202,6 +202,16 @@ def set_operating_conditions(m):
             m.fs.R2.injection[:, :, j].fix(0)
     m.fs.R2.KLa.fix(240 / pyo.units.day)
 
+    # Oxygen saturation concentration (S_O_eq) that KLa drives S_O toward.
+    # WaterTAP's default is 8.0 mg/L; back-calculating from UConn's own
+    # solved S_O outlet (given our reaction kinetics are independently
+    # verified correct) implies ~9.03 mg/L, close to the standard
+    # clean-water DO saturation at 20C/1atm (commonly cited ~9.08 mg/L).
+    # Set explicitly to the standard literature value rather than
+    # reverse-fitting UConn's exact number, to keep the correction
+    # principled rather than circular.
+    m.fs.R2.S_O_eq.set_value(9.08e-3 * pyo.units.kg / pyo.units.m**3)
+
     # Per-reactor calibrated scalar kinetic parameters (unchanged -- UConn's
     # 2-tank email confirms these exact values: KNOX, mu_H, mu_A, Y_STOO2,
     # Y_HNOX per reactor, matching what was already used here and in the
@@ -899,7 +909,12 @@ def diagnose_aeration_mass_transfer(m):
     print("R2 (AerationTank) mass transfer diagnostic")
     print("=" * 78)
 
-    print(f"\nKLa (fixed) = {pyo.value(R2.KLa[0])} {R2.KLa[0].get_units()}")
+    try:
+        kla_val = pyo.value(R2.KLa)
+        print(f"\nKLa (fixed) = {kla_val}")
+    except (TypeError, KeyError):
+        kla_val = pyo.value(R2.KLa[0])
+        print(f"\nKLa (fixed) = {kla_val}")
 
     # Try to find a dissolved-oxygen saturation concentration variable/param
     # under a few plausible names
@@ -984,20 +999,12 @@ if __name__ == "__main__":
         )
         print(stream_table_dataframe_to_string(stream_table))
         verify_against_ode(m)
-        print_kinetic_parameters(m)
-        diagnose_alkalinity_generation(m)
-        diagnose_reactor_detail(m, "R1", m.fs.R1, m.fs.R1.control_volume)
-        diagnose_reactor_detail(m, "R2", m.fs.R2, m.fs.R2.control_volume)
-        diagnose_storage_reactions(
-            m, "R1", m.fs.R1, m.fs.R1.control_volume, m.fs.rxn_props_R1
-        )
-        diagnose_storage_reactions(
-            m, "R2", m.fs.R2, m.fs.R2.control_volume, m.fs.rxn_props_R2
-        )
-        diagnose_R9_rate_directly(
-            m, "R1", m.fs.R1, m.fs.R1.control_volume, m.fs.rxn_props_R1
-        )
-        diagnose_R9_internal_state(
-            m, "R1", m.fs.R1, m.fs.R1.control_volume, m.fs.rxn_props_R1
-        )
+        # print_kinetic_parameters(m)
+        # diagnose_alkalinity_generation(m)
+        # diagnose_reactor_detail(m, "R1", m.fs.R1, m.fs.R1.control_volume)
+        # diagnose_reactor_detail(m, "R2", m.fs.R2, m.fs.R2.control_volume)
+        # diagnose_storage_reactions(m, "R1", m.fs.R1, m.fs.R1.control_volume, m.fs.rxn_props_R1)
+        # diagnose_storage_reactions(m, "R2", m.fs.R2, m.fs.R2.control_volume, m.fs.rxn_props_R2)
+        # diagnose_R9_rate_directly(m, "R1", m.fs.R1, m.fs.R1.control_volume, m.fs.rxn_props_R1)
+        # diagnose_R9_internal_state(m, "R1", m.fs.R1, m.fs.R1.control_volume, m.fs.rxn_props_R1)
         # diagnose_aeration_mass_transfer(m)
