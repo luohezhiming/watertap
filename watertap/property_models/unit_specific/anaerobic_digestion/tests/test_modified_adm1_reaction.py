@@ -262,14 +262,14 @@ class TestParamBlock(object):
             # R19: Storage of S_va in X_PHA
             ("R19", "Liq", "S_va"): -1,
             ("R19", "Liq", "S_IC"): -0.000962 * mw_c,
-            ("R19", "Liq", "S_IP"): 0.012903 * mw_p,
+            ("R19", "Liq", "S_IP"): 0.012903,
             ("R19", "Liq", "X_PHA"): 1,
             ("R19", "Liq", "X_PP"): -0.012903,
             ("R19", "Liq", "S_K"): 0.004301,
             ("R19", "Liq", "S_Mg"): 0.004301,
             # R20: Storage of S_bu in X_PHA
             ("R20", "Liq", "S_bu"): -1,
-            ("R20", "Liq", "S_IP"): 0.012903 * mw_p,
+            ("R20", "Liq", "S_IP"): 0.012903,
             ("R20", "Liq", "X_PHA"): 1,
             ("R20", "Liq", "X_PP"): -0.012903,
             ("R20", "Liq", "S_K"): 0.004301,
@@ -277,7 +277,7 @@ class TestParamBlock(object):
             # R21: Storage of S_pro in X_PHA
             ("R21", "Liq", "S_pro"): -1,
             ("R21", "Liq", "S_IC"): 0.001786 * mw_c,
-            ("R21", "Liq", "S_IP"): 0.012903 * mw_p,
+            ("R21", "Liq", "S_IP"): 0.012903,
             ("R21", "Liq", "X_PHA"): 1,
             ("R21", "Liq", "X_PP"): -0.012903,
             ("R21", "Liq", "S_K"): 0.004301,
@@ -285,7 +285,7 @@ class TestParamBlock(object):
             # R22: Storage of S_ac in X_PHA
             ("R22", "Liq", "S_ac"): -1,
             ("R22", "Liq", "S_IC"): 0.006250 * mw_c,
-            ("R22", "Liq", "S_IP"): 0.012903 * mw_p,
+            ("R22", "Liq", "S_IP"): 0.012903,
             ("R22", "Liq", "X_PHA"): 1,
             ("R22", "Liq", "X_PP"): -0.012903,
             ("R22", "Liq", "S_K"): 0.004301,
@@ -300,7 +300,7 @@ class TestParamBlock(object):
             ("R23", "Liq", "X_I"): 0.1,
             ("R23", "Liq", "X_PAO"): -1,
             # R24: Lysis of X_PP
-            ("R24", "Liq", "S_IP"): 1 * mw_p,
+            ("R24", "Liq", "S_IP"): 1,
             ("R24", "Liq", "X_PP"): -1,
             ("R24", "Liq", "S_K"): 1 / 3,
             ("R24", "Liq", "S_Mg"): 1 / 3,
@@ -363,13 +363,13 @@ class TestParamBlock(object):
         assert isinstance(model.rparams.f_fa_li, Var)
         assert value(model.rparams.f_fa_li) == 0.95
         assert isinstance(model.rparams.f_h2_su, Var)
-        assert value(model.rparams.f_h2_su) == 0.1906
+        assert value(model.rparams.f_h2_su) == 0.19055
         assert isinstance(model.rparams.f_bu_su, Var)
         assert value(model.rparams.f_bu_su) == 0.1328
         assert isinstance(model.rparams.f_pro_su, Var)
         assert value(model.rparams.f_pro_su) == 0.2691
         assert isinstance(model.rparams.f_ac_su, Var)
-        assert value(model.rparams.f_ac_su) == 0.4076
+        assert value(model.rparams.f_ac_su) == 0.40755
         assert isinstance(model.rparams.f_h2_aa, Var)
         assert value(model.rparams.f_h2_aa) == 0.06
         assert isinstance(model.rparams.f_va_aa, Var)
@@ -521,6 +521,119 @@ class TestParamBlock(object):
         assert value(model.rparams.K_XPP) == 1 / 3
         assert isinstance(model.rparams.Mg_XPP, Var)
         assert value(model.rparams.Mg_XPP) == 1 / 3
+
+    @pytest.mark.unit
+    def test_carbon_conservation(self, model):
+        # Each reaction should conserve total elemental C - i.e. it can move
+        # C between species, but cannot create or destroy it. Ci/Ni/Pi are
+        # already declared on the reaction parameter block as kmol
+        # element/kg COD, indexed only over the components that actually
+        # contain that element; components not in the index have zero
+        # content. S_IC/S_IN/S_IP are the direct elemental pools themselves
+        # (already kg C, N, P per m3), so their content is 1, matching the
+        # *mw_c/*mw_n/*mw_p pattern already used when building their
+        # stoichiometric coefficients elsewhere in this file.
+        rparams = model.rparams
+        mw_c = 12.0  # kg C/kmol C
+
+        components = {
+            c for (r, p, c) in rparams.rate_reaction_stoichiometry.keys() if r == "R1"
+        }
+
+        def C_content(c):
+            if c == "S_IC":
+                return 1.0
+            if c in rparams.Ci:
+                return value(rparams.Ci[c]) * mw_c
+            return 0.0
+
+        for r in rparams.rate_reaction_idx:
+            C_balance = sum(
+                C_content(c) * value(rparams.rate_reaction_stoichiometry[r, "Liq", c])
+                for c in components
+            )
+            assert pytest.approx(0, abs=1e-6) == C_balance
+
+    @pytest.mark.unit
+    def test_nitrogen_conservation(self, model):
+        # Same idea as test_carbon_conservation, but for N.
+        rparams = model.rparams
+        mw_n = 14.0  # kg N/kmol N
+
+        components = {
+            c for (r, p, c) in rparams.rate_reaction_stoichiometry.keys() if r == "R1"
+        }
+
+        def N_content(c):
+            if c == "S_IN":
+                return 1.0
+            if c in rparams.Ni:
+                return value(rparams.Ni[c]) * mw_n
+            return 0.0
+
+        for r in rparams.rate_reaction_idx:
+            N_balance = sum(
+                N_content(c) * value(rparams.rate_reaction_stoichiometry[r, "Liq", c])
+                for c in components
+            )
+            assert pytest.approx(0, abs=1e-6) == N_balance
+
+    @pytest.mark.unit
+    def test_phosphorus_conservation(self, model):
+        # Same idea as test_carbon_conservation, but for P. Note X_PP is
+        # itself indexed in Pi (Pi["X_PP"] = 1/31 kmol P/kg X_PP), so it's
+        # picked up automatically here with no special-casing needed. Unlike
+        # the other Pi entries, X_PP's own state variable is defined as kg
+        # P/m3 directly (not kg COD/m3), matching how the ADM1<->ASM2d
+        # translator's SIP_AD1 expression divides X_PP by mw_p (not by the
+        # ~300.41 kg/kmol generic-polyphosphate-monomer mass the source
+        # Gujer matrix's own Pi["X_PP"]=1 row assumes) - so Pi["X_PP"] here
+        # is deliberately WaterTAP's own P mass-basis value, not a direct
+        # transcription of the paper's row.
+        rparams = model.rparams
+        mw_p = 31.0  # kg P/kmol P
+
+        components = {
+            c for (r, p, c) in rparams.rate_reaction_stoichiometry.keys() if r == "R1"
+        }
+
+        def P_content(c):
+            if c == "S_IP":
+                return 1.0
+            if c in rparams.Pi:
+                return value(rparams.Pi[c]) * mw_p
+            return 0.0
+
+        for r in rparams.rate_reaction_idx:
+            P_balance = sum(
+                P_content(c) * value(rparams.rate_reaction_stoichiometry[r, "Liq", c])
+                for c in components
+            )
+            assert pytest.approx(0, abs=1e-6) == P_balance
+
+    @pytest.mark.unit
+    def test_COD_conservation(self, model):
+        # Unlike ASM2d, ADM1 is purely anaerobic - there's no O2/NO3/N2
+        # redox reference shift to account for, so every COD-basis species
+        # simply has content 1 (per the source Gujer matrix's CODi row).
+        # Only the direct elemental/ionic pools that aren't COD-based carry
+        # zero COD content: H2O, S_IC, S_IN, S_IP, S_K, S_Mg, X_PP.
+        rparams = model.rparams
+        non_cod = {"H2O", "S_IC", "S_IN", "S_IP", "S_K", "S_Mg", "X_PP"}
+
+        components = {
+            c for (r, p, c) in rparams.rate_reaction_stoichiometry.keys() if r == "R1"
+        }
+
+        def COD_content(c):
+            return 0.0 if c in non_cod else 1.0
+
+        for r in rparams.rate_reaction_idx:
+            COD_balance = sum(
+                COD_content(c) * value(rparams.rate_reaction_stoichiometry[r, "Liq", c])
+                for c in components
+            )
+            assert pytest.approx(0, abs=1e-6) == COD_balance
 
 
 class TestReactionBlock(object):
@@ -1040,7 +1153,7 @@ class TestReactor:
         ) == pytest.approx(0.11650 * 14, rel=1e-2)
         assert value(
             model.fs.unit.liquid_outlet.conc_mass_comp[0, "S_IP"]
-        ) == pytest.approx(29.11478, rel=1e-2)
+        ) == pytest.approx(1.31045, rel=1e-2)
         assert value(
             model.fs.unit.liquid_outlet.conc_mass_comp[0, "S_I"]
         ) == pytest.approx(0.02660, rel=1e-2)

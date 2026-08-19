@@ -195,7 +195,7 @@ class ModifiedADM1ReactionParameterData(ReactionParameterBlock):
             "X_ac": 0.0006947201,
             "X_h2": 0.0006947201,
             "X_I": 0.0002093322,
-            "X_PP": 1,
+            "X_PP": 1 / 31,
             "X_PAO": 0.0006947201,
         }
 
@@ -293,7 +293,7 @@ class ModifiedADM1ReactionParameterData(ReactionParameterBlock):
             doc="Fatty acids from lipids",
         )
         self.f_h2_su = pyo.Var(
-            initialize=0.1906,
+            initialize=0.19055,
             units=pyo.units.dimensionless,
             domain=pyo.PositiveReals,
             doc="Hydrogen from sugars",
@@ -311,7 +311,7 @@ class ModifiedADM1ReactionParameterData(ReactionParameterBlock):
             doc="Propionate from sugars",
         )
         self.f_ac_su = pyo.Var(
-            initialize=0.4076,
+            initialize=0.40755,
             units=pyo.units.dimensionless,
             domain=pyo.PositiveReals,
             doc="Acetate from sugars",
