@@ -3145,6 +3145,7 @@ if __name__ == "__main__":
                 "R3": m.fs.R3.outlet,
                 "R4": m.fs.R4.outlet,
                 "R5": m.fs.R5.outlet,
+                "CL underflow": m.fs.CL.underflow,
                 "Effluent": m.fs.Treated.inlet,
             },
             time_point=0,
