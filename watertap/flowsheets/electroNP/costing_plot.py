@@ -38,7 +38,7 @@ from watertap.costing.unit_models.dewatering import (
 
 from idaes.core.solvers import get_solver
 from idaes.core.util.model_statistics import degrees_of_freedom, number_total_objectives
-from watertap.flowsheets.electroNP.BSM2_electroNP_surrogate import (
+from watertap.flowsheets.electroNP.BSM2_electroNP_surrogate_initialization_refined import (
     build_flowsheet,
     set_operating_conditions,
     initialize_system,
