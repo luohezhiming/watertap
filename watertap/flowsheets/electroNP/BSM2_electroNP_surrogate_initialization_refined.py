@@ -134,9 +134,11 @@ def _try_load_warm_start(m, has_electroNP):
 
 def _save_warm_start(m, has_electroNP):
     """
-    Save the current feasible state as the warm-start for future runs.
+    Save the current (converged) state as the warm-start for future runs.
     """
     path = _warm_start_path(has_electroNP)
+    if os.path.exists(path):
+        return
     try:
         to_json(m, fname=path)
         print(f"Saved warm-start state to {path}")
