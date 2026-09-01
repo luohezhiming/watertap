@@ -1819,6 +1819,6 @@ if __name__ == "__main__":
     #     has_electroNP=True,
     #     objective=objective_fun.LCOW,
     #     has_effluent_constraints=True,
-    #     num=2,
+    #     num=10,
     # )
     # display_stream_table(m_min)
