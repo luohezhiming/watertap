@@ -457,44 +457,53 @@ class WaterTAPCostingBlockData(FlowsheetCostingBlockData):
             name (optional) - name for the annual water production
                               Expression (default: annual_water_production)
         """
-        return self.add_annual_throughput(flow_rate, flow_basis="volumetric", name=name)
+        return self.add_process_throughput(
+            flow_rate, flow_basis="volumetric", name=name, period=pyo.units.year
+        )
 
-    def add_annual_throughput(
+    def add_process_throughput(
         self,
         flow_rate,
         flow_basis=None,
         name="annual_process_throughput",
         flow_basis_units=None,
+        period=pyo.units.year,
     ):
         """
-        Add annual process throughput to costing block.
+        Add process throughput expressed over a specified period.
 
-        The throughput may represent any process stream quantity, including feed streams, treated streams, products, recovered materials, or
-        energy flows, adjusted by the utilization factor.
+        The throughput may represent any process stream quantity,
+        including feed streams, treated streams, products, recovered
+        materials, or energy flows, adjusted by the utilization factor.
 
         Args:
-            flow_rate: flow rate to be used in calculating annual input/output
-            flow_basis (optional): basis for the flow rate, either "volumetric", "mass", or "energy"
-            name (optional): name for the annual throughput expression
-            flow_basis_units (optional): denominator units (e.g., m**3, kg, kWh);
-                                      when omitted, inferred from flow_rate units unless flow_basis is provided
+            flow_rate: flow rate to be used in calculating throughput.
+            flow_basis (optional): basis for the flow rate, either
+                "volumetric", "mass", or "energy".
+            name (optional): name for the throughput expression.
+            flow_basis_units (optional): numerator units (e.g., m**3,
+                kg, kWh); when omitted, inferred from flow_rate units
+                unless flow_basis is provided.
+            period (optional): reporting period for throughput
+                (e.g., year, month, day). Defaults to year.
         """
 
         flow_basis, flow_units = self._resolve_flow_basis_and_flow_basis_units(
             flow_rate=flow_rate,
             flow_basis=flow_basis,
             flow_basis_units=flow_basis_units,
-            period=self.base_period,
+            period=period,
         )
 
         self.add_component(
             name,
             pyo.Expression(
                 expr=pyo.units.convert(
-                    flow_rate, to_units=flow_units / self.base_period
+                    flow_rate,
+                    to_units=flow_units / period,
                 )
                 * self.utilization_factor,
-                doc=f"Annual process throughput based on flow {flow_rate.name}",
+                doc=f"Process throughput based on flow {flow_rate.name} over period {period}",
             ),
         )
 
