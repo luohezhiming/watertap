@@ -65,7 +65,7 @@ class WaterTAPCostingBlockData(FlowsheetCostingBlockData):
         self.base_period = pyo.units.year
 
     def add_levelized_cost(
-        self, flow_rate, name="LCOW", flow_basis=None, output_units=None
+        self, flow_rate, name="LCOW", flow_basis=None, flow_basis_units=None
     ):
         """
         Add a levelized cost to costing block.
@@ -73,14 +73,14 @@ class WaterTAPCostingBlockData(FlowsheetCostingBlockData):
             flow_rate - flow rate to be used in calculating the levelized cost
             name (optional) - name for the levelized cost expression (default: LCOW)
             flow_basis (optional) - basis for the flow rate, either "volumetric", "mass", or "energy"
-            output_units (optional) - denominator units (e.g., m**3, kg, kWh);
+            flow_basis_units (optional) - denominator units (e.g., m**3, kg, kWh);
                                       when omitted, inferred from flow_rate units unless flow_basis is provided
         """
 
-        flow_basis, flow_units = self._resolve_flow_basis_and_output_units(
+        flow_basis, flow_units = self._resolve_flow_basis_and_flow_basis_units(
             flow_rate=flow_rate,
             flow_basis=flow_basis,
-            output_units=output_units,
+            flow_basis_units=flow_basis_units,
             period=self.base_period,
         )
 
@@ -283,7 +283,7 @@ class WaterTAPCostingBlockData(FlowsheetCostingBlockData):
         if flow_rate_units is None:
             raise ValueError(
                 "Could not infer flow basis from flow_rate because it has no units. "
-                "Provide flow_basis or output_units explicitly."
+                "Provide flow_basis or flow_basis_units explicitly."
             )
 
         for basis, basis_units in _FLOW_BASIS_UNITS_MAP.items():
@@ -299,23 +299,23 @@ class WaterTAPCostingBlockData(FlowsheetCostingBlockData):
 
         raise ValueError(
             f"Could not infer flow basis from flow_rate units '{flow_rate_units}' with period '{period}'. "
-            "Provide flow_basis or output_units explicitly."
+            "Provide flow_basis or flow_basis_units explicitly."
         )
 
-    def _resolve_flow_basis_and_output_units(
-        self, flow_rate, flow_basis=None, output_units=None, period=None
+    def _resolve_flow_basis_and_flow_basis_units(
+        self, flow_rate, flow_basis=None, flow_basis_units=None, period=None
     ):
         """Resolves the flow basis and output units for a given flow rate.
-        If flow_basis is provided, it will be used to determine the output_units.
-        If output_units is provided, it will be used to determine the flow_basis.
-        If neither is provided, the flow_basis will be inferred from the flow_rate units and the output_units will be set accordingly.
+        If flow_basis is provided, it will be used to determine the flow_basis_units.
+        If flow_basis_units is provided, it will be used to determine the flow_basis.
+        If neither is provided, the flow_basis will be inferred from the flow_rate units and the flow_basis_units will be set accordingly.
         """
         if period is None:
             period = self.base_period
 
         basis_units_map = _FLOW_BASIS_UNITS_MAP
 
-        if output_units is None:
+        if flow_basis_units is None:
             if flow_basis is None:
                 flow_basis = self._infer_flow_basis_from_flow_rate_units(
                     flow_rate, period
@@ -326,18 +326,18 @@ class WaterTAPCostingBlockData(FlowsheetCostingBlockData):
                     "'volumetric', 'mass', and 'energy'."
                 )
             # The output units match the defined flow basis units
-            output_units = basis_units_map[flow_basis]
+            flow_basis_units = basis_units_map[flow_basis]
         else:
-            inferred_basis = self._infer_flow_basis_from_units(output_units)
+            inferred_basis = self._infer_flow_basis_from_units(flow_basis_units)
             if flow_basis is None:
                 flow_basis = inferred_basis
             elif flow_basis != inferred_basis:
                 raise ValueError(
-                    f"flow_basis '{flow_basis}' is inconsistent with output_units '{output_units}'. "
-                    f"Inferred basis from output_units is '{inferred_basis}'."
+                    f"flow_basis '{flow_basis}' is inconsistent with flow_basis_units '{flow_basis_units}'. "
+                    f"Inferred basis from flow_basis_units is '{inferred_basis}'."
                 )
 
-        return flow_basis, output_units
+        return flow_basis, flow_basis_units
 
     def add_LCOW(self, flow_rate, name="LCOW"):
         """
@@ -407,7 +407,7 @@ class WaterTAPCostingBlockData(FlowsheetCostingBlockData):
         flow_rate,
         flow_basis=None,
         name="specific_energy_consumption",
-        output_units=None,
+        flow_basis_units=None,
     ):
         """
         Add specific energy consumption (kWh/m**3, kWh/kg, or kWh/kWh) to costing block.
@@ -416,18 +416,18 @@ class WaterTAPCostingBlockData(FlowsheetCostingBlockData):
             flow_rate: flow rate to be used in calculating specific energy consumption
             flow_basis (optional): basis for the flow rate, either "volumetric", "mass", or "energy"
             name (optional): name for the specific energy consumption expression
-            output_units (optional): denominator units (e.g., m**3, kg, kWh);
+            flow_basis_units (optional): denominator units (e.g., m**3, kg, kWh);
                                      when omitted, inferred from flow_rate units unless flow_basis is provided
         """
 
-        flow_basis, output_units = self._resolve_flow_basis_and_output_units(
+        flow_basis, flow_basis_units = self._resolve_flow_basis_and_flow_basis_units(
             flow_rate=flow_rate,
             flow_basis=flow_basis,
-            output_units=output_units,
+            flow_basis_units=flow_basis_units,
             period=pyo.units.hr,
         )
 
-        flow_units = output_units / pyo.units.hr
+        flow_units = flow_basis_units / pyo.units.hr
 
         self.add_component(
             name,
@@ -443,7 +443,7 @@ class WaterTAPCostingBlockData(FlowsheetCostingBlockData):
             name,
             flow_rate,
             flow_basis=flow_basis,
-            output_units=output_units,
+            flow_basis_units=flow_basis_units,
             utilization_factor=1.0,
             period=pyo.units.hr,
         )
@@ -464,7 +464,7 @@ class WaterTAPCostingBlockData(FlowsheetCostingBlockData):
         flow_rate,
         flow_basis=None,
         name="annual_process_throughput",
-        output_units=None,
+        flow_basis_units=None,
     ):
         """
         Add annual process throughput to costing block.
@@ -476,14 +476,14 @@ class WaterTAPCostingBlockData(FlowsheetCostingBlockData):
             flow_rate: flow rate to be used in calculating annual input/output
             flow_basis (optional): basis for the flow rate, either "volumetric", "mass", or "energy"
             name (optional): name for the annual throughput expression
-            output_units (optional): denominator units (e.g., m**3, kg, kWh);
+            flow_basis_units (optional): denominator units (e.g., m**3, kg, kWh);
                                       when omitted, inferred from flow_rate units unless flow_basis is provided
         """
 
-        flow_basis, flow_units = self._resolve_flow_basis_and_output_units(
+        flow_basis, flow_units = self._resolve_flow_basis_and_flow_basis_units(
             flow_rate=flow_rate,
             flow_basis=flow_basis,
-            output_units=output_units,
+            flow_basis_units=flow_basis_units,
             period=self.base_period,
         )
 
@@ -514,7 +514,7 @@ class WaterTAPCostingBlockData(FlowsheetCostingBlockData):
         flow_rate,
         flow_basis=None,
         name="specific_electrical_carbon_intensity",
-        output_units=None,
+        flow_basis_units=None,
     ):
         """
         Add specific electrical carbon intensity (kg_CO2eq/m**3, kg_CO2eq/kg, kg_CO2eq/kWh) to costing block.
@@ -523,14 +523,14 @@ class WaterTAPCostingBlockData(FlowsheetCostingBlockData):
             flow_basis (optional) - basis for the flow rate, either "volumetric", "mass", or "energy", default is "volumetric"
             name (optional) - the name of the Expression for the specific
                               carbon intensity (default: specific_electrical_carbon_intensity)
-            output_units (optional) - denominator production units (e.g., m**3, kg, kWh);
+            flow_basis_units (optional) - denominator production units (e.g., m**3, kg, kWh);
                                       when omitted, inferred from flow_rate units unless flow_basis is provided
         """
 
-        flow_basis, flow_units = self._resolve_flow_basis_and_output_units(
+        flow_basis, flow_units = self._resolve_flow_basis_and_flow_basis_units(
             flow_rate=flow_rate,
             flow_basis=flow_basis,
-            output_units=output_units,
+            flow_basis_units=flow_basis_units,
             period=pyo.units.hr,
         )
 
@@ -548,7 +548,7 @@ class WaterTAPCostingBlockData(FlowsheetCostingBlockData):
             name,
             flow_rate,
             flow_basis=flow_basis,
-            output_units=flow_units,
+            flow_basis_units=flow_units,
             period=pyo.units.hr,
             utilization_factor=1.0,
             multiplier=self.electrical_carbon_intensity,
@@ -560,7 +560,7 @@ class WaterTAPCostingBlockData(FlowsheetCostingBlockData):
         name,
         flow_rate,
         flow_basis=None,
-        output_units=None,
+        flow_basis_units=None,
         period=None,
         utilization_factor=None,
         multiplier=1.0,
@@ -576,10 +576,10 @@ class WaterTAPCostingBlockData(FlowsheetCostingBlockData):
         if period is None:
             period = self.base_period
 
-        flow_basis, base_flow_units = self._resolve_flow_basis_and_output_units(
+        flow_basis, base_flow_units = self._resolve_flow_basis_and_flow_basis_units(
             flow_rate=flow_rate,
             flow_basis=flow_basis,
-            output_units=output_units,
+            flow_basis_units=flow_basis_units,
             period=period,
         )
 
