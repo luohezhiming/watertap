@@ -405,8 +405,8 @@ class WaterTAPCostingBlockData(FlowsheetCostingBlockData):
     def add_specific_energy_consumption(
         self,
         flow_rate,
-        flow_basis=None,
         name="specific_energy_consumption",
+        flow_basis=None,
         flow_basis_units=None,
     ):
         """
@@ -414,8 +414,8 @@ class WaterTAPCostingBlockData(FlowsheetCostingBlockData):
 
         Args:
             flow_rate: flow rate to be used in calculating specific energy consumption
+            name (optional): name for the specific energy consumption expression (default: specific_energy_consumption)
             flow_basis (optional): basis for the flow rate, either "volumetric", "mass", or "energy"
-            name (optional): name for the specific energy consumption expression
             flow_basis_units (optional): denominator units (e.g., m**3, kg, kWh);
                                      when omitted, inferred from flow_rate units unless flow_basis is provided
         """
@@ -458,14 +458,14 @@ class WaterTAPCostingBlockData(FlowsheetCostingBlockData):
                               Expression (default: annual_water_production)
         """
         return self.add_process_throughput(
-            flow_rate, flow_basis="volumetric", name=name, period=pyo.units.year
+            flow_rate, name=name, flow_basis="volumetric", period=pyo.units.year
         )
 
     def add_process_throughput(
         self,
         flow_rate,
-        flow_basis=None,
         name="annual_process_throughput",
+        flow_basis=None,
         flow_basis_units=None,
         period=pyo.units.year,
     ):
@@ -478,9 +478,9 @@ class WaterTAPCostingBlockData(FlowsheetCostingBlockData):
 
         Args:
             flow_rate: flow rate to be used in calculating throughput.
+            name (optional): name for the throughput expression (default: annual_process_throughput).
             flow_basis (optional): basis for the flow rate, either
                 "volumetric", "mass", or "energy".
-            name (optional): name for the throughput expression.
             flow_basis_units (optional): numerator units (e.g., m**3,
                 kg, kWh); when omitted, inferred from flow_rate units
                 unless flow_basis is provided.
@@ -521,17 +521,17 @@ class WaterTAPCostingBlockData(FlowsheetCostingBlockData):
     def add_specific_electrical_carbon_intensity(
         self,
         flow_rate,
-        flow_basis=None,
         name="specific_electrical_carbon_intensity",
+        flow_basis=None,
         flow_basis_units=None,
     ):
         """
         Add specific electrical carbon intensity (kg_CO2eq/m**3, kg_CO2eq/kg, kg_CO2eq/kWh) to costing block.
         Args:
             flow_rate - flow rate to be used in calculating specific electrical carbon intensity
-            flow_basis (optional) - basis for the flow rate, either "volumetric", "mass", or "energy", default is "volumetric"
             name (optional) - the name of the Expression for the specific
-                              carbon intensity (default: specific_electrical_carbon_intensity)
+                                          carbon intensity (default: specific_electrical_carbon_intensity)
+            flow_basis (optional) - basis for the flow rate, either "volumetric", "mass", or "energy", default is "volumetric"
             flow_basis_units (optional) - denominator production units (e.g., m**3, kg, kWh);
                                       when omitted, inferred from flow_rate units unless flow_basis is provided
         """
