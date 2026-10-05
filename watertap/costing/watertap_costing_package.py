@@ -65,13 +65,13 @@ class WaterTAPCostingBlockData(FlowsheetCostingBlockData):
         self.base_period = pyo.units.year
 
     def add_levelized_cost(
-        self, flow_rate, name="LCOW", flow_basis=None, flow_basis_units=None
+        self, flow_rate, name="levelized_cost", flow_basis=None, flow_basis_units=None
     ):
         """
         Add a levelized cost to costing block.
         Args:
             flow_rate - flow rate to be used in calculating the levelized cost
-            name (optional) - name for the levelized cost expression (default: LCOW)
+            name (optional) - name for the levelized cost expression (default: "levelized_cost")
             flow_basis (optional) - basis for the flow rate, either "volumetric", "mass", or "energy"
             flow_basis_units (optional) - denominator units (e.g., m**3, kg, kWh);
                                       when omitted, inferred from flow_rate units unless flow_basis is provided
