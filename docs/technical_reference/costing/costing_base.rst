@@ -287,7 +287,7 @@ The relationship between the :math:`f_{crf}`, :math:`L`, and :math:`f_{wacc}` is
 
     .. math::
 
-        f_{crf} = \frac{ f_{wacc} (1 + f_{wacc}) ^ L}{ (1 + f_{wacc}) ^ L - 1}
+        f_{crf} = \frac{ f_{wacc}\,(1 + f_{wacc}) ^ L}{ (1 + f_{wacc}) ^ L - 1}
 
 Therefore, exactly two of the variables ``capital_recovery_factor``, ``plant_lifetime`` and ``wacc`` must be fixed. By default, ``plant_lifetime`` and ``wacc`` are fixed
 and ``capital_recovery_factor`` is calculated.
@@ -328,13 +328,13 @@ Total annualized cost is a simple function of the annualized capital cost and th
 
     .. math::
  
-        C_{annual} = f_{crf} C_{ca,tot} + C_{op,tot}
+        C_{annual} = f_{crf}\,C_{ca,tot} + C_{op,tot}
 
 The total capital cost is a simple factor of the sum of the unit model capital costs:
 
     .. math::
 
-        C_{ca,tot} = f_{toti} C_{ca,u}
+        C_{ca,tot} = f_{toti}\,C_{ca,u}
 
 The total operating cost is the sum of the fixed and variable operating costs:
 
@@ -352,13 +352,13 @@ Where the maintenance-labor-chemical operating cost :math:`C_{mlc}` is defined a
 
    .. math::
 
-        C_{mlc} = f_{mlc} C_{ca,tot}
+        C_{mlc} = f_{mlc}\,C_{ca,tot}
   
 The total variable operating cost is the sum of the total variable operating cost from the unit models, :math:`C_{vop,u}` plus the sum of the flow costs, :math:`C_{flow,tot}` times the plant utilization factor :math:`f_{util}`:
 
    .. math::
 
-        C_{op,var} = C_{vop,u} + f_{util} C_{flow,tot}
+        C_{op,var} = C_{vop,u} + f_{util}\,C_{flow,tot}
 
 
 Aggregate Metrics
@@ -489,7 +489,7 @@ For a given registered flow type :math:`x` the flow component breakdown :math:`\
 
     .. math::
 
-        \text{FCB}_{u} = \frac{F_{x,u} M_f}{Q_p}
+        \text{FCB}_{u} = \frac{F_{x,u}\,M_f}{Q_p}
 
 Where :math:`F_{x,u}` is the flow of :math:`x` from source :math:`u`, :math:`M_f` is an optional multiplier, and :math:`Q_p` is a specified volumetric flow rate.
 :math:`M_f` must have units that, when multiplied with the units for :math:`F_{x,u}`, result in a rate (i.e., units per time). For example, if the flow rate was electricity (units of kW),
