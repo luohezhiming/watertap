@@ -577,8 +577,16 @@ class WaterTAPCostingBlockData(FlowsheetCostingBlockData):
         """
         Add per-component breakdowns for specific `flow_name` consumption with base-name `name`
         at `flow_rate`.
-        Optional `multiplier` for the flow and period specification (default is 1 hour),
-        and specified `utilization_factor` (default is self.utilization_factor).
+
+        Args:
+            flow_name (required): string for a registered flow type
+            name (required): base name appended with ``_component`` for expression name
+            flow_rate (required): flow rate to be used for normalization
+            flow_basis (optional): flow basis, either ``"volumetric"``, ``"mass"``, or ``"energy"``
+            flow_basis_units (optional): explicit units for the flow rate
+            period (optional): time period for normalization (default is ``base_period``)
+            utilization_factor (optional): utilization factor for the flow (default is the costing block's ``utilization_factor``)
+            multiplier (optional): multiplier for the flow (default is 1.0)
         """
         if utilization_factor is None:
             utilization_factor = self.utilization_factor
