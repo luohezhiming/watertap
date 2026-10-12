@@ -175,7 +175,7 @@ def multi_run(
                 add_costing(m)
                 m.fs.costing.initialize()
                 interval_initializer(m.fs.costing)
-                _try_load_warm_start(m, has_electroNP)
+                # _try_load_warm_start(m, has_electroNP)
                 m.fs.electroNP.cathodic_potential.unfix()
                 m.fs.electroNP.area_volume_ratio.unfix()
                 m.fs.electroNP.cathodic_potential.fix(CP_list[i])
@@ -252,7 +252,7 @@ def main(
     # dt.display_variables_with_extreme_jacobians()
     # dt.display_constraints_with_extreme_jacobians()
 
-    _try_load_warm_start(m, m.fs.has_electroNP)
+    # _try_load_warm_start(m, m.fs.has_electroNP)
 
     if has_optimization:
         setup_optimization(

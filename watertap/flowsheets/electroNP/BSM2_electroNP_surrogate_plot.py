@@ -6902,7 +6902,7 @@ def interp_2d(array):
 
 
 if __name__ == "__main__":
-    # plot_CP(num=25)
+    plot_CP(num=15, recompute=True)
     # plot_CP_effluent(num=25)
     # plot_rAV(num=25)
     # plot_rAV_effluent(num=25)
@@ -6926,7 +6926,7 @@ if __name__ == "__main__":
     # stackplot_COD_max(num=15)
     # stackplot_BOD5_max(num=15, recompute=False)
     # stackplot_TKN_max(num=15)
-    stackplot_TSS_max(num=20, recompute=True)
+    # stackplot_TSS_max(num=20, recompute=True)
     # plot_electricity_cost(num=5)
 
     plt.show(block=True)
