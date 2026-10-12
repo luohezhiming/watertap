@@ -71,7 +71,7 @@ from idaes.models.unit_models.mixer import MomentumMixingType
 from watertap.unit_models.translators.translator_asm2d_adm1 import (
     Translator_ASM2d_ADM1,
 )
-from watertap.unit_models.anaerobic_digester import AD
+from watertap.unit_models.anaerobic_digester import AD, ADInitializationMethod
 from watertap.unit_models.dewatering import (
     DewateringUnit,
     ActivatedSludgeModelType as dewater_type,
@@ -290,7 +290,7 @@ def main(
     # dt.display_variables_with_extreme_jacobians()
     # dt.display_constraints_with_extreme_jacobians()
 
-    # display_TP_table(m)
+    display_TP_table(m)
 
     display_design(m)
 
@@ -433,6 +433,7 @@ def build_flowsheet(has_electroNP=False):
         reaction_package=m.fs.rxn_props_ADM1,
         has_heat_transfer=True,
         has_pressure_change=False,
+        initialization_method=ADInitializationMethod.healthy_root_auto,
     )
 
     # ADM1-ASM2d translator
@@ -1813,6 +1814,11 @@ if __name__ == "__main__":
         has_effluent_constraints=True,
     )
     display_stream_table(m)
+
+    # CH4 in AD biogas (vapor S_ch4 is kg COD/m3; 4 kg COD per kg CH4)
+    print(
+        f"AD CH4 flow: {pyo.value(pyo.units.convert(m.fs.AD.vapor_outlet.flow_vol[0] * m.fs.AD.vapor_outlet.conc_mass_comp[0, 'S_ch4'], to_units=pyo.units.kg / pyo.units.day)) / 4:.3g} kg CH4/d"
+    )
 
     # # Multi-run routine
     # m_min, obj_set, m_set, cp_opt, r_AV_opt = multi_run(
