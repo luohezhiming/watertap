@@ -39,6 +39,8 @@ from brokenaxes import brokenaxes
 from scipy import interpolate
 import seaborn as sns
 from idaes.core.base.costing_base import register_idaes_currency_units
+from idaes.core.util import to_json, from_json
+from watertap.core.solvers import get_solver as get_wt_solver
 
 register_idaes_currency_units()
 
@@ -112,6 +114,78 @@ def smooth_1d(arr, threshold=0.2, neighbors=1):
             result[i] = neighbor_mean
 
     return result
+
+
+def _fix_path(*paths):
+    """Setter for continuation_sweep from dotted paths on the model, e.g. "fs.COD_max".
+    Paths missing from this flowsheet are skipped."""
+
+    def setter(m, v):
+        for path in paths:
+            obj = m
+            for name in path.split("."):
+                obj = getattr(obj, name, None)
+                if obj is None:
+                    break
+            if obj is not None:
+                obj.fix(v)
+
+    return setter
+
+
+def continuation_sweep(m, setter, values, record, start, max_halvings=6):
+    """
+    Sweep one parameter by continuation: every point warm-starts from the last
+    converged one, so results stay on one solution branch. Two passes run outward
+    from `start` (the value m was solved at). A failed step is undone and halved;
+    after `max_halvings` the pass stops and later points stay NaN.
+
+    setter(m, v) fixes the swept parameter; record(m, i) stores results for values[i].
+    """
+    solver = get_wt_solver()  # ipopt-watertap with user scaling, as in solve()
+    base = to_json(m, return_dict=True)
+    values = np.asarray(values, dtype=float)
+
+    down = [i for i in np.argsort(values)[::-1] if values[i] <= start]
+    up = [i for i in np.argsort(values) if values[i] > start]
+
+    for order in (down, up):
+        from_json(m, sd=base)
+        last_good = base
+        current = start
+        for i in order:
+            target = values[i]
+            step = target - current
+            halvings = 0
+            ok = True
+            while abs(target - current) > 1e-12 * max(1.0, abs(target)):
+                trial = current + step
+                if abs(trial - start) > abs(target - start):
+                    trial = target
+                setter(m, trial)
+                try:
+                    res = solver.solve(m, tee=False)
+                    converged = pyo.check_optimal_termination(res)
+                except ValueError:
+                    # IPOPT returned status 'error' (e.g. evaluation failure)
+                    converged = False
+                if converged:
+                    last_good = to_json(m, return_dict=True)
+                    current = trial
+                else:
+                    from_json(m, sd=last_good)
+                    step /= 2
+                    halvings += 1
+                    if halvings > max_halvings:
+                        ok = False
+                        break
+            print(f"  sweep value {target:.6g}: {'ok' if ok else 'FAILED'}")
+            if not ok:
+                break
+            try:
+                record(m, i)
+            except Exception as e:
+                print(f"  record failed at {target:.6g}: {e}")
 
 
 ############################################### Optimization ###########################################################
@@ -364,41 +438,51 @@ def plot_electricity_cost_LCOW(num):
     LCOW_no_electroNP_list = np.zeros(num)
     LCOW_no_electroNP_list[:] = np.nan
 
-    for i in range(0, num):
-        try:
-            m, results = run_optimization_vary_electricity_cost(
-                electricity_cost=electricity_cost_list[i],
-                has_electroNP=True,
-                has_optimization=True,
-                objective=objective_fun.LCOW,
-            )
-            # m2, results = run_with_electricity_cost(
-            #     has_electroNP=False, CP=-1.1, electricity_cost=electricity_cost_list[i]
-            # )
+    # Continuation sweeps: solve once mid-range, then warm-start each point
+    e_mid = electricity_cost_list[len(electricity_cost_list) // 2]
 
-            # P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
-            LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
-            LCOP_list[i] = pyo.value(m.fs.costing.LCOW_P_removal)
-            # LCOW_no_electroNP_list[i] = pyo.value(m2.fs.costing.LCOW)
-            # LCOP_no_electroNP_list[i] = pyo.value(m2.fs.costing.LCOW_P_removal)
-        except:
-            pass
+    # With electroNP (LCOW optimization)
+    m, results = run_optimization_vary_electricity_cost(
+        electricity_cost=e_mid,
+        has_electroNP=True,
+        has_optimization=True,
+        objective=objective_fun.LCOW,
+    )
+    if not pyo.check_optimal_termination(results):
+        raise RuntimeError("Base case (with electroNP) did not converge.")
 
-    for i in range(0, num):
-        try:
-            m2, results = run_optimization_vary_electricity_cost(
-                electricity_cost=electricity_cost_list[i],
-                has_electroNP=False,
-                has_optimization=False,
-                objective=objective_fun.LCOW,
-            )
-            # m2, results = run_with_electricity_cost(
-            #     has_electroNP=False, CP=-1.1, electricity_cost=electricity_cost_list[i]
-            # )
+    def _record(m, i):
+        LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
+        LCOP_list[i] = pyo.value(m.fs.costing.LCOW_P_removal)
 
-            LCOW_no_electroNP_list[i] = pyo.value(m2.fs.costing.LCOW)
-        except:
-            pass
+    continuation_sweep(
+        m,
+        _fix_path("fs.costing.electricity_cost"),
+        electricity_cost_list,
+        _record,
+        start=e_mid,
+    )
+
+    # Without electroNP (simulation only)
+    m2, results = run_optimization_vary_electricity_cost(
+        electricity_cost=e_mid,
+        has_electroNP=False,
+        has_optimization=False,
+        objective=objective_fun.LCOW,
+    )
+    if not pyo.check_optimal_termination(results):
+        raise RuntimeError("Base case (no electroNP) did not converge.")
+
+    def _record_no_electroNP(m2, i):
+        LCOW_no_electroNP_list[i] = pyo.value(m2.fs.costing.LCOW)
+
+    continuation_sweep(
+        m2,
+        _fix_path("fs.costing.electricity_cost"),
+        electricity_cost_list,
+        _record_no_electroNP,
+        start=e_mid,
+    )
 
     LCOW_list = interp_1d(LCOW_list)
     LCOP_list = interp_1d(LCOP_list)

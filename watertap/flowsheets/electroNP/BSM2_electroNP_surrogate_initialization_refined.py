@@ -1323,7 +1323,10 @@ def add_effluent_violations(m):
 
     # Max value taken from Flores-Alsina Excel 0.002 - modified to 0.005
     m.fs.total_P_max = pyo.Var(initialize=0.005, units=pyo.units.kg / pyo.units.m**3)
-    m.fs.total_P_max.fix()
+    if m.fs.has_electroNP is True:
+        m.fs.total_P_max.fix(0.005)
+    else:
+        m.fs.total_P_max.fix(0.025)
 
     @m.fs.Constraint(m.fs.time)
     def eq_total_P_max(self, t):

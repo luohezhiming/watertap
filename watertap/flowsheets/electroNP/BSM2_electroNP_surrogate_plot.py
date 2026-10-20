@@ -17,6 +17,8 @@ from pyomo.environ import (
     units as pyunits,
 )
 from pyomo.network import Port
+from idaes.core.util import to_json, from_json
+from watertap.core.solvers import get_solver as get_wt_solver
 from idaes.core import FlowsheetBlock
 from idaes.core.solvers import get_solver
 from idaes.core.util.model_statistics import degrees_of_freedom, number_total_objectives
@@ -642,6 +644,10 @@ def run_optimization_vary_electricity_cost(
             has_effluent_constraints=True,
             reactor_volume_equalities=False,
         )
+        if has_electroNP is False:
+            # Without electroNP the reject-water P returns to the plant and the
+            # default TP limit is infeasible; relax it as in the stackplot references
+            m.fs.total_P_max.fix(0.6)
     results = solve(m)
 
     return m, results
@@ -707,6 +713,114 @@ def run_optimization_vary_electricity_cost(
 #     # m.fs.eq_total_P_max[0].deactivate()
 
 
+def _fix(var):
+    """Setter for continuation_sweep: fixes one Pyomo Var (or several) to the value."""
+    vars_ = var if isinstance(var, (list, tuple)) else [var]
+
+    def setter(m, v):
+        for x in vars_:
+            x.fix(v)
+
+    return setter
+
+
+def _fix_path(*paths):
+    """Setter for continuation_sweep from dotted paths on the model, e.g. "fs.COD_max".
+    Paths missing from this flowsheet (e.g. limits on a no-electroNP run) are skipped.
+    """
+
+    def setter(m, v):
+        for path in paths:
+            obj = m
+            for name in path.split("."):
+                obj = getattr(obj, name, None)
+                if obj is None:
+                    break
+            if obj is not None:
+                obj.fix(v)
+
+    return setter
+
+
+def continuation_sweep(
+    m, setter, values, record, start, max_halvings=6, keep_states=False
+):
+    """
+    Sweep one parameter by continuation: every point warm-starts from the last
+    converged one, so the flowsheet stays on one steady-state branch instead of
+    hopping between roots. Two passes run outward from `start` (the value m was
+    solved at). A failed step is undone and halved; after `max_halvings` the pass
+    stops, so later points stay NaN rather than jumping to another branch.
+
+    setter(m, v) fixes the swept parameter; record(m, i) stores results for values[i].
+    Returns {i: saved state} for converged points when keep_states=True.
+    """
+    solver = get_wt_solver()
+    base = to_json(m, return_dict=True)
+    values = np.asarray(values, dtype=float)
+    states = {}
+
+    down = [i for i in np.argsort(values)[::-1] if values[i] <= start]
+    up = [i for i in np.argsort(values) if values[i] > start]
+
+    for order in (down, up):
+        from_json(m, sd=base)  # each pass starts from the base solution
+        last_good = base
+        current = start
+        for i in order:
+            target = values[i]
+            step = target - current
+            halvings = 0
+            ok = True
+            while abs(target - current) > 1e-12 * max(1.0, abs(target)):
+                trial = current + step
+                if abs(trial - start) > abs(target - start):
+                    trial = target
+                setter(m, trial)
+                try:
+                    res = solver.solve(m, tee=False)
+                    converged = pyo.check_optimal_termination(res)
+                except ValueError:
+                    # IPOPT returned status 'error' (e.g. evaluation failure)
+                    converged = False
+                if converged:
+                    last_good = to_json(m, return_dict=True)
+                    current = trial
+                else:
+                    from_json(m, sd=last_good)
+                    step /= 2
+                    halvings += 1
+                    if halvings > max_halvings:
+                        ok = False
+                        break
+            print(f"  sweep value {target:.6g}: {'ok' if ok else 'FAILED'}")
+            if not ok:
+                break
+            try:
+                record(m, i)
+            except Exception as e:
+                print(f"  record failed at {target:.6g}: {e}")
+            if keep_states:
+                states[i] = last_good
+    return states
+
+
+def continuation_sweep_2d(m, set_x, xs, set_y, ys, record, x_start, y_start):
+    """
+    2D continuation for contour plots. m must be solved at (x_start, y_start).
+    First walks x along y = y_start, saving each converged state; then from each
+    of those states walks y. record(m, i, j) stores results for (xs[i], ys[j]).
+    """
+    spine = continuation_sweep(
+        m, set_x, xs, lambda m, i: None, start=x_start, keep_states=True
+    )
+    for i, state in spine.items():
+        from_json(m, sd=state)
+        continuation_sweep(
+            m, set_y, ys, lambda m, j, i=i: record(m, i, j), start=y_start
+        )
+
+
 def plot_CP(num, recompute=False):
     # 1D plot
     # Cache the (expensive) flowsheet sweep to CSV so re-plotting -- e.g.
@@ -737,21 +851,25 @@ def plot_CP(num, recompute=False):
         SNOX_out_list = np.zeros(num)
         SNOX_out_list[:] = np.nan
 
-        for i in range(0, num):
-            try:
-                m, results = main(CP=CP_list[i], r_AV=0.10)
-                P_out_list[i] = (
-                    m.fs.Treated.properties[0].conc_mass_comp["S_PO4"].value * 1e3
-                )
+        # Solve once at the base case, then walk CP by continuation (one branch)
+        CP_base = -1.1
+        m, results = main(CP=CP_base, r_AV=0.10)
+        pyo.assert_optimal_termination(results)
 
-                P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
-                Ener_electroNP_out[i] = pyo.value(
-                    m.fs.costing.electroNP_energy_consumption
-                )
-                Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
-                SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
-            except:
-                pass
+        def record(m, i):
+            P_out_list[i] = (
+                pyo.value(m.fs.Treated.properties[0].conc_mass_comp["S_PO4"]) * 1e3
+            )
+            P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
+            Ener_electroNP_out[i] = pyo.value(m.fs.costing.electroNP_energy_consumption)
+            Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
+            SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
+
+        continuation_sweep(
+            m, _fix(m.fs.electroNP.cathodic_potential), CP_list, record, start=CP_base
+        )
+        if np.isnan(P_out_list).all():
+            raise RuntimeError("No CP point converged; check the solver output.")
 
         P_out_list = interp_1d(P_out_list)
         P_removal_list = interp_1d(P_removal_list)
@@ -933,25 +1051,32 @@ def plot_CP_effluent(num):
     TKN_max = 7 * np.ones(num)
     TP_max = 5 * np.ones(num)
 
-    for i in range(0, num):
-        try:
-            m, results = main(CP=CP_list[i], r_AV=0.10)
+    # Continuation sweep: solve once mid-range, then warm-start each point
+    m, results = main(CP=CP_list[len(CP_list) // 2], r_AV=0.10)
+    if not pyo.check_optimal_termination(results):
+        raise RuntimeError("Base case for the sweep did not converge.")
 
-            P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
-            TSS_out_list[i] = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
-            COD_out_list[i] = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
-            BOD_out_list[i] = pyo.value(
-                m.fs.Treated.properties[0].BOD5["effluent"] * 1e3
-            )
-            TKN_out_list[i] = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
-            SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
-            P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
-            P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
-            # P_out_list[i] = (
-            #     m.fs.Treated.properties[0].conc_mass_comp["S_PO4"].value * 1e3
-            # )
-        except:
-            pass
+    def _record(m, i):
+
+        P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
+        TSS_out_list[i] = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
+        COD_out_list[i] = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
+        BOD_out_list[i] = pyo.value(m.fs.Treated.properties[0].BOD5["effluent"] * 1e3)
+        TKN_out_list[i] = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
+        SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
+        P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
+        P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
+        # P_out_list[i] = (
+        #     m.fs.Treated.properties[0].conc_mass_comp["S_PO4"].value * 1e3
+        # )
+
+    continuation_sweep(
+        m,
+        _fix_path("fs.electroNP.cathodic_potential"),
+        CP_list,
+        _record,
+        start=CP_list[len(CP_list) // 2],
+    )
 
     P_removal_list = interp_1d(P_removal_list)
     TSS_out_list = interp_1d(TSS_out_list)
@@ -1129,20 +1254,27 @@ def plot_rAV(num, recompute=False):
         SNOX_out_list = np.zeros(num)
         SNOX_out_list[:] = np.nan
 
-        for i in range(0, num):
-            try:
-                m, results = main(CP=-1.1, r_AV=r_AV_list[i])
-                P_out_list[i] = (
-                    m.fs.Treated.properties[0].conc_mass_comp["S_PO4"].value * 1e3
-                )
-                P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
-                Ener_electroNP_out[i] = pyo.value(
-                    m.fs.costing.electroNP_energy_consumption
-                )
-                Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
-                SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
-            except:
-                pass
+        # Continuation sweep: solve once mid-range, then warm-start each point
+        m, results = main(CP=-1.1, r_AV=r_AV_list[len(r_AV_list) // 2])
+        if not pyo.check_optimal_termination(results):
+            raise RuntimeError("Base case for the sweep did not converge.")
+
+        def _record(m, i):
+            P_out_list[i] = (
+                m.fs.Treated.properties[0].conc_mass_comp["S_PO4"].value * 1e3
+            )
+            P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
+            Ener_electroNP_out[i] = pyo.value(m.fs.costing.electroNP_energy_consumption)
+            Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
+            SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
+
+        continuation_sweep(
+            m,
+            _fix_path("fs.electroNP.area_volume_ratio"),
+            r_AV_list,
+            _record,
+            start=r_AV_list[len(r_AV_list) // 2],
+        )
 
         P_out_list = interp_1d(P_out_list)
         P_removal_list = interp_1d(P_removal_list)
@@ -1328,25 +1460,32 @@ def plot_rAV_effluent(num):
     TKN_max = 7 * np.ones(num)
     TP_max = 5 * np.ones(num)
 
-    for i in range(0, num):
-        try:
-            m, results = main(CP=-1.1, r_AV=r_AV_list[i])
+    # Continuation sweep: solve once mid-range, then warm-start each point
+    m, results = main(CP=-1.1, r_AV=r_AV_list[len(r_AV_list) // 2])
+    if not pyo.check_optimal_termination(results):
+        raise RuntimeError("Base case for the sweep did not converge.")
 
-            P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
-            TSS_out_list[i] = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
-            COD_out_list[i] = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
-            BOD_out_list[i] = pyo.value(
-                m.fs.Treated.properties[0].BOD5["effluent"] * 1e3
-            )
-            TKN_out_list[i] = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
-            SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
-            P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
-            P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
-            # P_out_list[i] = (
-            #     m.fs.Treated.properties[0].conc_mass_comp["S_PO4"].value * 1e3
-            # )
-        except:
-            pass
+    def _record(m, i):
+
+        P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
+        TSS_out_list[i] = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
+        COD_out_list[i] = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
+        BOD_out_list[i] = pyo.value(m.fs.Treated.properties[0].BOD5["effluent"] * 1e3)
+        TKN_out_list[i] = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
+        SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
+        P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
+        P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
+        # P_out_list[i] = (
+        #     m.fs.Treated.properties[0].conc_mass_comp["S_PO4"].value * 1e3
+        # )
+
+    continuation_sweep(
+        m,
+        _fix_path("fs.electroNP.area_volume_ratio"),
+        r_AV_list,
+        _record,
+        start=r_AV_list[len(r_AV_list) // 2],
+    )
 
     P_removal_list = interp_1d(P_removal_list)
     TSS_out_list = interp_1d(TSS_out_list)
@@ -1550,29 +1689,37 @@ def contourf_plot(num, recompute=False):
         SEC_electroNP_aeration_matrix = np.zeros((num, num))
         SEC_electroNP_aeration_matrix[:] = np.nan
 
-        for i in range(0, num):
-            for j in range(0, num):
-                print(f"CP: {CP_list[i]}")
-                print(f"rAV: {r_AV_list[j]}")
-                try:
-                    # simulation
-                    m, results = main(CP=CP_list[i], r_AV=r_AV_list[j])
-                    P_out_matrix[j, i] = (
-                        m.fs.Treated.properties[0].conc_mass_comp["S_PO4"].value * 1e3
-                    )
-                    LCOW_matrix[j, i] = pyo.value(m.fs.costing.LCOW)
-                    SEC_matrix[j, i] = pyo.value(
-                        m.fs.costing.specific_energy_consumption
-                    )
-                    SEC_electroNP_matrix[j, i] = pyo.value(
-                        m.fs.costing.electroNP_energy_consumption
-                    ) / pyo.value(m.fs.costing.specific_energy_consumption)
-                    aeration_matrix[j, i] = pyo.value(m.fs.costing.aeration_energy)
-                    SEC_electroNP_aeration_matrix[j, i] = pyo.value(
-                        m.fs.costing.electroNP_energy_consumption
-                    ) / pyo.value(m.fs.costing.aeration_energy)
-                except:
-                    pass
+        # Continuation sweep: solve once mid-range, then warm-start each point
+        m, results = main(
+            CP=CP_list[len(CP_list) // 2], r_AV=r_AV_list[len(r_AV_list) // 2]
+        )
+        if not pyo.check_optimal_termination(results):
+            raise RuntimeError("Base case for the sweep did not converge.")
+
+        def _record(m, i, j):
+            P_out_matrix[j, i] = (
+                m.fs.Treated.properties[0].conc_mass_comp["S_PO4"].value * 1e3
+            )
+            LCOW_matrix[j, i] = pyo.value(m.fs.costing.LCOW)
+            SEC_matrix[j, i] = pyo.value(m.fs.costing.specific_energy_consumption)
+            SEC_electroNP_matrix[j, i] = pyo.value(
+                m.fs.costing.electroNP_energy_consumption
+            ) / pyo.value(m.fs.costing.specific_energy_consumption)
+            aeration_matrix[j, i] = pyo.value(m.fs.costing.aeration_energy)
+            SEC_electroNP_aeration_matrix[j, i] = pyo.value(
+                m.fs.costing.electroNP_energy_consumption
+            ) / pyo.value(m.fs.costing.aeration_energy)
+
+        continuation_sweep_2d(
+            m,
+            _fix_path("fs.electroNP.cathodic_potential"),
+            CP_list,
+            _fix_path("fs.electroNP.area_volume_ratio"),
+            r_AV_list,
+            _record,
+            x_start=CP_list[len(CP_list) // 2],
+            y_start=r_AV_list[len(r_AV_list) // 2],
+        )
 
         P_out_matrix = interp_2d(P_out_matrix)
         LCOW_matrix = interp_2d(LCOW_matrix)
@@ -1689,33 +1836,43 @@ def contourf_plot_aeration(num):
     aeration_matrix = np.zeros((num, num))
     aeration_matrix[:] = np.nan
 
-    for i in range(0, num):
-        for j in range(0, num):
-            print(f"CP: {CP_list[i]}")
-            print(f"rAV: {r_AV_list[j]}")
-            try:
-                # simulation
-                m, results = run_with_injection(CP=CP_list[i], r_AV=r_AV_list[j])
-                # # case 2:
-                # m, results = run_optimization(
-                #     CP=CP_list[i],
-                #     r_AV=r_AV_list[j],
-                #     has_electroNP=True,
-                #     has_optimization=True,
-                #     objective=objective_fun.LCOW,
-                #     has_effluent_constraints=True,
-                # )
-                P_out_matrix[j, i] = (
-                    m.fs.Treated.properties[0].conc_mass_comp["S_PO4"].value * 1e3
-                )
-                LCOW_matrix[j, i] = pyo.value(m.fs.costing.LCOW)
-                SEC_matrix[j, i] = pyo.value(m.fs.costing.specific_energy_consumption)
-                SEC_electroNP_matrix[j, i] = pyo.value(
-                    m.fs.costing.electroNP_energy_consumption
-                ) / pyo.value(m.fs.costing.specific_energy_consumption)
-                aeration_matrix[j, i] = pyo.value(m.fs.costing.aeration_energy)
-            except:
-                pass
+    # Continuation sweep: solve once mid-range, then warm-start each point
+    m, results = run_with_injection(
+        CP=CP_list[len(CP_list) // 2], r_AV=r_AV_list[len(r_AV_list) // 2]
+    )
+    if not pyo.check_optimal_termination(results):
+        raise RuntimeError("Base case for the sweep did not converge.")
+
+    def _record(m, i, j):
+        # # case 2:
+        # m, results = run_optimization(
+        #     CP=CP_list[i],
+        #     r_AV=r_AV_list[j],
+        #     has_electroNP=True,
+        #     has_optimization=True,
+        #     objective=objective_fun.LCOW,
+        #     has_effluent_constraints=True,
+        # )
+        P_out_matrix[j, i] = (
+            m.fs.Treated.properties[0].conc_mass_comp["S_PO4"].value * 1e3
+        )
+        LCOW_matrix[j, i] = pyo.value(m.fs.costing.LCOW)
+        SEC_matrix[j, i] = pyo.value(m.fs.costing.specific_energy_consumption)
+        SEC_electroNP_matrix[j, i] = pyo.value(
+            m.fs.costing.electroNP_energy_consumption
+        ) / pyo.value(m.fs.costing.specific_energy_consumption)
+        aeration_matrix[j, i] = pyo.value(m.fs.costing.aeration_energy)
+
+    continuation_sweep_2d(
+        m,
+        _fix_path("fs.electroNP.cathodic_potential"),
+        CP_list,
+        _fix_path("fs.electroNP.area_volume_ratio"),
+        r_AV_list,
+        _record,
+        x_start=CP_list[len(CP_list) // 2],
+        y_start=r_AV_list[len(r_AV_list) // 2],
+    )
 
     P_out_matrix = interp_2d(P_out_matrix)
     LCOW_matrix = interp_2d(LCOW_matrix)
@@ -1820,27 +1977,36 @@ def contourf_plot_electricity_cost(num):
     aeration_matrix = np.zeros((num, num))
     aeration_matrix[:] = np.nan
 
-    for i in range(0, num):
-        for j in range(0, num):
-            print(f"CP: {CP_list[i]}")
-            print(f"electricity cost: {electricity_cost_list[j]}")
-            try:
-                # # simulation
-                m, results = run_with_electricity_cost(
-                    CP=CP_list[i], electricity_cost=electricity_cost_list[j]
-                )
+    # Continuation sweep: solve once mid-range, then warm-start each point
+    m, results = run_with_electricity_cost(
+        CP=CP_list[len(CP_list) // 2],
+        electricity_cost=electricity_cost_list[len(electricity_cost_list) // 2],
+    )
+    if not pyo.check_optimal_termination(results):
+        raise RuntimeError("Base case for the sweep did not converge.")
 
-                P_out_matrix[j, i] = (
-                    m.fs.Treated.properties[0].conc_mass_comp["S_PO4"].value * 1e3
-                )
-                LCOW_matrix[j, i] = pyo.value(m.fs.costing.LCOW)
-                SEC_matrix[j, i] = pyo.value(m.fs.costing.specific_energy_consumption)
-                SEC_electroNP_matrix[j, i] = pyo.value(
-                    m.fs.costing.electroNP_energy_consumption
-                ) / pyo.value(m.fs.costing.specific_energy_consumption)
-                aeration_matrix[j, i] = pyo.value(m.fs.costing.aeration_energy)
-            except:
-                pass
+    def _record(m, i, j):
+
+        P_out_matrix[j, i] = (
+            m.fs.Treated.properties[0].conc_mass_comp["S_PO4"].value * 1e3
+        )
+        LCOW_matrix[j, i] = pyo.value(m.fs.costing.LCOW)
+        SEC_matrix[j, i] = pyo.value(m.fs.costing.specific_energy_consumption)
+        SEC_electroNP_matrix[j, i] = pyo.value(
+            m.fs.costing.electroNP_energy_consumption
+        ) / pyo.value(m.fs.costing.specific_energy_consumption)
+        aeration_matrix[j, i] = pyo.value(m.fs.costing.aeration_energy)
+
+    continuation_sweep_2d(
+        m,
+        _fix_path("fs.electroNP.cathodic_potential"),
+        CP_list,
+        _fix_path("fs.costing.electricity_cost"),
+        electricity_cost_list,
+        _record,
+        x_start=CP_list[len(CP_list) // 2],
+        y_start=electricity_cost_list[len(electricity_cost_list) // 2],
+    )
 
     P_out_matrix = interp_2d(P_out_matrix)
     LCOW_matrix = interp_2d(LCOW_matrix)
@@ -1939,38 +2105,41 @@ def plot_aeration_R5(num):
     Injection_R7_list = np.zeros(num)
     Injection_R7_list[:] = np.nan
 
-    for i in range(0, num):
-        try:
-            m, results = run_with_KLa(KLa_R5=KLa_R5_list[i], KLa_R6=7, KLa_R7=6)
+    # Continuation sweep: solve once mid-range, then warm-start each point
+    m, results = run_with_KLa(
+        KLa_R5=KLa_R5_list[len(KLa_R5_list) // 2], KLa_R6=7, KLa_R7=6
+    )
+    if not pyo.check_optimal_termination(results):
+        raise RuntimeError("Base case for the sweep did not converge.")
 
-            S_O2_out_R5_list[i] = pyo.value(
-                m.fs.R5.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_R6_list[i] = pyo.value(
-                m.fs.R6.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_R7_list[i] = pyo.value(
-                m.fs.R7.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_list[i] = pyo.value(
-                m.fs.Treated.properties[0].conc_mass_comp["S_O2"] * 1e3
-            )
-            Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
-            P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
-            TSS_out_list[i] = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
-            COD_out_list[i] = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
-            BOD_out_list[i] = pyo.value(
-                m.fs.Treated.properties[0].BOD5["effluent"] * 1e3
-            )
-            TKN_out_list[i] = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
-            SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
-            P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
-            P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
-            Injection_R5_list[i] = pyo.value(m.fs.R5.injection[0, "Liq", "S_O2"])
-            Injection_R6_list[i] = pyo.value(m.fs.R6.injection[0, "Liq", "S_O2"])
-            Injection_R7_list[i] = pyo.value(m.fs.R7.injection[0, "Liq", "S_O2"])
-        except:
-            pass
+    def _record(m, i):
+
+        S_O2_out_R5_list[i] = pyo.value(m.fs.R5.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_R6_list[i] = pyo.value(m.fs.R6.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_R7_list[i] = pyo.value(m.fs.R7.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_list[i] = pyo.value(
+            m.fs.Treated.properties[0].conc_mass_comp["S_O2"] * 1e3
+        )
+        Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
+        P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
+        TSS_out_list[i] = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
+        COD_out_list[i] = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
+        BOD_out_list[i] = pyo.value(m.fs.Treated.properties[0].BOD5["effluent"] * 1e3)
+        TKN_out_list[i] = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
+        SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
+        P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
+        P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
+        Injection_R5_list[i] = pyo.value(m.fs.R5.injection[0, "Liq", "S_O2"])
+        Injection_R6_list[i] = pyo.value(m.fs.R6.injection[0, "Liq", "S_O2"])
+        Injection_R7_list[i] = pyo.value(m.fs.R7.injection[0, "Liq", "S_O2"])
+
+    continuation_sweep(
+        m,
+        _fix_path("fs.R5.KLa"),
+        KLa_R5_list,
+        _record,
+        start=KLa_R5_list[len(KLa_R5_list) // 2],
+    )
 
     S_O2_out_R5_list = interp_1d(S_O2_out_R5_list)
     S_O2_out_R6_list = interp_1d(S_O2_out_R6_list)
@@ -2311,38 +2480,41 @@ def plot_aeration_R6(num):
     Injection_R7_list = np.zeros(num)
     Injection_R7_list[:] = np.nan
 
-    for i in range(0, num):
-        try:
-            m, results = run_with_KLa(KLa_R5=11, KLa_R6=KLa_R6_list[i], KLa_R7=6)
+    # Continuation sweep: solve once mid-range, then warm-start each point
+    m, results = run_with_KLa(
+        KLa_R5=11, KLa_R6=KLa_R6_list[len(KLa_R6_list) // 2], KLa_R7=6
+    )
+    if not pyo.check_optimal_termination(results):
+        raise RuntimeError("Base case for the sweep did not converge.")
 
-            S_O2_out_R5_list[i] = pyo.value(
-                m.fs.R5.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_R6_list[i] = pyo.value(
-                m.fs.R6.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_R7_list[i] = pyo.value(
-                m.fs.R7.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_list[i] = pyo.value(
-                m.fs.Treated.properties[0].conc_mass_comp["S_O2"] * 1e3
-            )
-            Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
-            P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
-            TSS_out_list[i] = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
-            COD_out_list[i] = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
-            BOD_out_list[i] = pyo.value(
-                m.fs.Treated.properties[0].BOD5["effluent"] * 1e3
-            )
-            TKN_out_list[i] = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
-            SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
-            P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
-            P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
-            Injection_R5_list[i] = pyo.value(m.fs.R5.injection[0, "Liq", "S_O2"])
-            Injection_R6_list[i] = pyo.value(m.fs.R6.injection[0, "Liq", "S_O2"])
-            Injection_R7_list[i] = pyo.value(m.fs.R7.injection[0, "Liq", "S_O2"])
-        except:
-            pass
+    def _record(m, i):
+
+        S_O2_out_R5_list[i] = pyo.value(m.fs.R5.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_R6_list[i] = pyo.value(m.fs.R6.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_R7_list[i] = pyo.value(m.fs.R7.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_list[i] = pyo.value(
+            m.fs.Treated.properties[0].conc_mass_comp["S_O2"] * 1e3
+        )
+        Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
+        P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
+        TSS_out_list[i] = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
+        COD_out_list[i] = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
+        BOD_out_list[i] = pyo.value(m.fs.Treated.properties[0].BOD5["effluent"] * 1e3)
+        TKN_out_list[i] = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
+        SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
+        P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
+        P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
+        Injection_R5_list[i] = pyo.value(m.fs.R5.injection[0, "Liq", "S_O2"])
+        Injection_R6_list[i] = pyo.value(m.fs.R6.injection[0, "Liq", "S_O2"])
+        Injection_R7_list[i] = pyo.value(m.fs.R7.injection[0, "Liq", "S_O2"])
+
+    continuation_sweep(
+        m,
+        _fix_path("fs.R6.KLa"),
+        KLa_R6_list,
+        _record,
+        start=KLa_R6_list[len(KLa_R6_list) // 2],
+    )
 
     S_O2_out_R5_list = interp_1d(S_O2_out_R5_list)
     S_O2_out_R6_list = interp_1d(S_O2_out_R6_list)
@@ -2682,38 +2854,41 @@ def plot_aeration_R7(num):
     Injection_R7_list = np.zeros(num)
     Injection_R7_list[:] = np.nan
 
-    for i in range(0, num):
-        try:
-            m, results = run_with_KLa(KLa_R5=11, KLa_R6=7, KLa_R7=KLa_R7_list[i])
+    # Continuation sweep: solve once mid-range, then warm-start each point
+    m, results = run_with_KLa(
+        KLa_R5=11, KLa_R6=7, KLa_R7=KLa_R7_list[len(KLa_R7_list) // 2]
+    )
+    if not pyo.check_optimal_termination(results):
+        raise RuntimeError("Base case for the sweep did not converge.")
 
-            S_O2_out_R5_list[i] = pyo.value(
-                m.fs.R5.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_R6_list[i] = pyo.value(
-                m.fs.R6.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_R7_list[i] = pyo.value(
-                m.fs.R7.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_list[i] = pyo.value(
-                m.fs.Treated.properties[0].conc_mass_comp["S_O2"] * 1e3
-            )
-            Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
-            P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
-            TSS_out_list[i] = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
-            COD_out_list[i] = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
-            BOD_out_list[i] = pyo.value(
-                m.fs.Treated.properties[0].BOD5["effluent"] * 1e3
-            )
-            TKN_out_list[i] = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
-            SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
-            P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
-            P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
-            Injection_R5_list[i] = pyo.value(m.fs.R5.injection[0, "Liq", "S_O2"])
-            Injection_R6_list[i] = pyo.value(m.fs.R6.injection[0, "Liq", "S_O2"])
-            Injection_R7_list[i] = pyo.value(m.fs.R7.injection[0, "Liq", "S_O2"])
-        except:
-            pass
+    def _record(m, i):
+
+        S_O2_out_R5_list[i] = pyo.value(m.fs.R5.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_R6_list[i] = pyo.value(m.fs.R6.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_R7_list[i] = pyo.value(m.fs.R7.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_list[i] = pyo.value(
+            m.fs.Treated.properties[0].conc_mass_comp["S_O2"] * 1e3
+        )
+        Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
+        P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
+        TSS_out_list[i] = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
+        COD_out_list[i] = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
+        BOD_out_list[i] = pyo.value(m.fs.Treated.properties[0].BOD5["effluent"] * 1e3)
+        TKN_out_list[i] = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
+        SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
+        P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
+        P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
+        Injection_R5_list[i] = pyo.value(m.fs.R5.injection[0, "Liq", "S_O2"])
+        Injection_R6_list[i] = pyo.value(m.fs.R6.injection[0, "Liq", "S_O2"])
+        Injection_R7_list[i] = pyo.value(m.fs.R7.injection[0, "Liq", "S_O2"])
+
+    continuation_sweep(
+        m,
+        _fix_path("fs.R7.KLa"),
+        KLa_R7_list,
+        _record,
+        start=KLa_R7_list[len(KLa_R7_list) // 2],
+    )
 
     S_O2_out_R5_list = interp_1d(S_O2_out_R5_list)
     S_O2_out_R6_list = interp_1d(S_O2_out_R6_list)
@@ -3119,46 +3294,46 @@ def plot_COD_max(num):
     SEC_list = np.zeros(num)
     SEC_list[:] = np.nan
 
-    for i in range(0, num):
-        try:
-            m, results = run_optimization_vary_max(
-                COD_max=COD_max_list[i],
-                BOD5_max=0.01,
-                TKN_max=0.007,
-                TP_max=0.005,
-                has_electroNP=True,
-                has_optimization=True,
-            )
+    # Continuation sweep: solve once mid-range, then warm-start each point
+    m, results = run_optimization_vary_max(
+        COD_max=COD_max_list[len(COD_max_list) // 2],
+        BOD5_max=0.01,
+        TKN_max=0.007,
+        TP_max=0.005,
+        has_electroNP=True,
+        has_optimization=True,
+    )
+    if not pyo.check_optimal_termination(results):
+        raise RuntimeError("Base case for the sweep did not converge.")
 
-            S_O2_out_R5_list[i] = pyo.value(
-                m.fs.R5.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_R6_list[i] = pyo.value(
-                m.fs.R6.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_R7_list[i] = pyo.value(
-                m.fs.R7.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_list[i] = pyo.value(
-                m.fs.Treated.properties[0].conc_mass_comp["S_O2"] * 1e3
-            )
-            Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
-            P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
-            TSS_out_list[i] = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
-            COD_out_list[i] = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
-            BOD_out_list[i] = pyo.value(
-                m.fs.Treated.properties[0].BOD5["effluent"] * 1e3
-            )
-            TKN_out_list[i] = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
-            SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
-            P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
-            P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
+    def _record(m, i):
 
-            LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
-            SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+        S_O2_out_R5_list[i] = pyo.value(m.fs.R5.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_R6_list[i] = pyo.value(m.fs.R6.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_R7_list[i] = pyo.value(m.fs.R7.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_list[i] = pyo.value(
+            m.fs.Treated.properties[0].conc_mass_comp["S_O2"] * 1e3
+        )
+        Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
+        P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
+        TSS_out_list[i] = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
+        COD_out_list[i] = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
+        BOD_out_list[i] = pyo.value(m.fs.Treated.properties[0].BOD5["effluent"] * 1e3)
+        TKN_out_list[i] = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
+        SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
+        P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
+        P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
 
-        except:
-            pass
+        LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
+        SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+
+    continuation_sweep(
+        m,
+        _fix_path("fs.COD_max"),
+        COD_max_list,
+        _record,
+        start=COD_max_list[len(COD_max_list) // 2],
+    )
 
     S_O2_out_R5_list = interp_1d(S_O2_out_R5_list)
     S_O2_out_R6_list = interp_1d(S_O2_out_R6_list)
@@ -3650,46 +3825,46 @@ def plot_COD_max_no_electroNP(num):
     SEC_list = np.zeros(num)
     SEC_list[:] = np.nan
 
-    for i in range(0, num):
-        try:
-            m, results = run_optimization_vary_max(
-                COD_max=COD_max_list[i],
-                BOD5_max=0.01,
-                TKN_max=0.007,
-                TP_max=0.005,
-                has_electroNP=False,
-                has_optimization=True,
-            )
+    # Continuation sweep: solve once mid-range, then warm-start each point
+    m, results = run_optimization_vary_max(
+        COD_max=COD_max_list[len(COD_max_list) // 2],
+        BOD5_max=0.01,
+        TKN_max=0.007,
+        TP_max=0.005,
+        has_electroNP=False,
+        has_optimization=True,
+    )
+    if not pyo.check_optimal_termination(results):
+        raise RuntimeError("Base case for the sweep did not converge.")
 
-            S_O2_out_R5_list[i] = pyo.value(
-                m.fs.R5.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_R6_list[i] = pyo.value(
-                m.fs.R6.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_R7_list[i] = pyo.value(
-                m.fs.R7.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_list[i] = pyo.value(
-                m.fs.Treated.properties[0].conc_mass_comp["S_O2"] * 1e3
-            )
-            Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
-            P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
-            TSS_out_list[i] = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
-            COD_out_list[i] = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
-            BOD_out_list[i] = pyo.value(
-                m.fs.Treated.properties[0].BOD5["effluent"] * 1e3
-            )
-            TKN_out_list[i] = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
-            SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
-            P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
-            P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
+    def _record(m, i):
 
-            LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
-            SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+        S_O2_out_R5_list[i] = pyo.value(m.fs.R5.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_R6_list[i] = pyo.value(m.fs.R6.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_R7_list[i] = pyo.value(m.fs.R7.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_list[i] = pyo.value(
+            m.fs.Treated.properties[0].conc_mass_comp["S_O2"] * 1e3
+        )
+        Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
+        P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
+        TSS_out_list[i] = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
+        COD_out_list[i] = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
+        BOD_out_list[i] = pyo.value(m.fs.Treated.properties[0].BOD5["effluent"] * 1e3)
+        TKN_out_list[i] = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
+        SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
+        P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
+        P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
 
-        except:
-            pass
+        LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
+        SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+
+    continuation_sweep(
+        m,
+        _fix_path("fs.COD_max"),
+        COD_max_list,
+        _record,
+        start=COD_max_list[len(COD_max_list) // 2],
+    )
 
     # S_O2_out_R5_list = interp_1d(S_O2_out_R5_list)
     # S_O2_out_R6_list = interp_1d(S_O2_out_R6_list)
@@ -4081,46 +4256,46 @@ def plot_BOD5_max(num):
     SEC_list = np.zeros(num)
     SEC_list[:] = np.nan
 
-    for i in range(0, num):
-        try:
-            m, results = run_optimization_vary_max(
-                COD_max=0.1,
-                BOD5_max=BOD5_max_list[i],
-                TKN_max=0.007,
-                TP_max=0.005,
-                has_electroNP=True,
-                has_optimization=True,
-            )
+    # Continuation sweep: solve once mid-range, then warm-start each point
+    m, results = run_optimization_vary_max(
+        COD_max=0.1,
+        BOD5_max=BOD5_max_list[len(BOD5_max_list) // 2],
+        TKN_max=0.007,
+        TP_max=0.005,
+        has_electroNP=True,
+        has_optimization=True,
+    )
+    if not pyo.check_optimal_termination(results):
+        raise RuntimeError("Base case for the sweep did not converge.")
 
-            S_O2_out_R5_list[i] = pyo.value(
-                m.fs.R5.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_R6_list[i] = pyo.value(
-                m.fs.R6.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_R7_list[i] = pyo.value(
-                m.fs.R7.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_list[i] = pyo.value(
-                m.fs.Treated.properties[0].conc_mass_comp["S_O2"] * 1e3
-            )
-            Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
-            P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
-            TSS_out_list[i] = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
-            COD_out_list[i] = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
-            BOD_out_list[i] = pyo.value(
-                m.fs.Treated.properties[0].BOD5["effluent"] * 1e3
-            )
-            TKN_out_list[i] = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
-            SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
-            P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
-            P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
+    def _record(m, i):
 
-            LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
-            SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+        S_O2_out_R5_list[i] = pyo.value(m.fs.R5.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_R6_list[i] = pyo.value(m.fs.R6.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_R7_list[i] = pyo.value(m.fs.R7.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_list[i] = pyo.value(
+            m.fs.Treated.properties[0].conc_mass_comp["S_O2"] * 1e3
+        )
+        Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
+        P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
+        TSS_out_list[i] = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
+        COD_out_list[i] = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
+        BOD_out_list[i] = pyo.value(m.fs.Treated.properties[0].BOD5["effluent"] * 1e3)
+        TKN_out_list[i] = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
+        SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
+        P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
+        P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
 
-        except:
-            pass
+        LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
+        SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+
+    continuation_sweep(
+        m,
+        _fix_path("fs.BOD5_max"),
+        BOD5_max_list,
+        _record,
+        start=BOD5_max_list[len(BOD5_max_list) // 2],
+    )
 
     S_O2_out_R5_list = interp_1d(S_O2_out_R5_list)
     S_O2_out_R6_list = interp_1d(S_O2_out_R6_list)
@@ -4616,46 +4791,46 @@ def plot_BOD5_max_no_electroNP(num):
     SEC_list = np.zeros(num)
     SEC_list[:] = np.nan
 
-    for i in range(0, num):
-        try:
-            m, results = run_optimization_vary_max(
-                COD_max=0.1,
-                BOD5_max=BOD5_max_list[i],
-                TKN_max=0.007,
-                TP_max=0.005,
-                has_electroNP=False,
-                has_optimization=True,
-            )
+    # Continuation sweep: solve once mid-range, then warm-start each point
+    m, results = run_optimization_vary_max(
+        COD_max=0.1,
+        BOD5_max=BOD5_max_list[len(BOD5_max_list) // 2],
+        TKN_max=0.007,
+        TP_max=0.005,
+        has_electroNP=False,
+        has_optimization=True,
+    )
+    if not pyo.check_optimal_termination(results):
+        raise RuntimeError("Base case for the sweep did not converge.")
 
-            S_O2_out_R5_list[i] = pyo.value(
-                m.fs.R5.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_R6_list[i] = pyo.value(
-                m.fs.R6.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_R7_list[i] = pyo.value(
-                m.fs.R7.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_list[i] = pyo.value(
-                m.fs.Treated.properties[0].conc_mass_comp["S_O2"] * 1e3
-            )
-            Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
-            P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
-            TSS_out_list[i] = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
-            COD_out_list[i] = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
-            BOD_out_list[i] = pyo.value(
-                m.fs.Treated.properties[0].BOD5["effluent"] * 1e3
-            )
-            TKN_out_list[i] = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
-            SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
-            P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
-            P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
+    def _record(m, i):
 
-            LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
-            SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+        S_O2_out_R5_list[i] = pyo.value(m.fs.R5.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_R6_list[i] = pyo.value(m.fs.R6.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_R7_list[i] = pyo.value(m.fs.R7.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_list[i] = pyo.value(
+            m.fs.Treated.properties[0].conc_mass_comp["S_O2"] * 1e3
+        )
+        Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
+        P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
+        TSS_out_list[i] = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
+        COD_out_list[i] = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
+        BOD_out_list[i] = pyo.value(m.fs.Treated.properties[0].BOD5["effluent"] * 1e3)
+        TKN_out_list[i] = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
+        SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
+        P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
+        P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
 
-        except:
-            pass
+        LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
+        SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+
+    continuation_sweep(
+        m,
+        _fix_path("fs.BOD5_max"),
+        BOD5_max_list,
+        _record,
+        start=BOD5_max_list[len(BOD5_max_list) // 2],
+    )
 
     # S_O2_out_R5_list = interp_1d(S_O2_out_R5_list)
     # S_O2_out_R6_list = interp_1d(S_O2_out_R6_list)
@@ -5054,46 +5229,46 @@ def plot_TKN_max(num):
     SEC_list = np.zeros(num)
     SEC_list[:] = np.nan
 
-    for i in range(0, num):
-        try:
-            m, results = run_optimization_vary_max(
-                COD_max=0.1,
-                BOD5_max=0.01,
-                TKN_max=TKN_max_list[i],
-                TP_max=0.005,
-                has_electroNP=True,
-                has_optimization=True,
-            )
+    # Continuation sweep: solve once mid-range, then warm-start each point
+    m, results = run_optimization_vary_max(
+        COD_max=0.1,
+        BOD5_max=0.01,
+        TKN_max=TKN_max_list[len(TKN_max_list) // 2],
+        TP_max=0.005,
+        has_electroNP=True,
+        has_optimization=True,
+    )
+    if not pyo.check_optimal_termination(results):
+        raise RuntimeError("Base case for the sweep did not converge.")
 
-            S_O2_out_R5_list[i] = pyo.value(
-                m.fs.R5.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_R6_list[i] = pyo.value(
-                m.fs.R6.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_R7_list[i] = pyo.value(
-                m.fs.R7.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_list[i] = pyo.value(
-                m.fs.Treated.properties[0].conc_mass_comp["S_O2"] * 1e3
-            )
-            Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
-            P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
-            TSS_out_list[i] = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
-            COD_out_list[i] = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
-            BOD_out_list[i] = pyo.value(
-                m.fs.Treated.properties[0].BOD5["effluent"] * 1e3
-            )
-            TKN_out_list[i] = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
-            SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
-            P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
-            P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
+    def _record(m, i):
 
-            LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
-            SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+        S_O2_out_R5_list[i] = pyo.value(m.fs.R5.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_R6_list[i] = pyo.value(m.fs.R6.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_R7_list[i] = pyo.value(m.fs.R7.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_list[i] = pyo.value(
+            m.fs.Treated.properties[0].conc_mass_comp["S_O2"] * 1e3
+        )
+        Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
+        P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
+        TSS_out_list[i] = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
+        COD_out_list[i] = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
+        BOD_out_list[i] = pyo.value(m.fs.Treated.properties[0].BOD5["effluent"] * 1e3)
+        TKN_out_list[i] = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
+        SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
+        P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
+        P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
 
-        except:
-            pass
+        LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
+        SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+
+    continuation_sweep(
+        m,
+        _fix_path("fs.TKN_max"),
+        TKN_max_list,
+        _record,
+        start=TKN_max_list[len(TKN_max_list) // 2],
+    )
 
     # S_O2_out_R5_list = interp_1d(S_O2_out_R5_list)
     # S_O2_out_R6_list = interp_1d(S_O2_out_R6_list)
@@ -5521,7 +5696,7 @@ def plot_TKN_max(num):
 
 def plot_TP_max(num):
     # 1D plot
-    TP_max_list = np.linspace(0.015, 0.05, num)
+    TP_max_list = np.linspace(0.003, 0.005, num)
 
     # O2 -- R5
     S_O2_out_R5_list = np.zeros(num)
@@ -5583,46 +5758,47 @@ def plot_TP_max(num):
     SEC_list = np.zeros(num)
     SEC_list[:] = np.nan
 
-    for i in range(0, num):
-        try:
-            m, results = run_optimization_vary_max(
-                COD_max=0.0975,
-                BOD5_max=0.0065,
-                TKN_max=0.007,
-                TP_max=TP_max_list[i],
-                has_electroNP=True,
-                has_optimization=True,
-            )
+    # Continuation sweep: solve once mid-range, then warm-start each point
+    m, results = run_optimization_vary_max(
+        COD_max=0.1,
+        BOD5_max=0.01,
+        TKN_max=0.007,
+        TP_max=TP_max_list[len(TP_max_list) // 2],
+        has_electroNP=True,
+        has_optimization=True,
+        TSS_max=0.05,
+    )
+    if not pyo.check_optimal_termination(results):
+        raise RuntimeError("Base case for the sweep did not converge.")
 
-            S_O2_out_R5_list[i] = pyo.value(
-                m.fs.R5.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_R6_list[i] = pyo.value(
-                m.fs.R6.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_R7_list[i] = pyo.value(
-                m.fs.R7.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_list[i] = pyo.value(
-                m.fs.Treated.properties[0].conc_mass_comp["S_O2"] * 1e3
-            )
-            Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
-            P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
-            TSS_out_list[i] = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
-            COD_out_list[i] = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
-            BOD_out_list[i] = pyo.value(
-                m.fs.Treated.properties[0].BOD5["effluent"] * 1e3
-            )
-            TKN_out_list[i] = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
-            SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
-            P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
-            P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
+    def _record(m, i):
 
-            LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
-            SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+        S_O2_out_R5_list[i] = pyo.value(m.fs.R5.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_R6_list[i] = pyo.value(m.fs.R6.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_R7_list[i] = pyo.value(m.fs.R7.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_list[i] = pyo.value(
+            m.fs.Treated.properties[0].conc_mass_comp["S_O2"] * 1e3
+        )
+        Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
+        P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
+        TSS_out_list[i] = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
+        COD_out_list[i] = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
+        BOD_out_list[i] = pyo.value(m.fs.Treated.properties[0].BOD5["effluent"] * 1e3)
+        TKN_out_list[i] = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
+        SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
+        P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
+        P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
 
-        except:
-            pass
+        LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
+        SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+
+    continuation_sweep(
+        m,
+        _fix_path("fs.total_P_max"),
+        TP_max_list,
+        _record,
+        start=TP_max_list[len(TP_max_list) // 2],
+    )
 
     # S_O2_out_R5_list = interp_1d(S_O2_out_R5_list)
     # S_O2_out_R6_list = interp_1d(S_O2_out_R6_list)
@@ -5938,43 +6114,45 @@ def plot_aeration_tank_volume(num):
     SEC_list = np.zeros(num)
     SEC_list[:] = np.nan
 
-    for i in range(0, num):
-        try:
-            m, results = run_optimization_with_aeration_tank_volume(
-                aeration_tank_volume=aeration_tank_volume_list[i],
-                has_electroNP=True,
-                has_optimization=True,
-            )
+    # Continuation sweep: solve once mid-range, then warm-start each point
+    m, results = run_optimization_with_aeration_tank_volume(
+        aeration_tank_volume=aeration_tank_volume_list[
+            len(aeration_tank_volume_list) // 2
+        ],
+        has_electroNP=True,
+        has_optimization=True,
+    )
+    if not pyo.check_optimal_termination(results):
+        raise RuntimeError("Base case for the sweep did not converge.")
 
-            S_O2_out_R5_list[i] = pyo.value(
-                m.fs.R5.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_R6_list[i] = pyo.value(
-                m.fs.R6.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_R7_list[i] = pyo.value(
-                m.fs.R7.outlet.conc_mass_comp[0, "S_O2"] * 1e3
-            )
-            S_O2_out_list[i] = pyo.value(
-                m.fs.Treated.properties[0].conc_mass_comp["S_O2"] * 1e3
-            )
-            Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
-            P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
-            TSS_out_list[i] = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
-            COD_out_list[i] = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
-            BOD_out_list[i] = pyo.value(
-                m.fs.Treated.properties[0].BOD5["effluent"] * 1e3
-            )
-            TKN_out_list[i] = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
-            SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
-            P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
-            P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
+    def _record(m, i):
 
-            LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
-            SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+        S_O2_out_R5_list[i] = pyo.value(m.fs.R5.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_R6_list[i] = pyo.value(m.fs.R6.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_R7_list[i] = pyo.value(m.fs.R7.outlet.conc_mass_comp[0, "S_O2"] * 1e3)
+        S_O2_out_list[i] = pyo.value(
+            m.fs.Treated.properties[0].conc_mass_comp["S_O2"] * 1e3
+        )
+        Ener_aeration_out[i] = pyo.value(m.fs.costing.aeration_energy)
+        P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
+        TSS_out_list[i] = pyo.value(m.fs.Treated.properties[0].TSS * 1e3)
+        COD_out_list[i] = pyo.value(m.fs.Treated.properties[0].COD * 1e3)
+        BOD_out_list[i] = pyo.value(m.fs.Treated.properties[0].BOD5["effluent"] * 1e3)
+        TKN_out_list[i] = pyo.value(m.fs.Treated.properties[0].TKN * 1e3)
+        SNOX_out_list[i] = pyo.value(m.fs.Treated.properties[0].SNOX * 1e3)
+        P_org_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_organic * 1e3)
+        P_out_list[i] = pyo.value(m.fs.Treated.properties[0].SP_inorganic * 1e3)
 
-        except:
-            pass
+        LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
+        SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+
+    continuation_sweep(
+        m,
+        _fix_path("fs.R5.volume", "fs.R6.volume", "fs.R7.volume"),
+        aeration_tank_volume_list,
+        _record,
+        start=aeration_tank_volume_list[len(aeration_tank_volume_list) // 2],
+    )
 
     # S_O2_out_R5_list = interp_1d(S_O2_out_R5_list)
     # S_O2_out_R6_list = interp_1d(S_O2_out_R6_list)
@@ -6337,25 +6515,32 @@ def stackplot_COD_max(num, recompute=False):
         SEC_electroNP_list = np.zeros(num)
         SEC_electroNP_list[:] = np.nan
 
-        for i in range(0, num):
-            try:
-                m, results = run_optimization_vary_max(
-                    COD_max=COD_max_list[i],
-                    BOD5_max=0.01,
-                    TKN_max=0.007,
-                    TP_max=0.005,
-                    has_electroNP=True,
-                    has_optimization=True,
-                )
+        # Continuation sweep: solve once mid-range, then warm-start each point
+        m, results = run_optimization_vary_max(
+            COD_max=COD_max_list[len(COD_max_list) // 2],
+            BOD5_max=0.01,
+            TKN_max=0.007,
+            TP_max=0.005,
+            has_electroNP=True,
+            has_optimization=True,
+        )
+        if not pyo.check_optimal_termination(results):
+            raise RuntimeError("Base case for the sweep did not converge.")
 
-                LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
-                SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
-                Ener_aeration_list[i] = pyo.value(m.fs.costing.aeration_energy)
-                SEC_electroNP_list[i] = pyo.value(
-                    m.fs.costing.electroNP_energy_consumption
-                )
-            except:
-                pass
+        def _record(m, i):
+
+            LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
+            SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+            Ener_aeration_list[i] = pyo.value(m.fs.costing.aeration_energy)
+            SEC_electroNP_list[i] = pyo.value(m.fs.costing.electroNP_energy_consumption)
+
+        continuation_sweep(
+            m,
+            _fix_path("fs.COD_max"),
+            COD_max_list,
+            _record,
+            start=COD_max_list[len(COD_max_list) // 2],
+        )
 
         LCOW_list = interp_1d(LCOW_list)
         SEC_list = interp_1d(SEC_list)
@@ -6459,25 +6644,32 @@ def stackplot_BOD5_max(num, recompute=False):
         SEC_electroNP_list = np.zeros(num)
         SEC_electroNP_list[:] = np.nan
 
-        for i in range(0, num):
-            try:
-                m, results = run_optimization_vary_max(
-                    COD_max=0.1,
-                    BOD5_max=BOD5_max_list[i],
-                    TKN_max=0.007,
-                    TP_max=0.005,
-                    has_electroNP=True,
-                    has_optimization=True,
-                )
+        # Continuation sweep: solve once mid-range, then warm-start each point
+        m, results = run_optimization_vary_max(
+            COD_max=0.1,
+            BOD5_max=BOD5_max_list[len(BOD5_max_list) // 2],
+            TKN_max=0.007,
+            TP_max=0.005,
+            has_electroNP=True,
+            has_optimization=True,
+        )
+        if not pyo.check_optimal_termination(results):
+            raise RuntimeError("Base case for the sweep did not converge.")
 
-                LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
-                SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
-                Ener_aeration_list[i] = pyo.value(m.fs.costing.aeration_energy)
-                SEC_electroNP_list[i] = pyo.value(
-                    m.fs.costing.electroNP_energy_consumption
-                )
-            except:
-                pass
+        def _record(m, i):
+
+            LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
+            SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+            Ener_aeration_list[i] = pyo.value(m.fs.costing.aeration_energy)
+            SEC_electroNP_list[i] = pyo.value(m.fs.costing.electroNP_energy_consumption)
+
+        continuation_sweep(
+            m,
+            _fix_path("fs.BOD5_max"),
+            BOD5_max_list,
+            _record,
+            start=BOD5_max_list[len(BOD5_max_list) // 2],
+        )
 
         LCOW_list = interp_1d(LCOW_list)
         SEC_list = interp_1d(SEC_list)
@@ -6513,7 +6705,8 @@ def stackplot_BOD5_max(num, recompute=False):
         linestyle="-.",
         label="SEC (no electroNP)",
     )
-    ax1.set_xlim(5.65, 7.0)
+    ax1.set_xlim(5.6, 7.0)
+    ax1.set_ylim(0, 2.0)
     ax1.set_xlabel("BOD5 Max Concentration (mg/L)", fontsize=14)
     ax1.set_ylabel("SEC (kWh/m3)", fontsize=14)
     ax1.legend()
@@ -6581,25 +6774,32 @@ def stackplot_TKN_max(num, recompute=False):
         SEC_electroNP_list = np.zeros(num)
         SEC_electroNP_list[:] = np.nan
 
-        for i in range(0, num):
-            try:
-                m, results = run_optimization_vary_max(
-                    COD_max=0.1,
-                    BOD5_max=0.01,
-                    TKN_max=TKN_max_list[i],
-                    TP_max=0.005,
-                    has_electroNP=True,
-                    has_optimization=True,
-                )
+        # Continuation sweep: solve once mid-range, then warm-start each point
+        m, results = run_optimization_vary_max(
+            COD_max=0.1,
+            BOD5_max=0.01,
+            TKN_max=TKN_max_list[len(TKN_max_list) // 2],
+            TP_max=0.005,
+            has_electroNP=True,
+            has_optimization=True,
+        )
+        if not pyo.check_optimal_termination(results):
+            raise RuntimeError("Base case for the sweep did not converge.")
 
-                LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
-                SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
-                Ener_aeration_list[i] = pyo.value(m.fs.costing.aeration_energy)
-                SEC_electroNP_list[i] = pyo.value(
-                    m.fs.costing.electroNP_energy_consumption
-                )
-            except:
-                pass
+        def _record(m, i):
+
+            LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
+            SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+            Ener_aeration_list[i] = pyo.value(m.fs.costing.aeration_energy)
+            SEC_electroNP_list[i] = pyo.value(m.fs.costing.electroNP_energy_consumption)
+
+        continuation_sweep(
+            m,
+            _fix_path("fs.TKN_max"),
+            TKN_max_list,
+            _record,
+            start=TKN_max_list[len(TKN_max_list) // 2],
+        )
 
         LCOW_list = interp_1d(LCOW_list)
         SEC_list = interp_1d(SEC_list)
@@ -6704,26 +6904,33 @@ def stackplot_TSS_max(num, recompute=False):
         SEC_electroNP_list = np.zeros(num)
         SEC_electroNP_list[:] = np.nan
 
-        for i in range(0, num):
-            try:
-                m, results = run_optimization_vary_max(
-                    COD_max=0.1,
-                    BOD5_max=0.01,
-                    TKN_max=0.007,
-                    TP_max=0.6,
-                    has_electroNP=True,
-                    has_optimization=True,
-                    TSS_max=TSS_max_list[i],
-                )
+        # Continuation sweep: solve once mid-range, then warm-start each point
+        m, results = run_optimization_vary_max(
+            COD_max=0.1,
+            BOD5_max=0.01,
+            TKN_max=0.007,
+            TP_max=0.6,
+            has_electroNP=True,
+            has_optimization=True,
+            TSS_max=TSS_max_list[len(TSS_max_list) // 2],
+        )
+        if not pyo.check_optimal_termination(results):
+            raise RuntimeError("Base case for the sweep did not converge.")
 
-                LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
-                SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
-                Ener_aeration_list[i] = pyo.value(m.fs.costing.aeration_energy)
-                SEC_electroNP_list[i] = pyo.value(
-                    m.fs.costing.electroNP_energy_consumption
-                )
-            except:
-                pass
+        def _record(m, i):
+
+            LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
+            SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+            Ener_aeration_list[i] = pyo.value(m.fs.costing.aeration_energy)
+            SEC_electroNP_list[i] = pyo.value(m.fs.costing.electroNP_energy_consumption)
+
+        continuation_sweep(
+            m,
+            _fix_path("fs.TSS_max"),
+            TSS_max_list,
+            _record,
+            start=TSS_max_list[len(TSS_max_list) // 2],
+        )
 
         LCOW_list = interp_1d(LCOW_list)
         SEC_list = interp_1d(SEC_list)
@@ -6771,6 +6978,136 @@ def stackplot_TSS_max(num, recompute=False):
     # plt.show(block=True)
 
 
+def stackplot_TP_max(num, recompute=False):
+    # 1D plot
+    csv_path = os.path.join(DATA_DIR, f"stackplot_TP_max_num{num}.csv")
+
+    if not recompute and os.path.exists(csv_path):
+        cached = load_sweep_csv(csv_path)
+        TP_max_list = cached["TP_max"]
+        LCOW_list = cached["LCOW"]
+        SEC_list = cached["SEC"]
+        Ener_aeration_list = cached["Ener_aeration"]
+        SEC_electroNP_list = cached["SEC_electroNP"]
+        Ne_SEC_list = cached["Ne_SEC"]
+    else:
+        TP_max_list = np.linspace(0.0015, 0.005, num)
+
+        # No electroNP flowsheet
+        m, results = run_optimization_vary_max(
+            COD_max=0.1,
+            BOD5_max=0.01,
+            TKN_max=0.007,
+            TP_max=0.6,
+            has_electroNP=False,
+            has_optimization=True,
+            TSS_max=0.05,
+        )
+
+        Ne_Ener_aeration = pyo.value(m.fs.costing.aeration_energy)
+        Ne_LCOW = pyo.value(m.fs.costing.LCOW)
+        Ne_SEC = pyo.value(m.fs.costing.specific_energy_consumption)
+
+        # aeration energy
+        Ne_Ener_aeration_list = Ne_Ener_aeration * np.ones(num)
+
+        # LCOW
+        Ne_LCOW_list = Ne_LCOW * np.ones(num)
+
+        # SEC
+        Ne_SEC_list = Ne_SEC * np.ones(num)
+
+        # electroNP flowsheet
+        # LCOW
+        LCOW_list = np.zeros(num)
+        LCOW_list[:] = np.nan
+
+        # SEC
+        SEC_list = np.zeros(num)
+        SEC_list[:] = np.nan
+
+        # aeration energy
+        Ener_aeration_list = np.zeros(num)
+        Ener_aeration_list[:] = np.nan
+
+        # electroNP SEC
+        SEC_electroNP_list = np.zeros(num)
+        SEC_electroNP_list[:] = np.nan
+
+        # Continuation sweep: solve once mid-range, then warm-start each point
+        m, results = run_optimization_vary_max(
+            COD_max=0.1,
+            BOD5_max=0.01,
+            TKN_max=0.007,
+            TP_max=TP_max_list[len(TP_max_list) // 2],
+            has_electroNP=True,
+            has_optimization=True,
+            TSS_max=0.05,
+        )
+        if not pyo.check_optimal_termination(results):
+            raise RuntimeError("Base case for the sweep did not converge.")
+
+        def _record(m, i):
+
+            LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
+            SEC_list[i] = pyo.value(m.fs.costing.specific_energy_consumption)
+            Ener_aeration_list[i] = pyo.value(m.fs.costing.aeration_energy)
+            SEC_electroNP_list[i] = pyo.value(m.fs.costing.electroNP_energy_consumption)
+
+        continuation_sweep(
+            m,
+            _fix_path("fs.total_P_max"),
+            TP_max_list,
+            _record,
+            start=TP_max_list[len(TP_max_list) // 2],
+        )
+
+        LCOW_list = interp_1d(LCOW_list)
+        SEC_list = interp_1d(SEC_list)
+        Ener_aeration_list = interp_1d(Ener_aeration_list)
+        SEC_electroNP_list = interp_1d(SEC_electroNP_list)
+
+        save_sweep_csv(
+            csv_path,
+            {
+                "TP_max": TP_max_list,
+                "LCOW": LCOW_list,
+                "SEC": SEC_list,
+                "Ener_aeration": Ener_aeration_list,
+                "SEC_electroNP": SEC_electroNP_list,
+                "Ne_SEC": Ne_SEC_list,
+            },
+        )
+
+    TP_max_list = 1000 * TP_max_list
+
+    # Figure 1
+    fig1, ax1 = plt.subplots(figsize=(7, 5), layout="constrained")
+    stacked_1 = [a + b for a, b in zip(Ener_aeration_list, SEC_electroNP_list)]
+    SEC_other = [a - b for a, b in zip(SEC_list, stacked_1)]
+    stacked_cols = [Ener_aeration_list, SEC_electroNP_list, SEC_other]
+    labels = ["Aeration energy", "electroN-P", "other"]
+    hatches = ["/", "\\", "|", "-", "+", "x", "o", "O", ".", "*"]
+    ax1.stackplot(TP_max_list, stacked_cols, labels=labels, hatch=hatches)
+    ax1.plot(
+        TP_max_list,
+        Ne_SEC_list,
+        color="k",
+        linestyle="-.",
+        label="SEC (no electroNP)",
+    )
+    ax1.set_xlim(1.5, 5)
+    ax1.set_xlabel("Total Phosphorus Max Concentration (mg/L)", fontsize=14)
+    ax1.set_ylabel("SEC (kWh/m3)", fontsize=14)
+    ax1.legend(loc="lower left")
+
+    fig_path = os.path.join(FIGURE_DIR, "stackplot_TP_max.png")
+    fig1.savefig(fig_path, dpi=300, bbox_inches="tight")
+    print(f"Saved figure to {fig_path}")
+
+    # plt.show(block=True)
+
+
 def plot_electricity_cost(num):
     # # 1D plot
     electricity_cost_list = np.linspace(0.05, 0.1, num)
@@ -6786,41 +7123,59 @@ def plot_electricity_cost(num):
     LCOW_no_electroNP_list = np.zeros(num)
     LCOW_no_electroNP_list[:] = np.nan
 
-    for i in range(0, num):
-        try:
-            m, results = run_optimization_vary_electricity_cost(
-                electricity_cost=electricity_cost_list[i],
-                has_electroNP=True,
-                has_optimization=True,
-                objective=objective_fun.LCOW,
-            )
-            # m2, results = run_with_electricity_cost(
-            #     has_electroNP=False, CP=-1.1, electricity_cost=electricity_cost_list[i]
-            # )
+    # Continuation sweep: solve once mid-range, then warm-start each point
+    m, results = run_optimization_vary_electricity_cost(
+        electricity_cost=electricity_cost_list[len(electricity_cost_list) // 2],
+        has_electroNP=True,
+        has_optimization=True,
+        objective=objective_fun.LCOW,
+    )
+    if not pyo.check_optimal_termination(results):
+        raise RuntimeError("Base case for the sweep did not converge.")
 
-            # P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
-            LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
-            LCOP_list[i] = pyo.value(m.fs.costing.LCOW_P_removal)
-            # LCOW_no_electroNP_list[i] = pyo.value(m2.fs.costing.LCOW)
-            # LCOP_no_electroNP_list[i] = pyo.value(m2.fs.costing.LCOW_P_removal)
-        except:
-            pass
+    def _record(m, i):
+        # m2, results = run_with_electricity_cost(
+        #     has_electroNP=False, CP=-1.1, electricity_cost=electricity_cost_list[i]
+        # )
 
-    for i in range(0, num):
-        try:
-            m2, results = run_optimization_vary_electricity_cost(
-                electricity_cost=electricity_cost_list[i],
-                has_electroNP=False,
-                has_optimization=True,
-                objective=objective_fun.LCOW,
-            )
-            # m2, results = run_with_electricity_cost(
-            #     has_electroNP=False, CP=-1.1, electricity_cost=electricity_cost_list[i]
-            # )
+        # P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
+        LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
+        LCOP_list[i] = pyo.value(m.fs.costing.LCOW_P_removal)
+        # LCOW_no_electroNP_list[i] = pyo.value(m2.fs.costing.LCOW)
+        # LCOP_no_electroNP_list[i] = pyo.value(m2.fs.costing.LCOW_P_removal)
 
-            LCOW_no_electroNP_list[i] = pyo.value(m2.fs.costing.LCOW)
-        except:
-            pass
+    continuation_sweep(
+        m,
+        _fix_path("fs.costing.electricity_cost"),
+        electricity_cost_list,
+        _record,
+        start=electricity_cost_list[len(electricity_cost_list) // 2],
+    )
+
+    # Continuation sweep: solve once mid-range, then warm-start each point
+    m2, results = run_optimization_vary_electricity_cost(
+        electricity_cost=electricity_cost_list[len(electricity_cost_list) // 2],
+        has_electroNP=False,
+        has_optimization=True,
+        objective=objective_fun.LCOW,
+    )
+    if not pyo.check_optimal_termination(results):
+        raise RuntimeError("Base case for the sweep did not converge.")
+
+    def _record(m2, i):
+        # m2, results = run_with_electricity_cost(
+        #     has_electroNP=False, CP=-1.1, electricity_cost=electricity_cost_list[i]
+        # )
+
+        LCOW_no_electroNP_list[i] = pyo.value(m2.fs.costing.LCOW)
+
+    continuation_sweep(
+        m2,
+        _fix_path("fs.costing.electricity_cost"),
+        electricity_cost_list,
+        _record,
+        start=electricity_cost_list[len(electricity_cost_list) // 2],
+    )
 
     LCOW_list = interp_1d(LCOW_list)
     LCOP_list = interp_1d(LCOP_list)
@@ -6902,11 +7257,11 @@ def interp_2d(array):
 
 
 if __name__ == "__main__":
-    plot_CP(num=15, recompute=True)
+    # plot_CP(num=15, recompute=True)
     # plot_CP_effluent(num=25)
-    # plot_rAV(num=25)
+    # plot_rAV(num=25, recompute=True)
     # plot_rAV_effluent(num=25)
-    # contourf_plot(num=25, recompute=False)
+    # contourf_plot(num=25, recompute=True)
     # contourf_plot_electricity_cost(num=3)
     # contourf_plot_aeration(num=10)
 
@@ -6917,16 +7272,17 @@ if __name__ == "__main__":
     # plot_COD_max(num=19)
     # plot_BOD5_max(num=30)
     # plot_TKN_max(num=15)
-    # plot_TP_max(num=15)
+    plot_TP_max(num=25)
     # plot_aeration_tank_volume(num=15)
 
     # plot_TSS_max_no_electroNP(num=15)
     # plot_BOD5_max_no_electroNP(num=15)
 
-    # stackplot_COD_max(num=15)
-    # stackplot_BOD5_max(num=15, recompute=False)
-    # stackplot_TKN_max(num=15)
-    # stackplot_TSS_max(num=20, recompute=True)
+    # stackplot_COD_max(num=25, recompute=True)
+    # stackplot_BOD5_max(num=25, recompute=True)
+    # stackplot_TKN_max(num=25, recompute=True)
+    # stackplot_TSS_max(num=25, recompute=True)
+    # stackplot_TP_max(num=25, recompute=True)
     # plot_electricity_cost(num=5)
 
     plt.show(block=True)
