@@ -1811,10 +1811,10 @@ def display_design(m):
 if __name__ == "__main__":
     # Single-run routine
     m, results = main(
-        has_electroNP=True,
-        has_optimization=False,
+        has_electroNP=False,
+        has_optimization=True,
         objective=objective_fun.LCOW,
-        has_effluent_constraints=True,
+        # has_effluent_constraints=True,
     )
     display_stream_table(m)
 
