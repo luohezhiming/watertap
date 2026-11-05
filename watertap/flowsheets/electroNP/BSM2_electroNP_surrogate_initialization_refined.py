@@ -1224,6 +1224,8 @@ def setup_optimization(
     # Objective function
     if objective == objective_fun.LCOW:
         m.fs.objective = pyo.Objective(expr=m.fs.costing.LCOW)
+        # m.fs.objective = pyo.Objective(expr=m.fs.costing.specific_energy_consumption)
+        # m.fs.objective = pyo.Objective(expr=_TP_conc(m, m.fs.Treated.properties[0]))
     elif objective == objective_fun.LCOP:
         m.fs.objective = pyo.Objective(expr=m.fs.costing.LCOW_P_removal)
     else:
@@ -1811,10 +1813,10 @@ def display_design(m):
 if __name__ == "__main__":
     # Single-run routine
     m, results = main(
-        has_electroNP=False,
+        has_electroNP=True,
         has_optimization=True,
         objective=objective_fun.LCOW,
-        # has_effluent_constraints=True,
+        has_effluent_constraints=True,
     )
     display_stream_table(m)
 

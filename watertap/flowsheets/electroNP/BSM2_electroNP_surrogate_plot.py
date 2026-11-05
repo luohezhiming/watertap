@@ -7227,6 +7227,128 @@ def plot_electricity_cost(num):
     # plt.show(block=True)
 
 
+# Struvite mass per mass of P recovered (MgNH4PO4.6H2O: 245.41 g/mol, P: 30.97 g/mol)
+STRUVITE_PER_P = 245.41 / 30.97
+
+
+def plot_struvite_price(num, recompute=False, price_per_kg_struvite=False):
+    """
+    Sensitivity of LCOW to the recovered phosphorus product price, 0-7 $/kg (USD_2023).
+
+    Base 1: BSM2 with electroNP, LCOW minimized at each price (continuation sweep).
+    Base*: BSM2 without electroNP, LCOW minimized; no product revenue, so price-independent.
+
+    costing.electroNP.phosphorus_recovery_value multiplies kg P recovered
+    (inlet S_PO4 x P_removal). By default the swept price is on that basis.
+    price_per_kg_struvite=True treats the price as $/kg struvite instead and
+    converts it to $/kg P with STRUVITE_PER_P.
+    """
+    basis = "struvite" if price_per_kg_struvite else "P"
+    csv_path = os.path.join(DATA_DIR, f"struvite_price_{basis}_num{num}.csv")
+
+    if not recompute and os.path.exists(csv_path):
+        cached = load_sweep_csv(csv_path)
+        price_list = cached["price"]
+        LCOW_list = cached["LCOW"]
+        LCOP_list = cached["LCOP"]
+        P_removal_list = cached["P_removal"]
+        LCOW_no_electroNP_list = cached["LCOW_no_electroNP"]
+    else:
+        price_list = np.linspace(0, 7, num)
+        to_model = STRUVITE_PER_P if price_per_kg_struvite else 1.0
+
+        LCOW_list = np.full(num, np.nan)
+        LCOP_list = np.full(num, np.nan)
+        P_removal_list = np.full(num, np.nan)
+
+        # Base 1: solved at the costing default (-7 $/kg P), swept down to 0
+        m, results = run_optimization_vary_electricity_cost(
+            has_electroNP=True,
+            has_optimization=True,
+            objective=objective_fun.LCOW,
+        )
+        if not pyo.check_optimal_termination(results):
+            raise RuntimeError("Base 1 did not converge.")
+        recovery_value = m.fs.costing.electroNP.phosphorus_recovery_value
+        start_price = -pyo.value(recovery_value) / to_model
+
+        def set_price(m, price):
+            # Mutable Param: revenue enters as a negative cost
+            m.fs.costing.electroNP.phosphorus_recovery_value.set_value(
+                -price * to_model
+            )
+
+        def _record(m, i):
+            LCOW_list[i] = pyo.value(m.fs.costing.LCOW)
+            LCOP_list[i] = pyo.value(m.fs.costing.LCOW_P_removal)
+            P_removal_list[i] = pyo.value(m.fs.electroNP.P_removal)
+
+        continuation_sweep(m, set_price, price_list, _record, start=start_price)
+
+        # Base*: no electroNP, so one solve covers every price
+        m2, results = run_optimization_vary_electricity_cost(
+            has_electroNP=False,
+            has_optimization=True,
+            objective=objective_fun.LCOW,
+        )
+        if not pyo.check_optimal_termination(results):
+            raise RuntimeError("Base* did not converge.")
+        LCOW_no_electroNP_list = np.full(num, pyo.value(m2.fs.costing.LCOW))
+
+        LCOW_list = interp_1d(LCOW_list)
+        LCOP_list = interp_1d(LCOP_list)
+        P_removal_list = interp_1d(P_removal_list)
+
+        save_sweep_csv(
+            csv_path,
+            {
+                "price": price_list,
+                "LCOW": LCOW_list,
+                "LCOP": LCOP_list,
+                "P_removal": P_removal_list,
+                "LCOW_no_electroNP": LCOW_no_electroNP_list,
+            },
+        )
+
+    fig1, ax1 = plt.subplots(figsize=(9, 5), layout="constrained")
+    ax1.plot(price_list, LCOW_list, color="tab:blue", label="Base 1 (with electroNP)")
+    ax1.plot(
+        price_list,
+        LCOW_no_electroNP_list,
+        color="tab:blue",
+        linestyle="--",
+        label="Base* (without electroNP)",
+    )
+
+    # Break-even price where electroNP matches the no-electroNP LCOW
+    diff = LCOW_list - LCOW_no_electroNP_list
+    cross = np.nonzero(np.diff(np.sign(diff)))[0]
+    if cross.size:
+        k = cross[0]
+        p_be = price_list[k] - diff[k] * (price_list[k + 1] - price_list[k]) / (
+            diff[k + 1] - diff[k]
+        )
+        lcow_be = np.interp(p_be, price_list, LCOW_list)
+        ax1.plot(p_be, lcow_be, marker="o", color="red")
+        ax1.annotate(
+            f"Break-even: {p_be:.2f} $/kg",
+            (p_be, lcow_be),
+            textcoords="offset points",
+            xytext=(10, 10),
+        )
+
+    unit = "kg struvite" if price_per_kg_struvite else "kg P"
+    ax1.set_xlim(0, 7)
+    ax1.set_xlabel(f"Struvite Price ($/{unit} (2023))", fontsize=12)
+    ax1.set_ylabel("LCOW ($/m3 (2023))", fontsize=12)
+    ax1.tick_params(axis="both", labelsize=11)
+    ax1.legend(loc="upper right")
+
+    fig_path = os.path.join(FIGURE_DIR, f"struvite_price_{basis}.png")
+    fig1.savefig(fig_path, dpi=300, bbox_inches="tight")
+    print(f"Saved figure to {fig_path}")
+
+
 def interp_1d(array):
     # Making sequences for interp
     ok = ~np.isnan(array)
@@ -7272,7 +7394,7 @@ if __name__ == "__main__":
     # plot_COD_max(num=19)
     # plot_BOD5_max(num=30)
     # plot_TKN_max(num=15)
-    plot_TP_max(num=25)
+    # plot_TP_max(num=25)
     # plot_aeration_tank_volume(num=15)
 
     # plot_TSS_max_no_electroNP(num=15)
@@ -7284,5 +7406,6 @@ if __name__ == "__main__":
     # stackplot_TSS_max(num=25, recompute=True)
     # stackplot_TP_max(num=25, recompute=True)
     # plot_electricity_cost(num=5)
+    plot_struvite_price(num=15, recompute=True)
 
     plt.show(block=True)
