@@ -35,7 +35,6 @@ from idaes.core.util.config import (
 from idaes.core.util.model_statistics import degrees_of_freedom
 from watertap.core.solvers import get_solver
 import idaes.logger as idaeslog
-import idaes.core.util.scaling as iscale
 
 from idaes.core.scaling import CustomScalerBase, ConstraintScalingScheme
 
@@ -77,6 +76,7 @@ class ADM1ASM2dScaler(CustomScalerBase):
         Returns:
             None
         """
+
         # Call scaling methods for sub-models
         self.call_submodel_scaler_method(
             submodel=model.properties_in,
@@ -205,7 +205,6 @@ class TranslatorDataADM1ASM2D(TranslatorData):
         mw_p = 31 * pyunits.kg / pyunits.kmol
         mw_n = 14 * pyunits.kg / pyunits.kmol
         mw_c = 12 * pyunits.kg / pyunits.kmol
-        mw_XPP = 300.41 * pyunits.kg / pyunits.kmol
         mw_k = 39.1 * pyunits.kg / pyunits.kmol
         mw_mg = 24.3 * pyunits.kg / pyunits.kmol
 
@@ -365,7 +364,7 @@ class TranslatorDataADM1ASM2D(TranslatorData):
         )
         def SIP_AD1(blk, t):
             return (
-                blk.properties_in[t].conc_mass_comp["X_PP"] / mw_XPP
+                blk.properties_in[t].conc_mass_comp["X_PP"] / mw_p
                 + (blk.config.inlet_reaction_package.Pi["X_su"] * blk.biomass[t])
                 - (
                     blk.config.inlet_reaction_package.f_sI_xc
@@ -420,7 +419,7 @@ class TranslatorDataADM1ASM2D(TranslatorData):
                 blk.Xch_AD1[t] * blk.config.inlet_reaction_package.Ci["X_ch"]
                 + (blk.Xpr_AD1[t] * blk.config.inlet_reaction_package.Ci["X_pr"])
                 + (blk.Xli_AD1[t] * blk.config.inlet_reaction_package.Ci["X_li"])
-                - blk.config.outlet_reaction_package.i_CXS
+                - blk.config.outlet_property_package.i_CXS
                 / mw_c
                 * (blk.Xch_AD1[t] + blk.Xpr_AD1[t] + blk.Xli_AD1[t])
                 + blk.properties_in[t].conc_mass_comp["S_su"]
@@ -429,7 +428,7 @@ class TranslatorDataADM1ASM2D(TranslatorData):
                 * blk.config.inlet_reaction_package.Ci["S_aa"]
                 + blk.properties_in[t].conc_mass_comp["S_fa"]
                 * blk.config.inlet_reaction_package.Ci["S_fa"]
-                - blk.config.outlet_reaction_package.i_CSF
+                - blk.config.outlet_property_package.i_CSF
                 / mw_c
                 * (
                     blk.properties_in[t].conc_mass_comp["S_su"]
@@ -443,7 +442,7 @@ class TranslatorDataADM1ASM2D(TranslatorData):
                 + blk.properties_in[t].conc_mass_comp["S_pro"]
                 * blk.config.inlet_reaction_package.Ci["S_pro"]
                 + blk.Sac_AD1[t] * blk.config.inlet_reaction_package.Ci["S_ac"]
-                - blk.config.outlet_reaction_package.i_CSA
+                - blk.config.outlet_property_package.i_CSA
                 / mw_c
                 * (
                     blk.properties_in[t].conc_mass_comp["S_va"]
@@ -459,12 +458,12 @@ class TranslatorDataADM1ASM2D(TranslatorData):
         def SIN_AD2(blk, t):
             return (
                 blk.Xpr_AD1[t] * blk.config.inlet_reaction_package.Ni["X_pr"]
-                - blk.config.outlet_reaction_package.i_NXS
+                - blk.config.outlet_property_package.i_NXS
                 / mw_n
                 * (blk.Xch_AD1[t] + blk.Xpr_AD1[t] + blk.Xli_AD1[t])
                 + blk.properties_in[t].conc_mass_comp["S_aa"]
                 * blk.config.inlet_reaction_package.Ni["S_aa"]
-                - blk.config.outlet_reaction_package.i_NSF
+                - blk.config.outlet_property_package.i_NSF
                 / mw_n
                 * (
                     blk.properties_in[t].conc_mass_comp["S_su"]
@@ -481,10 +480,10 @@ class TranslatorDataADM1ASM2D(TranslatorData):
                 self.XPP_AD1
                 + blk.Xch_AD1[t] * blk.config.inlet_reaction_package.P_ch
                 + blk.Xli_AD1[t] * blk.config.inlet_reaction_package.Pi["X_li"]
-                - blk.config.outlet_reaction_package.i_PXS
+                - blk.config.outlet_property_package.i_PXS
                 / mw_p
                 * (blk.Xch_AD1[t] + blk.Xpr_AD1[t] + blk.Xli_AD1[t])
-                - blk.config.outlet_reaction_package.i_PSF
+                - blk.config.outlet_property_package.i_PSF
                 / mw_p
                 * (
                     blk.properties_in[t].conc_mass_comp["S_su"]
@@ -619,8 +618,6 @@ class TranslatorDataADM1ASM2D(TranslatorData):
                 blk.properties_out[t].conc_mass_comp[i]
                 == 1e-10 * pyunits.kg / pyunits.m**3
             )
-
-        iscale.set_scaling_factor(self.properties_out[0].flow_vol, 1e5)
 
     def initialize_build(
         self,
