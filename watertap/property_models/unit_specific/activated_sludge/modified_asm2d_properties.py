@@ -699,6 +699,7 @@ class ModifiedASM2dStateBlockData(StateBlockData):
             total_phosphorus = self.flow_vol * (
                 self.conc_mass_comp["S_PO4"]
                 + self.params.i_PSF * self.conc_mass_comp["S_F"]
+                + self.params.i_PSI * self.conc_mass_comp["S_I"]
                 + self.params.i_PXI * self.conc_mass_comp["X_I"]
                 + self.params.i_PXS * self.conc_mass_comp["X_S"]
                 + self.params.i_PBM
