@@ -24,6 +24,7 @@ import pyomo.environ as pyo
 from pyomo.network import Arc, SequentialDecomposition
 from idaes.core.util import to_json, from_json
 import os
+import csv
 
 from idaes.core import (
     FlowsheetBlock,
@@ -146,6 +147,60 @@ def _save_warm_start(m, has_electroNP):
         print(f"Warm-start save to {path} failed ({e}); continuing.")
 
 
+# Aeration settings shared across cases (BSM2 baseline -> electroNP)
+AERATION_UNITS = ("R5", "R6", "R7")
+AERATION_CSV = "bsm2_aeration_settings.csv"
+
+
+def save_aeration_settings(m, path=AERATION_CSV):
+    """
+    Save converged aeration settings of R5-R7 to csv.
+    """
+    rows = []
+    for name in AERATION_UNITS:
+        R = getattr(m.fs, name)
+        rows.append(
+            {
+                "unit": name,
+                "KLa [1/hr]": pyo.value(R.KLa),
+                "injection_S_O2 [kg/s]": pyo.value(R.injection[0, "Liq", "S_O2"]),
+                "outlet_S_O2 [kg/m3]": pyo.value(R.outlet.conc_mass_comp[0, "S_O2"]),
+                "electricity [kW]": pyo.value(R.electricity_consumption[0]),
+            }
+        )
+    with open(path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"Saved aeration settings to {path}")
+
+
+def fix_aeration_settings(m, path=AERATION_CSV, fix_by="KLa"):
+    """
+    Replace the fixed outlet S_O2 of R5-R7 with saved aeration settings (DOF neutral).
+
+    fix_by="KLa": aeration energy (S_O_eq/1.8 * V * KLa) identical to saved case.
+    fix_by="injection": O2 transfer rate fixed; energy still varies via outlet S_O2.
+    """
+    if fix_by not in ("KLa", "injection"):
+        raise ValueError(f'fix_by must be "KLa" or "injection", got {fix_by}')
+
+    with open(path, newline="") as f:
+        rows = list(csv.DictReader(f))
+
+    for row in rows:
+        R = getattr(m.fs, row["unit"])
+        R.outlet.conc_mass_comp[:, "S_O2"].unfix()
+        R.outlet.conc_mass_comp[:, "S_O2"].set_value(float(row["outlet_S_O2 [kg/m3]"]))
+        R.KLa.set_value(float(row["KLa [1/hr]"]))
+        R.injection[:, "Liq", "S_O2"].set_value(float(row["injection_S_O2 [kg/s]"]))
+        if fix_by == "KLa":
+            R.KLa.fix()
+        else:
+            R.injection[:, "Liq", "S_O2"].fix()
+    print(f"Fixed aeration settings ({fix_by}) from {path}")
+
+
 class objective_fun(StrEnum):
     LCOW = "LCOW"
     LCOP = "LCOP"
@@ -156,6 +211,11 @@ def multi_run(
     objective=objective_fun.LCOW,
     has_effluent_constraints=False,
     num=5,
+    load_aeration_path=None,
+    aeration_fix_by="KLa",
+    has_P_penalty=False,
+    P_credit=100,
+    TP_limit=0.005,
 ):
     CP_list = np.linspace(-1.3, -0.8, num)
     r_AV_list = np.linspace(0.065, 0.145, num)
@@ -175,6 +235,10 @@ def multi_run(
                 add_costing(m)
                 m.fs.costing.initialize()
                 interval_initializer(m.fs.costing)
+                if load_aeration_path is not None:
+                    fix_aeration_settings(
+                        m, path=load_aeration_path, fix_by=aeration_fix_by
+                    )
                 # _try_load_warm_start(m, has_electroNP)
                 m.fs.electroNP.cathodic_potential.unfix()
                 m.fs.electroNP.area_volume_ratio.unfix()
@@ -186,6 +250,9 @@ def multi_run(
                     objective=objective,
                     has_effluent_constraints=has_effluent_constraints,
                     reactor_volume_equalities=False,
+                    has_P_penalty=has_P_penalty,
+                    P_credit=P_credit,
+                    TP_limit=TP_limit,
                 )
                 solve(m)
                 m_set.append(m)
@@ -217,7 +284,17 @@ def main(
     has_optimization=False,
     objective=objective_fun.LCOW,
     has_effluent_constraints=False,
+    save_aeration_path=None,
+    load_aeration_path=None,
+    aeration_fix_by="KLa",
+    optimize_aeration=False,
+    has_P_penalty=False,
+    P_credit=100,
+    TP_limit=0.005,
 ):
+    if optimize_aeration and load_aeration_path is not None:
+        raise ValueError("Cannot optimize aeration and load fixed aeration together.")
+
     m = build_flowsheet(has_electroNP=has_electroNP)
     set_operating_conditions(m)
 
@@ -242,6 +319,32 @@ def main(
 
     assert_degrees_of_freedom(m, 0)
 
+    # Common aeration standard from the BSM2 baseline
+    if load_aeration_path is not None:
+        # Converge at default DO setpoints first, then swap to fixed KLa
+        results = solve(m)
+        check_solve(
+            results,
+            checkpoint="square solve at default DO setpoints",
+            logger=_log,
+            fail_flag=True,
+        )
+        fix_aeration_settings(m, path=load_aeration_path, fix_by=aeration_fix_by)
+
+    # Converge square problem first as warm start for optimization
+    if has_optimization:
+        results = solve(m)
+        check_solve(
+            results,
+            checkpoint="square solve before optimization",
+            logger=_log,
+            fail_flag=True,
+        )
+        print(
+            "Effluent TP before optimization: %.2f mg/L"
+            % (pyo.value(_TP_conc(m, m.fs.Treated.properties[0])) * 1e3)
+        )
+
     # dt = DiagnosticsToolbox(m)
     # print("\n================ Structural Issues ================")
     # dt.report_structural_issues()
@@ -260,6 +363,10 @@ def main(
             objective=objective,
             has_effluent_constraints=has_effluent_constraints,
             reactor_volume_equalities=False,
+            optimize_aeration=optimize_aeration,
+            has_P_penalty=has_P_penalty,
+            P_credit=P_credit,
+            TP_limit=TP_limit,
         )
 
     # try:
@@ -277,6 +384,9 @@ def main(
 
     if not has_optimization:
         _save_warm_start(m, m.fs.has_electroNP)
+
+    if save_aeration_path is not None:
+        save_aeration_settings(m, path=save_aeration_path)
 
     check_solve(
         results,
@@ -1220,14 +1330,36 @@ def setup_optimization(
     objective=objective_fun.LCOW,
     has_effluent_constraints=False,
     reactor_volume_equalities=False,
+    optimize_aeration=False,
+    has_P_penalty=False,
+    P_credit=100,
+    TP_limit=0.005,
 ):
+    # TP exceedance priced as purchased P credits (soft TP constraint)
+    if has_P_penalty:
+        add_P_penalty(m, P_credit=P_credit, TP_limit=TP_limit)
+
     # Objective function
     if objective == objective_fun.LCOW:
-        m.fs.objective = pyo.Objective(expr=m.fs.costing.LCOW)
+        if has_P_penalty:
+            m.fs.objective = pyo.Objective(
+                expr=m.fs.costing.LCOW + m.fs.costing.P_credit_LCOW
+            )
+        else:
+            m.fs.objective = pyo.Objective(expr=m.fs.costing.LCOW)
         # m.fs.objective = pyo.Objective(expr=m.fs.costing.specific_energy_consumption)
         # m.fs.objective = pyo.Objective(expr=_TP_conc(m, m.fs.Treated.properties[0]))
     elif objective == objective_fun.LCOP:
-        m.fs.objective = pyo.Objective(expr=m.fs.costing.LCOW_P_removal)
+        if m.fs.has_electroNP is not True:
+            raise ValueError(
+                "LCOP requires electroNP (P recovered); use LCOW for BSM2."
+            )
+        if has_P_penalty:
+            m.fs.objective = pyo.Objective(
+                expr=m.fs.costing.LCOW_P_removal + m.fs.costing.P_credit_LCOP
+            )
+        else:
+            m.fs.objective = pyo.Objective(expr=m.fs.costing.LCOW_P_removal)
     else:
         raise TypeError(
             f'objective must be set to "LCOW"  or "LCOP".'
@@ -1244,17 +1376,13 @@ def setup_optimization(
         m.fs.electroNP.area_volume_ratio.setlb(0.065)
         m.fs.electroNP.area_volume_ratio.setub(0.145)
 
-    m.fs.R5.outlet.conc_mass_comp[:, "S_O2"].unfix()
-    m.fs.R5.outlet.conc_mass_comp[:, "S_O2"].setlb(0)
-    m.fs.R5.outlet.conc_mass_comp[:, "S_O2"].setub(8e-3)
-
-    m.fs.R6.outlet.conc_mass_comp[:, "S_O2"].unfix()
-    m.fs.R6.outlet.conc_mass_comp[:, "S_O2"].setlb(0)
-    m.fs.R6.outlet.conc_mass_comp[:, "S_O2"].setub(8e-3)
-
-    m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].unfix()
-    m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].setlb(0)
-    m.fs.R7.outlet.conc_mass_comp[:, "S_O2"].setub(8e-3)
+    # Aeration as decision variable only for the BSM2 baseline;
+    # otherwise fixed via fix_aeration_settings()
+    if optimize_aeration:
+        for R in (m.fs.R5, m.fs.R6, m.fs.R7):
+            R.outlet.conc_mass_comp[:, "S_O2"].unfix()
+            R.outlet.conc_mass_comp[:, "S_O2"].setlb(0)
+            R.outlet.conc_mass_comp[:, "S_O2"].setub(8e-3)
 
     # m.fs.R5.injection[:, :, :].unfix()
     # m.fs.R6.injection[:, :, :].unfix()
@@ -1266,7 +1394,86 @@ def setup_optimization(
     # m.fs.SP2.split_fraction[:, "recycle"].unfix()
 
     if has_effluent_constraints:
-        add_effluent_violations(m)
+        # TP handled by credit penalty instead of hard limit
+        add_effluent_violations(m, include_TP=not has_P_penalty)
+
+
+def add_P_penalty(m, P_credit=100, TP_limit=0.005):
+    """
+    Soft TP limit: exceedance Q_eff*(TP_eff - TP_limit) covered by purchased P credits.
+
+    P_credit [USD/kg P], TP_limit [kg/m3]; same values for BSM2 and electroNP cases.
+    """
+    m.fs.P_credit_price = pyo.Param(
+        initialize=P_credit,
+        mutable=True,
+        units=m.fs.costing.base_currency / pyo.units.kg,
+        doc="Price of P credits / effluent tax per kg P exceeded",
+    )
+    m.fs.TP_limit = pyo.Param(
+        initialize=TP_limit,
+        mutable=True,
+        units=pyo.units.kg / pyo.units.m**3,
+        doc="Effluent TP limit",
+    )
+    m.fs.P_credit_purchase = pyo.Var(
+        initialize=0,
+        bounds=(0, None),
+        units=pyo.units.kg / pyo.units.day,
+        doc="P credits purchased (TP exceedance load)",
+    )
+    iscale.set_scaling_factor(m.fs.P_credit_purchase, 1e-2)
+
+    props = m.fs.Treated.properties[0]
+
+    # s_P >= Q_eff * (TP_eff - TP_limit); same TP definition as eq_total_P_max
+    @m.fs.Constraint()
+    def eq_P_credit(b):
+        return (
+            pyo.units.convert(
+                props.flow_vol
+                * (props.SP_organic + props.SP_inorganic - m.fs.TP_limit),
+                to_units=pyo.units.kg / pyo.units.day,
+            )
+            <= m.fs.P_credit_purchase
+        )
+
+    iscale.constraint_scaling_transform(m.fs.eq_P_credit, 1e-2)
+
+    # Annual credit cost (operating basis, same utilization factor as OPEX)
+    m.fs.costing.P_credit_cost = Expression(
+        expr=pyo.units.convert(
+            m.fs.P_credit_price
+            * m.fs.P_credit_purchase
+            * m.fs.costing.utilization_factor,
+            to_units=m.fs.costing.base_currency / m.fs.costing.base_period,
+        )
+    )
+
+    # Penalty added to LCOW [USD/m3 feed]; utilization factor cancels with LCOW denominator
+    m.fs.costing.P_credit_LCOW = Expression(
+        expr=pyo.units.convert(
+            m.fs.P_credit_price
+            * m.fs.P_credit_purchase
+            / m.fs.FeedWater.properties[0].flow_vol,
+            to_units=m.fs.costing.base_currency / pyo.units.m**3,
+        )
+    )
+
+    # Penalty added to LCOP [USD/kg P recovered]
+    if m.fs.has_electroNP is True:
+        m.fs.costing.P_credit_LCOP = Expression(
+            expr=pyo.units.convert(
+                m.fs.P_credit_price
+                * m.fs.P_credit_purchase
+                / (
+                    m.fs.electroNP.inlet.flow_vol[0]
+                    * m.fs.electroNP.inlet.conc_mass_comp[0, "S_PO4"]
+                    * m.fs.electroNP.P_removal
+                ),
+                to_units=m.fs.costing.base_currency / pyo.units.kg,
+            )
+        )
 
 
 def add_reactor_volume_equalities(m):
@@ -1288,7 +1495,7 @@ def add_reactor_volume_equalities(m):
         return m.fs.R7.volume[0] >= m.fs.R6.volume[0] * 0.5
 
 
-def add_effluent_violations(m):
+def add_effluent_violations(m, include_TP=True):
     # TODO: Revisit the max effluent concentration values
 
     # Max value taken from Flores-Alsina Excel 0.03 - modified to 0.05
@@ -1323,6 +1530,9 @@ def add_effluent_violations(m):
     def eq_BOD5_max(self, t):
         return m.fs.Treated.properties[t].BOD5["effluent"] <= m.fs.BOD5_max
 
+    if not include_TP:
+        return
+
     # Max value taken from Flores-Alsina Excel 0.002 - modified to 0.005
     m.fs.total_P_max = pyo.Var(initialize=0.005, units=pyo.units.kg / pyo.units.m**3)
     if m.fs.has_electroNP is True:
@@ -1347,6 +1557,25 @@ def display_costing(m):
             "Levelized cost of phosphorus removal: %.3f $/kg"
             % pyo.value(m.fs.costing.LCOW_P_removal)
         )
+    if hasattr(m.fs.costing, "P_credit_cost"):
+        print(
+            "P credits purchased: %.2f kg P/d (TP limit %.1f mg/L, %.0f $/kg P)"
+            % (
+                pyo.value(m.fs.P_credit_purchase),
+                pyo.value(m.fs.TP_limit) * 1e3,
+                pyo.value(m.fs.P_credit_price),
+            )
+        )
+        print("P credit cost: %.3f M$/yr" % pyo.value(m.fs.costing.P_credit_cost / 1e6))
+        print(
+            "LCOW incl. P credits: %.3f $/m3"
+            % pyo.value(m.fs.costing.LCOW + m.fs.costing.P_credit_LCOW)
+        )
+        if m.fs.has_electroNP is True:
+            print(
+                "LCOP incl. P credits: %.3f $/kg"
+                % pyo.value(m.fs.costing.LCOW_P_removal + m.fs.costing.P_credit_LCOP)
+            )
     print(
         "Total annualized cost: %.3f M$/yr"
         % pyo.value(m.fs.costing.total_annualized_cost / 1e6)
@@ -1811,12 +2040,68 @@ def display_design(m):
 
 
 if __name__ == "__main__":
-    # Single-run routine
-    m, results = main(
-        has_electroNP=True,
+    # Common TP penalty for fair comparison (P credits / effluent tax)
+    P_PENALTY = dict(has_P_penalty=True, P_credit=100, TP_limit=0.005)
+
+    # # Step 1: standard BSM2 at default DO setpoints -> save aeration benchmark.
+    # # Aeration fixed -> 0 DOF; solve only sets credits to cover TP exceedance.
+    # # Objective irrelevant at 0 DOF; LCOW used since BSM2 has no P recovery (no LCOP).
+    # m_bsm2, results_bsm2 = main(
+    #     has_electroNP=False,
+    #     has_optimization=True,
+    #     objective=objective_fun.LCOW,
+    #     has_effluent_constraints=True,
+    #     save_aeration_path=AERATION_CSV,
+    #     **P_PENALTY,
+    # )
+    #
+    # # # Plain BSM2 simulation (no penalty)
+    # # m_bsm2, results_bsm2 = main(
+    # #     has_electroNP=False,
+    # #     has_optimization=False,
+    # #     save_aeration_path=AERATION_CSV,
+    # # )
+    #
+    # # # Alternative: benchmark from optimized BSM2 aeration (electroNP run fails to converge from it)
+    # # m_bsm2, results_bsm2 = main(
+    # #     has_electroNP=False,
+    # #     has_optimization=True,
+    # #     objective=objective_fun.LCOW,
+    # #     has_effluent_constraints=True,
+    # #     save_aeration_path=AERATION_CSV,
+    # #     optimize_aeration=True,
+    # # )
+    #
+    # # Step 2: electroNP optimization with the same aeration settings
+    # m, results = main(
+    #     has_electroNP=True,
+    #     has_optimization=True,
+    #     objective=objective_fun.LCOW,  # LCOW or LCOP for the electroNP case
+    #     has_effluent_constraints=True,
+    #     load_aeration_path=AERATION_CSV,
+    #     aeration_fix_by="KLa",  # or "injection"
+    #     **P_PENALTY,
+    # )
+    # display_stream_table(m)
+
+    # Alternative comparison: aeration (DO setpoints) optimized in both cases;
+    # fairness from the common P-credit penalty instead of fixed aeration.
+    # Do not pass load_aeration_path together with optimize_aeration=True.
+    m_bsm2, results_bsm2 = main(
+        has_electroNP=False,
         has_optimization=True,
         objective=objective_fun.LCOW,
         has_effluent_constraints=True,
+        optimize_aeration=True,
+        **P_PENALTY,
+    )
+    m, results = main(
+        has_electroNP=True,
+        has_optimization=True,
+        objective=objective_fun.LCOP,
+        has_effluent_constraints=True,
+        optimize_aeration=True,
+        **P_PENALTY,
     )
     display_stream_table(m)
 
@@ -1828,8 +2113,10 @@ if __name__ == "__main__":
     # # Multi-run routine
     # m_min, obj_set, m_set, cp_opt, r_AV_opt = multi_run(
     #     has_electroNP=True,
-    #     objective=objective_fun.LCOW,
+    #     objective=OBJECTIVE,
     #     has_effluent_constraints=True,
     #     num=2,
+    #     load_aeration_path=AERATION_CSV,
+    #     **P_PENALTY,
     # )
     # display_stream_table(m_min)
